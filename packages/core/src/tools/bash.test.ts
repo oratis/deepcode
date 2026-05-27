@@ -42,9 +42,8 @@ describe('BashTool', () => {
 
   it('runs in the given cwd', async () => {
     const r = await BashTool.execute({ command: 'pwd' }, { cwd: tmp });
-    // macOS resolves /private/var symlinks for /tmp paths; tolerate that
-    expect(r.content).toMatch(
-      new RegExp(tmp.replace(/^\/tmp/, '(/private)?/tmp').replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&')),
-    );
+    // macOS resolves /tmp → /private/tmp via symlink. Check just the suffix to be portable.
+    const suffix = tmp.replace(/^\/tmp\//, '').replace(/^\/private\/tmp\//, '');
+    expect(r.content).toContain(suffix);
   });
 });

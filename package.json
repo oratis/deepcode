@@ -5,7 +5,7 @@
   "description": "DeepCode — Claude Code 的 DeepSeek 版（monorepo root）",
   "license": "MIT",
   "engines": {
-    "node": ">=20",
+    "node": ">=22",
     "pnpm": ">=9"
   },
   "packageManager": "pnpm@9.12.0",

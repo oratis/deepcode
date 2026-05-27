@@ -148,9 +148,22 @@ export function runCommand(
       resolveResult({ stdout, stderr, exitCode });
     });
 
+    // Suppress EPIPE / EBADF when the child closes stdin before our write
+    // completes (handlers that don't read stdin are common and harmless).
+    child.stdin.on('error', () => {
+      // swallow
+    });
     if (opts.stdin) {
-      child.stdin.write(opts.stdin);
+      try {
+        child.stdin.write(opts.stdin);
+      } catch {
+        // pipe already closed — fine
+      }
+    }
+    try {
       child.stdin.end();
+    } catch {
+      // already ended — fine
     }
   });
 }
