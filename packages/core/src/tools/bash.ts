@@ -61,7 +61,9 @@ export const BashTool: ToolHandler = {
       let killed = false;
       const timer = setTimeout(() => {
         killed = true;
-        child.kill('SIGTERM');
+        // SIGKILL (not SIGTERM) — on Ubuntu CI, dash doesn't propagate SIGTERM
+        // to its children fast enough, leaving `sleep` orphaned past test timeout.
+        child.kill('SIGKILL');
       }, timeoutMs);
 
       child.stdout.on('data', (chunk: Buffer) => {

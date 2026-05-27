@@ -123,7 +123,8 @@ export function runCommand(
     let killed = false;
     const timer = setTimeout(() => {
       killed = true;
-      child.kill('SIGTERM');
+      // SIGKILL — see comment in bash.ts; dash on Ubuntu doesn't propagate SIGTERM.
+      child.kill('SIGKILL');
     }, opts.timeoutMs);
 
     child.stdout.on('data', (c: Buffer) => {
