@@ -1,6 +1,10 @@
 // Agent loop — orchestrates provider <-> tools <-> session.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.1 / §3.15
 
+import type { PermissionRules } from './config/types.js';
+import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
+import type { HookDispatcher } from './hooks/index.js';
+import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { SessionManager } from './sessions/index.js';
 import type { ToolRegistry } from './tools/registry.js';
@@ -12,6 +16,16 @@ import type {
   ToolResultBlock,
   ToolUseBlock,
 } from './types.js';
+
+/**
+ * Approval callback — return true to allow, false to reject.
+ * Called when dispatcher returns 'ask'.
+ */
+export type ApprovalCallback = (
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  verdict: DispatchVerdict,
+) => Promise<boolean> | boolean;
 
 export interface RunAgentOptions {
   provider: Provider;
@@ -31,6 +45,12 @@ export interface RunAgentOptions {
   session?: { manager: SessionManager; id: string };
   /** Optional: snapshot files before/after Edit/Write tool calls. */
   enableSnapshots?: boolean;
+  /** M3: dispatch gates (mode + permissions + hooks). When set, every tool call
+   *  goes through the gate. When unset, all tool calls are allowed (M1 behavior). */
+  mode?: Mode;
+  permissions?: PermissionRules;
+  hooks?: HookDispatcher;
+  approval?: ApprovalCallback;
 }
 
 export interface RunAgentResult {
@@ -157,6 +177,40 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         continue;
       }
 
+      // M3: dispatch gate (mode + permissions + PreToolUse hook)
+      if (opts.mode) {
+        const verdict = await dispatchToolCall({
+          tool: toolUse.name,
+          input: toolUse.input,
+          mode: opts.mode,
+          rules: opts.permissions,
+          hooks: opts.hooks,
+          cwd: opts.cwd,
+        });
+        let allowed = verdict.decision === 'allow';
+        if (verdict.decision === 'ask' && opts.approval) {
+          allowed = await opts.approval(toolUse.name, toolUse.input, verdict);
+        }
+        if (!allowed) {
+          toolResults.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: `Tool call blocked: ${verdict.reason}`,
+            is_error: true,
+          });
+          opts.onEvent?.({
+            type: 'tool_result',
+            id: toolUse.id,
+            result: {
+              content: verdict.reason,
+              isError: true,
+              data: { dispatchSource: verdict.source, decision: verdict.decision },
+            },
+          });
+          continue;
+        }
+      }
+
       // Pre-execution snapshot (Edit/Write only)
       if (
         opts.enableSnapshots !== false &&
@@ -180,6 +234,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         tr = await handler.execute(toolUse.input, toolCtx);
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };
+      }
+
+      // PostToolUse hook (M3) — observation only; can inject additionalContext
+      if (opts.hooks) {
+        await opts.hooks.dispatch({
+          event: 'PostToolUse',
+          cwd: opts.cwd,
+          triggeredAt: new Date().toISOString(),
+          payload: {
+            tool: toolUse.name,
+            input: toolUse.input,
+            result_content: tr.content.slice(0, 1000),
+            is_error: tr.isError ?? false,
+          },
+        });
       }
 
       // Post-execution snapshot
