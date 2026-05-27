@@ -1,0 +1,104 @@
+// Bash tool — execute a shell command with timeout, capture stdout+stderr+exitCode.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.2 (P0) + run_in_background param
+
+import { spawn } from 'node:child_process';
+import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
+
+interface BashInput {
+  command: string;
+  timeout?: number; // ms
+  description?: string; // shown in approval UI
+  run_in_background?: boolean; // M1 stub — full background impl in M3.15.3
+}
+
+const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+const MAX_OUTPUT_BYTES = 30_000;
+
+export const BashTool: ToolHandler = {
+  name: 'Bash',
+  definition: {
+    name: 'Bash',
+    description:
+      'Executes a shell command. Captures stdout/stderr/exitCode. Default timeout 2 min.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        command: { type: 'string', description: 'Command line to execute via /bin/sh -c.' },
+        timeout: { type: 'number', description: 'Milliseconds (default 120000).' },
+        description: {
+          type: 'string',
+          description: 'Short description shown to user during approval.',
+        },
+        run_in_background: {
+          type: 'boolean',
+          description: 'Run in background; agent reads output later via Read (M3.15.3).',
+        },
+      },
+      required: ['command'],
+    },
+  },
+  async execute(rawInput: Record<string, unknown>, ctx: ToolContext): Promise<ToolResult> {
+    const input = rawInput as unknown as BashInput;
+    if (!input?.command || typeof input.command !== 'string') {
+      return { content: 'Error: command is required (string).', isError: true };
+    }
+    if (input.run_in_background) {
+      return {
+        content:
+          'Error: run_in_background is wired in M3.15.3 (background task subsystem). Use foreground for now.',
+        isError: true,
+      };
+    }
+    const timeoutMs = Math.max(1_000, input.timeout ?? DEFAULT_TIMEOUT_MS);
+
+    return new Promise((resolvePromise) => {
+      const child = spawn('/bin/sh', ['-c', input.command], {
+        cwd: ctx.cwd,
+        signal: ctx.signal,
+      });
+      let stdout = '';
+      let stderr = '';
+      let killed = false;
+      const timer = setTimeout(() => {
+        killed = true;
+        child.kill('SIGTERM');
+      }, timeoutMs);
+
+      child.stdout.on('data', (chunk: Buffer) => {
+        stdout += chunk.toString('utf8');
+        if (stdout.length > MAX_OUTPUT_BYTES) {
+          stdout = stdout.slice(0, MAX_OUTPUT_BYTES) + '\n... [stdout truncated]';
+        }
+      });
+      child.stderr.on('data', (chunk: Buffer) => {
+        stderr += chunk.toString('utf8');
+        if (stderr.length > MAX_OUTPUT_BYTES) {
+          stderr = stderr.slice(0, MAX_OUTPUT_BYTES) + '\n... [stderr truncated]';
+        }
+      });
+
+      child.on('error', (err) => {
+        clearTimeout(timer);
+        resolvePromise({
+          content: `Error spawning command: ${err.message}`,
+          isError: true,
+        });
+      });
+
+      child.on('close', (code) => {
+        clearTimeout(timer);
+        const summaryParts: string[] = [];
+        if (stdout) summaryParts.push(`<stdout>\n${stdout}\n</stdout>`);
+        if (stderr) summaryParts.push(`<stderr>\n${stderr}\n</stderr>`);
+        if (killed) summaryParts.push(`[killed by timeout after ${timeoutMs}ms]`);
+        summaryParts.push(`exit: ${code ?? 'unknown'}`);
+        const isError = killed || (code !== null && code !== 0);
+        resolvePromise({
+          content: summaryParts.join('\n'),
+          data: { exitCode: code, killed, stdoutBytes: stdout.length, stderrBytes: stderr.length },
+          isError,
+        });
+      });
+    });
+  },
+};
