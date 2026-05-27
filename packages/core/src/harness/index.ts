@@ -1,6 +1,7 @@
-// Module: harness
-// Milestone: M3
-// Spec: docs/DEVELOPMENT_PLAN.md §3.15 event bus / system-reminder injector / plan-mode state machine / tasks / cron / worktree / ToolSearch / Notification / statusline
-// Status: placeholder — implemented in M3
+// Harness layer entry — tool dispatcher (mode × permission × hooks gating).
+// Spec: docs/DEVELOPMENT_PLAN.md §3.15
+// Milestone: M3b — basic gating wired; system-reminder injector / TaskCreate /
+// cron / worktree / ToolSearch / Notification / statusLine implementation will
+// land in M3c+.
 
-export {};
+export { dispatchToolCall, type DispatchRequest, type DispatchVerdict } from './tool-dispatcher.js';
