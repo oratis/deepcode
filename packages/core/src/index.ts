@@ -122,3 +122,35 @@ export { dispatchToolCall, type DispatchRequest, type DispatchVerdict } from './
 
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback } from './agent.js';
+
+// Skills (M4 — SKILL.md frontmatter loading + system-prompt builder)
+export {
+  loadSkills,
+  buildSkillsDescriptionBlock,
+  parseFrontmatter,
+  parseSimpleYaml,
+  type Skill,
+  type SkillFrontmatter,
+  type LoadSkillsOpts,
+  type Frontmatter,
+} from './skills/index.js';
+
+// Sub-agents (M4 — .deepcode/agents/*.md)
+export {
+  loadSubAgents,
+  findSubAgent,
+  type SubAgent,
+  type SubAgentFrontmatter,
+  type LoadSubAgentsOpts,
+} from './sub-agents/index.js';
+
+// Output styles (M4 — 4 built-in + custom)
+export {
+  loadOutputStyles,
+  findStyle,
+  applyStyle,
+  BUILTIN_STYLES,
+  type OutputStyle,
+  type OutputStyleFrontmatter,
+  type LoadOutputStylesOpts,
+} from './output-styles/index.js';
