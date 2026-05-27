@@ -87,3 +87,32 @@ export {
   type Credentials,
   type CredentialsStoreOpts,
 } from './credentials/index.js';
+
+// Mode policy (M3)
+export {
+  evaluateMode,
+  modeVerdictReason,
+  type ModeRequest,
+  type ModeVerdict,
+} from './modes/index.js';
+
+// Hooks (M3 — command handler only; http/mcp_tool/prompt/agent → M5+)
+export {
+  HookDispatcher,
+  runCommand,
+  tryParseJsonOutput,
+  type HookContext,
+  type HookHandlerOutput,
+  type HookResult,
+  type HookRegistration,
+  type HookDispatcherOpts,
+} from './hooks/index.js';
+
+// Memory (M3 — dual-system + @-import + AGENTS.md + rules dir)
+export {
+  loadMemory,
+  walkUpwards,
+  type MemorySource,
+  type LoadedMemory,
+  type LoadMemoryOpts,
+} from './memory/index.js';
