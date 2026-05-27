@@ -5,13 +5,22 @@ import {
   CredentialsStore,
   DeepSeekProvider,
   EFFORT_PARAMS,
+  HookDispatcher,
   SessionManager,
   ToolRegistry,
+  applyStyle,
+  buildSkillsDescriptionBlock,
+  findStyle,
+  loadMemory,
+  loadOutputStyles,
   loadSettings,
+  loadSkills,
+  makeSkillTool,
   resolveCredentials,
   runAgent,
   type DeepCodeSettings,
   type Effort,
+  type Mode,
   type AgentEvent,
   type StoredMessage,
 } from '@deepcode/core';
@@ -55,7 +64,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   }
 
   const model = opts.model ?? settings.model ?? 'deepseek-chat';
-  const mode = opts.mode ?? settings.permissions?.defaultMode ?? 'default';
+  const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
   const effort = opts.effort ?? settings.effortLevel ?? 'medium';
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
 
@@ -69,6 +78,38 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   });
   const tools = new ToolRegistry();
   const commands = new CommandRegistry();
+
+  // M5: load memory, skills, output style — assemble final system prompt
+  const memory = await loadMemory({
+    cwd,
+    home: opts.home,
+    maxBytes: (settings.memoryLoadCapKB ?? 100) * 1024,
+  });
+  const skills = await loadSkills({
+    cwd,
+    home: opts.home,
+    overrides: settings.skillOverrides,
+  });
+  const styles = await loadOutputStyles({ cwd, home: opts.home });
+  const activeStyle = findStyle(styles, settings.outputStyle ?? 'default');
+
+  // Register Skill tool (M5)
+  if (skills.length > 0) {
+    tools.register(makeSkillTool(skills));
+  }
+
+  // Build the composite system prompt
+  let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+  if (memory.text) systemPrompt += '\n\n' + memory.text;
+  const skillsBlock = buildSkillsDescriptionBlock(skills);
+  if (skillsBlock) systemPrompt += '\n\n' + skillsBlock;
+  systemPrompt = applyStyle(systemPrompt, activeStyle);
+
+  // Hook dispatcher (M3)
+  const hooks = new HookDispatcher({
+    hooks: settings.hooks,
+    disableAllHooks: settings.disableAllHooks,
+  });
 
   let history: StoredMessage[] = [];
   const ctx: SessionContext = {
@@ -128,11 +169,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       continue;
     }
 
-    // Otherwise: send to agent
+    // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
     const result = await runAgent({
       provider,
       tools,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      systemPrompt,
       userMessage: userInput,
       history,
       model: ctx.model,
@@ -140,6 +181,14 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       temperature,
       cwd: ctx.cwd,
       session: { manager: sessions, id: session.id },
+      mode: ctx.mode as Mode,
+      permissions: settings.permissions,
+      hooks,
+      approval: async (toolName, _input, verdict) => {
+        output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
+        const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();
+        return answer === 'y' || answer === 'yes';
+      },
       onEvent: (e: AgentEvent) => formatEvent(output, e),
     });
     history = result.history;

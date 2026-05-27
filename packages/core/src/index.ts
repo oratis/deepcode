@@ -123,17 +123,36 @@ export { dispatchToolCall, type DispatchRequest, type DispatchVerdict } from './
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback } from './agent.js';
 
-// Skills (M4 — SKILL.md frontmatter loading + system-prompt builder)
+// Skills (M4 — SKILL.md frontmatter loading + system-prompt builder; M5 — Skill tool)
 export {
   loadSkills,
   buildSkillsDescriptionBlock,
   parseFrontmatter,
   parseSimpleYaml,
+  makeSkillTool,
   type Skill,
   type SkillFrontmatter,
   type LoadSkillsOpts,
   type Frontmatter,
 } from './skills/index.js';
+
+// Plugins (M5 — manifest + hash pinning + local install + discovery)
+export {
+  installLocal,
+  discoverPlugins,
+  readManifest,
+  computeSourceHash,
+  loadTrustState,
+  saveTrustState,
+  pluginsDir,
+  trustFilePath,
+  type PluginManifest,
+  type InstalledPlugin,
+  type PluginTrust,
+  type TrustState,
+  type InstallOptions,
+  type DiscoverOptions,
+} from './plugins/index.js';
 
 // Sub-agents (M4 — .deepcode/agents/*.md)
 export {
