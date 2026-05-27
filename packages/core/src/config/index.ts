@@ -1,6 +1,36 @@
-// Module: config
+// Config subsystem — settings.json loading + permission matcher.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.9
 // Milestone: M2
-// Spec: docs/DEVELOPMENT_PLAN.md §3.9 settings.json 3-layer load/merge/watch + permission matcher (2 glob syntaxes)
-// Status: placeholder — implemented in M2
 
-export {};
+export type {
+  DeepCodeSettings,
+  PermissionRules,
+  HookHandler,
+  HookMatcher,
+  HookEventName,
+  Hooks,
+  McpServerConfig,
+  StatusLineConfig,
+  SandboxConfig,
+  UpdateConfig,
+  WorktreeConfig,
+  AutoModeConfig,
+} from './types.js';
+
+export {
+  loadSettings,
+  writeSettings,
+  settingsPaths,
+  deepMerge,
+  type LoadedSettings,
+  type LoadSettingsOpts,
+} from './loader.js';
+
+export {
+  evaluatePermission,
+  matchRule,
+  parseRule,
+  primaryInput,
+  type PermissionVerdict,
+  type PermissionRequest,
+} from './permissions.js';
