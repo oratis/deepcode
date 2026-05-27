@@ -1,6 +1,6 @@
-// Skills subsystem entry — SKILL.md frontmatter loading + system-prompt builder.
+// Skills subsystem entry — SKILL.md frontmatter loading + system-prompt builder + Skill tool.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.13
-// Milestone: M4
+// Milestone: M4 + M5 (Skill tool)
 
 export {
   loadSkills,
@@ -11,3 +11,5 @@ export {
 } from './loader.js';
 
 export { parseFrontmatter, parseSimpleYaml, type Frontmatter } from './frontmatter.js';
+
+export { makeSkillTool } from './tool.js';
