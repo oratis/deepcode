@@ -1,0 +1,2081 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>DeepCode · Visual Design</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Brand */
+    --brand:        #4D6BFE;   /* DeepSeek blue */
+    --brand-deep:   #2F49D1;
+    --brand-soft:   #E8EDFF;
+    --accent:       #14E4A2;   /* "running / success" mint */
+    --warn:         #FFB020;
+    --error:        #FF5470;
+
+    /* Neutrals (dark theme primary) */
+    --bg-0:         #0B0D12;
+    --bg-1:         #11141B;
+    --bg-2:         #171B24;
+    --bg-3:         #1F2532;
+    --line:         #262C3A;
+    --line-soft:    #1B2030;
+    --text-0:       #F2F4F8;
+    --text-1:       #C7CCD8;
+    --text-2:       #8A92A4;
+    --text-3:       #5B6376;
+
+    /* Neutrals (light) */
+    --l-bg-0:       #FAFBFC;
+    --l-bg-1:       #FFFFFF;
+    --l-line:       #E5E8EE;
+    --l-text-0:     #0B0D12;
+    --l-text-1:     #3D4351;
+    --l-text-2:     #6B7283;
+
+    --radius-sm: 6px;
+    --radius:    10px;
+    --radius-lg: 16px;
+    --shadow:    0 10px 40px -10px rgba(0,0,0,.5), 0 1px 0 rgba(255,255,255,.03) inset;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--l-bg-0); color: var(--l-text-0); font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 15px; line-height: 1.55; }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, Menlo, monospace; }
+
+  /* Layout */
+  .page { max-width: 1200px; margin: 0 auto; padding: 56px 32px 96px; }
+  header.hero {
+    background: linear-gradient(180deg, #fff 0%, #F5F7FF 100%);
+    border-bottom: 1px solid var(--l-line);
+    padding: 80px 32px 64px;
+    text-align: center;
+  }
+  header.hero .logo {
+    display: inline-flex; align-items: center; gap: 14px;
+    padding: 8px 18px;
+    background: #fff;
+    border: 1px solid var(--l-line);
+    border-radius: 999px;
+    box-shadow: 0 4px 20px -8px rgba(77,107,254,.25);
+    font-weight: 600;
+    color: var(--brand-deep);
+    margin-bottom: 28px;
+  }
+  header.hero .logo .mark {
+    width: 26px; height: 26px; border-radius: 7px;
+    background: linear-gradient(135deg, var(--brand) 0%, #6B86FF 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff;
+  }
+  /* Elephant brand mark (pure white, scales to parent .mark / .mark-big) */
+  .mark svg, .mark-big svg, .logo .mark svg {
+    width: 72%; height: 72%; display: block; color: #fff;
+  }
+  header.hero h1 {
+    font-size: 56px; line-height: 1.05; font-weight: 800; letter-spacing: -1.5px;
+    margin: 0 0 18px;
+    background: linear-gradient(180deg, #0B0D12 0%, #4D6BFE 140%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  header.hero p.tagline {
+    font-size: 19px; color: var(--l-text-1); max-width: 720px; margin: 0 auto 8px;
+  }
+  header.hero p.sub { color: var(--l-text-2); margin: 0 auto; max-width: 620px; font-size: 14px; }
+
+  /* Section */
+  section { margin-top: 88px; }
+  section .label {
+    display: inline-block;
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--brand-deep);
+    background: var(--brand-soft);
+    padding: 4px 10px; border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  section h2 { font-size: 32px; font-weight: 700; letter-spacing: -0.5px; margin: 0 0 12px; }
+  section .lead { color: var(--l-text-1); font-size: 16px; margin: 0 0 32px; max-width: 720px; }
+
+  /* Palette */
+  .palette { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; }
+  .swatch { border-radius: var(--radius); overflow: hidden; border: 1px solid var(--l-line); background: #fff; }
+  .swatch .chip { height: 86px; }
+  .swatch .meta { padding: 10px 12px; font-size: 12px; }
+  .swatch .meta b { display: block; color: var(--l-text-0); font-size: 13px; margin-bottom: 2px; }
+  .swatch .meta .mono { color: var(--l-text-2); }
+
+  /* Typography */
+  .type-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .type-card { border: 1px solid var(--l-line); border-radius: var(--radius); padding: 24px; background: #fff; }
+  .type-card .name { font-size: 12px; color: var(--l-text-2); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 12px; }
+  .type-card .demo { font-size: 32px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
+  .type-card .demo.mono { font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 22px; }
+  .type-card .scale { display: flex; gap: 16px; flex-wrap: wrap; color: var(--l-text-1); }
+  .type-card .scale span { font-size: 13px; }
+
+  /* Components: buttons + inputs */
+  .components { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .panel { background: #fff; border: 1px solid var(--l-line); border-radius: var(--radius-lg); padding: 24px; }
+  .panel h4 { margin: 0 0 16px; font-size: 13px; letter-spacing: 1px; color: var(--l-text-2); text-transform: uppercase; font-weight: 700; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  button, .btn {
+    font-family: inherit; font-size: 14px; font-weight: 500;
+    padding: 9px 16px; border-radius: var(--radius-sm); cursor: pointer;
+    border: 1px solid transparent; transition: 0.15s;
+  }
+  .btn-primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+  .btn-primary:hover { background: var(--brand-deep); }
+  .btn-secondary { background: #fff; color: var(--l-text-0); border-color: var(--l-line); }
+  .btn-ghost { background: transparent; color: var(--l-text-1); }
+  .btn-danger { background: var(--error); color: #fff; }
+  .input {
+    width: 100%; padding: 10px 12px;
+    border: 1px solid var(--l-line); border-radius: var(--radius-sm);
+    font-family: 'JetBrains Mono', monospace; font-size: 13px;
+    background: #fff;
+  }
+  .input:focus { outline: 2px solid var(--brand-soft); border-color: var(--brand); }
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge-ok    { background: rgba(20,228,162,.15); color: #0AA876; }
+  .badge-warn  { background: rgba(255,176,32,.15); color: #B8770D; }
+  .badge-info  { background: var(--brand-soft); color: var(--brand-deep); }
+
+  /* Mockup frames */
+  .mockup {
+    background: var(--bg-0);
+    color: var(--text-0);
+    border-radius: 14px;
+    border: 1px solid #000;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+    font-size: 13.5px;
+  }
+  .mockup .titlebar {
+    background: linear-gradient(180deg, #232734 0%, #1A1E29 100%);
+    padding: 10px 14px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .traffic { display: flex; gap: 7px; margin-right: 12px; }
+  .traffic span { width: 12px; height: 12px; border-radius: 50%; }
+  .traffic span:nth-child(1) { background: #FF5F57; }
+  .traffic span:nth-child(2) { background: #FEBC2E; }
+  .traffic span:nth-child(3) { background: #28C840; }
+  .titlebar .title { color: var(--text-2); font-size: 12px; }
+  .titlebar .title b { color: var(--text-1); font-weight: 500; }
+
+  /* CLI mockup */
+  .cli {
+    padding: 20px 22px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+    color: var(--text-0);
+    background: var(--bg-0);
+    min-height: 460px;
+  }
+  .cli .dim    { color: var(--text-3); }
+  .cli .dim2   { color: var(--text-2); }
+  .cli .brand  { color: #8AA2FF; }
+  .cli .ok     { color: var(--accent); }
+  .cli .warn   { color: var(--warn); }
+  .cli .err    { color: var(--error); }
+  .cli .prompt { color: var(--brand); font-weight: 600; }
+  .cli .user   { color: var(--text-0); }
+  .cli .tool   { color: #C7A8FF; }
+  .cli .box    { border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 8px 0; background: var(--bg-1); }
+  .cli .keycap { background: var(--bg-3); padding: 1px 6px; border-radius: 4px; font-size: 11px; color: var(--text-1); border: 1px solid var(--line); }
+  .cli .cursor { display: inline-block; width: 8px; background: var(--brand); height: 1em; vertical-align: text-bottom; margin-left: 2px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Desktop app mockup */
+  .desktop-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr 48px;
+    min-height: 640px;
+    background: var(--bg-1);
+  }
+  /* Right inspector: collapsed-by-default rail */
+  .inspector.rail {
+    padding: 14px 0; gap: 10px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .inspector.rail .rail-btn {
+    width: 30px; height: 30px; border-radius: 7px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-2); background: var(--bg-1); border: 1px solid var(--line-soft);
+    cursor: pointer; font-size: 13px; position: relative;
+    font-family: inherit;
+  }
+  .inspector.rail .rail-btn:hover { color: var(--text-0); border-color: var(--line); }
+  .inspector.rail .rail-btn.expand { background: var(--bg-2); border-color: var(--line); color: var(--text-1); }
+  .inspector.rail .rail-btn .dot-badge {
+    position: absolute; top: -3px; right: -3px;
+    min-width: 14px; height: 14px; padding: 0 3px;
+    border-radius: 7px; background: var(--brand); color: #fff;
+    font-size: 9px; font-weight: 700; line-height: 14px; text-align: center;
+    border: 2px solid var(--bg-0); font-family: 'Inter', sans-serif;
+  }
+  .inspector.rail .rail-spacer { flex: 1; }
+  .inspector.rail .rail-divider { width: 16px; height: 1px; background: var(--line-soft); }
+  .sidebar {
+    background: var(--bg-0);
+    border-right: 1px solid var(--line);
+    padding: 18px 14px;
+    overflow: hidden;
+  }
+  .sidebar .brand-row { display: flex; align-items: center; gap: 10px; padding: 4px 6px 18px; }
+  .sidebar .brand-row .mark { width: 24px; height: 24px; border-radius: 6px; background: linear-gradient(135deg, var(--brand) 0%, #6B86FF 100%); display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 13px; }
+  .sidebar .brand-row .name { font-weight: 700; color: var(--text-0); font-size: 14px; letter-spacing: -0.2px; }
+  .sidebar .section-title { font-size: 11px; letter-spacing: 1px; color: var(--text-3); text-transform: uppercase; padding: 14px 8px 8px; }
+  .sidebar .item { display: flex; align-items: center; gap: 10px; padding: 7px 9px; border-radius: 6px; color: var(--text-1); font-size: 13px; cursor: pointer; }
+  .sidebar .item.active { background: rgba(77,107,254,.12); color: #B4C2FF; border: 1px solid rgba(77,107,254,.25); }
+  .sidebar .item .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); }
+  .sidebar .item.active .dot { background: var(--brand); }
+  .sidebar .item .meta { color: var(--text-3); font-size: 11px; margin-left: auto; }
+  .sidebar .new-btn {
+    width: 100%; margin-top: 4px; padding: 8px;
+    background: rgba(77,107,254,.1); color: #B4C2FF; border: 1px dashed rgba(77,107,254,.35);
+    border-radius: 6px; font-size: 12px; text-align: center; cursor: pointer;
+  }
+
+  .chat-main { display: flex; flex-direction: column; min-width: 0; }
+  .chat-header {
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-1);
+  }
+  .chat-header .crumb { color: var(--text-2); font-size: 12px; }
+  .chat-header .crumb b { color: var(--text-0); font-weight: 500; }
+  .chat-header .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .pill {
+    font-size: 11px; padding: 3px 9px; border-radius: 999px;
+    border: 1px solid var(--line); color: var(--text-1); background: var(--bg-2);
+    display: inline-flex; gap: 6px; align-items: center;
+  }
+  .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+
+  .chat-stream { flex: 1; overflow: hidden; padding: 22px; display: flex; flex-direction: column; gap: 16px; }
+  .msg { display: flex; gap: 12px; }
+  .msg .avatar {
+    width: 28px; height: 28px; border-radius: 8px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700;
+  }
+  .msg.user .avatar { background: var(--bg-3); color: var(--text-1); }
+  .msg.assistant .avatar { background: linear-gradient(135deg, var(--brand) 0%, #6B86FF 100%); color: #fff; }
+  .msg .body { flex: 1; min-width: 0; }
+  .msg .author { font-size: 11px; color: var(--text-3); margin-bottom: 4px; letter-spacing: 0.5px; text-transform: uppercase; font-weight: 600; }
+  .msg .content { color: var(--text-0); font-size: 13.5px; line-height: 1.65; }
+  .msg .content code { background: var(--bg-3); color: #B4C2FF; padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+
+  .tool-card {
+    margin: 10px 0; border: 1px solid var(--line); background: var(--bg-2);
+    border-radius: 10px; overflow: hidden; font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  }
+  .tool-card .tc-head {
+    padding: 8px 12px; display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, rgba(77,107,254,.08), transparent);
+    border-bottom: 1px solid var(--line);
+  }
+  .tool-card .tc-head .name { color: #C7A8FF; font-weight: 600; }
+  .tool-card .tc-head .badge { font-family: 'Inter', sans-serif; }
+  .tool-card .tc-body { padding: 10px 14px; color: var(--text-1); white-space: pre; overflow: hidden; }
+  .diff-add { color: var(--accent); }
+  .diff-del { color: var(--error); }
+
+  .composer {
+    border-top: 1px solid var(--line); padding: 14px 18px;
+    background: var(--bg-1);
+  }
+  .composer .box {
+    border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+    background: var(--bg-0); display: flex; gap: 10px; align-items: flex-end;
+  }
+  .composer textarea {
+    flex: 1; min-height: 28px; max-height: 100px;
+    background: transparent; border: 0; color: var(--text-0);
+    font-family: inherit; font-size: 13.5px; resize: none; outline: none;
+  }
+  .composer .actions { display: flex; gap: 8px; }
+  .composer button.send {
+    background: var(--brand); color: #fff; border: 0; padding: 6px 12px;
+    border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer;
+  }
+  .composer .row { margin-top: 8px; display: flex; gap: 8px; color: var(--text-3); font-size: 11px; align-items: center; }
+  .composer .row .keycap { background: var(--bg-3); padding: 1px 6px; border-radius: 4px; color: var(--text-1); border: 1px solid var(--line); font-family: 'JetBrains Mono', monospace; }
+
+  /* Right inspector */
+  .inspector {
+    background: var(--bg-0);
+    border-left: 1px solid var(--line);
+    padding: 18px;
+    overflow: hidden;
+  }
+  .inspector h5 {
+    font-size: 11px; letter-spacing: 1px; text-transform: uppercase;
+    color: var(--text-3); font-weight: 700; margin: 12px 0 8px;
+  }
+  .insp-row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 6px 0; border-bottom: 1px solid var(--line-soft);
+    font-size: 12.5px;
+  }
+  .insp-row .k { color: var(--text-2); }
+  .insp-row .v { color: var(--text-0); font-family: 'JetBrains Mono', monospace; }
+  .todo-item {
+    display: flex; gap: 8px; padding: 6px 0;
+    font-size: 12.5px; color: var(--text-1);
+  }
+  .todo-item .check { width: 14px; height: 14px; border-radius: 3px; border: 1.5px solid var(--text-3); flex-shrink: 0; margin-top: 3px; }
+  .todo-item.done .check { background: var(--accent); border-color: var(--accent); }
+  .todo-item.done .label { color: var(--text-3); text-decoration: line-through; }
+  .todo-item.active .check { border-color: var(--brand); background: rgba(77,107,254,.2); }
+  .todo-item.active .label { color: var(--text-0); }
+  .progress {
+    height: 6px; border-radius: 3px; background: var(--bg-3); overflow: hidden; margin-top: 4px;
+  }
+  .progress .bar { height: 100%; background: linear-gradient(90deg, var(--brand) 0%, #6B86FF 100%); width: 62%; }
+
+  /* Onboarding mockup */
+  .onboarding-shell { background: linear-gradient(135deg, #0B0D12 0%, #161B2A 100%); min-height: 600px; display: flex; align-items: center; justify-content: center; position: relative; overflow: hidden; }
+  .onboarding-shell::before {
+    content: ''; position: absolute; top: -40%; left: -10%;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(77,107,254,.25) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .onboarding-shell::after {
+    content: ''; position: absolute; bottom: -30%; right: -10%;
+    width: 500px; height: 500px;
+    background: radial-gradient(circle, rgba(107,134,255,.18) 0%, transparent 60%);
+    pointer-events: none;
+  }
+  .onboarding-card {
+    position: relative; z-index: 1;
+    width: 480px;
+    background: rgba(17,20,27,.85);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 36px 36px 28px;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,.7);
+  }
+  .onboarding-card .mark-big {
+    width: 56px; height: 56px; border-radius: 14px;
+    background: linear-gradient(135deg, var(--brand) 0%, #6B86FF 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; font-weight: 800; font-size: 24px;
+    margin-bottom: 22px;
+    box-shadow: 0 12px 30px -8px rgba(77,107,254,.5);
+  }
+  .onboarding-card h3 { color: var(--text-0); font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.3px; }
+  .onboarding-card .sub { color: var(--text-2); font-size: 13.5px; margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  .field label { display: block; color: var(--text-1); font-size: 12px; font-weight: 600; margin-bottom: 6px; letter-spacing: 0.3px; }
+  .field .help { color: var(--text-3); font-size: 11.5px; margin-top: 5px; }
+  .field .help a { color: #8AA2FF; text-decoration: none; }
+  .field input {
+    width: 100%; background: var(--bg-0); border: 1px solid var(--line);
+    border-radius: 8px; padding: 11px 13px; font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; color: var(--text-0); outline: none;
+  }
+  .field input:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(77,107,254,.18); }
+  .stepper { display: flex; gap: 6px; margin-bottom: 24px; }
+  .stepper .step { flex: 1; height: 4px; border-radius: 2px; background: var(--bg-3); }
+  .stepper .step.active { background: var(--brand); }
+  .stepper .step.done { background: var(--accent); }
+  .onboarding-card .footer { display: flex; gap: 10px; justify-content: space-between; align-items: center; margin-top: 22px; }
+  .onboarding-card .footer .skip { color: var(--text-3); font-size: 12px; }
+  .onboarding-card button.next {
+    background: var(--brand); color: #fff; border: 0; padding: 10px 22px;
+    border-radius: 8px; font-weight: 600; font-size: 13.5px; cursor: pointer;
+  }
+  .validation-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(20,228,162,.1); border: 1px solid rgba(20,228,162,.3);
+    color: var(--accent); padding: 6px 12px; border-radius: 8px;
+    font-size: 12px; margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px;
+  }
+  .flow .node {
+    background: #fff; border: 1px solid var(--l-line); border-radius: 12px;
+    padding: 20px; position: relative;
+  }
+  .flow .node .step-num { position: absolute; top: 14px; right: 14px; font-size: 11px; color: var(--brand-deep); background: var(--brand-soft); padding: 2px 8px; border-radius: 999px; font-weight: 700; }
+  .flow .node h5 { margin: 0 0 8px; font-size: 14px; font-weight: 700; }
+  .flow .node p { margin: 0; font-size: 12.5px; color: var(--l-text-2); line-height: 1.5; }
+
+  /* misc */
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .caption { font-size: 12px; color: var(--l-text-2); margin-top: 8px; font-style: italic; }
+  footer { margin-top: 100px; padding: 32px; text-align: center; color: var(--l-text-2); font-size: 13px; border-top: 1px solid var(--l-line); }
+
+  /* ===== Composer · Claude Code parity ===== */
+  .composer-cc {
+    border-top: 1px solid var(--line);
+    background: var(--bg-1);
+    padding: 14px 18px 12px;
+    position: relative;
+  }
+  .composer-cc .input-box {
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 12px 16px 10px;
+  }
+  .composer-cc .input-box textarea {
+    width: 100%; background: transparent; border: 0; outline: none;
+    color: var(--text-0); font-family: inherit; font-size: 14px;
+    resize: none; min-height: 24px;
+  }
+  .composer-cc .input-box .placeholder { color: var(--text-3); font-size: 14px; }
+  .composer-cc .input-box .placeholder b { color: var(--text-2); font-weight: 500; }
+  .composer-cc .toolbar {
+    display: flex; align-items: center; gap: 10px;
+    margin-top: 10px;
+  }
+  .composer-cc .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-2); background: transparent; border: 1px solid transparent;
+    cursor: pointer; font-size: 15px; font-family: inherit;
+    transition: 0.15s;
+  }
+  .composer-cc .icon-btn:hover { background: var(--bg-3); color: var(--text-0); }
+  .composer-cc .icon-btn.plus { background: var(--bg-3); border-color: var(--line); }
+  .composer-cc .mic-group {
+    display: inline-flex; align-items: center;
+    background: var(--bg-3); border: 1px solid var(--line);
+    border-radius: 6px; overflow: hidden;
+  }
+  .composer-cc .mic-group .icon-btn { border-radius: 0; border: 0; width: 32px; }
+  .composer-cc .mic-group .divider { width: 1px; height: 16px; background: var(--line); }
+  .composer-cc .mic-group .caret { padding: 0 6px; color: var(--text-2); cursor: pointer; }
+  .composer-cc .mode-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 12px; font-weight: 600; font-family: inherit;
+    cursor: pointer;
+  }
+  .composer-cc .mode-badge.ask        { color: #C7CCD8; background: rgba(138,146,164,.15); }
+  .composer-cc .mode-badge.auto-edit  { color: #8AA2FF; background: rgba(77,107,254,.12); }
+  .composer-cc .mode-badge.plan       { color: #C7A8FF; background: rgba(199,168,255,.12); }
+  .composer-cc .mode-badge.bypass     { color: #FFB020; background: rgba(255,176,32,.12); }
+  .composer-cc .spacer { flex: 1; }
+  .composer-cc .model-picker {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 4px 10px; border-radius: 6px;
+    font-size: 12.5px; color: var(--text-1); cursor: pointer;
+  }
+  .composer-cc .model-picker:hover { background: var(--bg-3); }
+  .composer-cc .model-picker .name { color: var(--text-0); font-weight: 500; }
+  .composer-cc .model-picker .meta { color: var(--text-3); font-size: 11px; }
+  .composer-cc .model-picker .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: radial-gradient(circle, var(--brand) 0%, var(--brand-deep) 100%);
+  }
+  .composer-cc .send-btn {
+    width: 30px; height: 30px; border-radius: 8px;
+    background: var(--bg-3); color: var(--text-1);
+    border: 1px solid var(--line); cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .composer-cc .send-btn.ready { background: var(--brand); color: #fff; border-color: var(--brand); }
+
+  /* + menu (popover) */
+  .plus-popover {
+    position: absolute; bottom: 64px; left: 18px;
+    background: #1A1E29;
+    border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: 0 20px 50px -10px rgba(0,0,0,.6);
+    padding: 6px;
+    width: 260px;
+    z-index: 5;
+  }
+  .plus-popover .pop-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 9px 12px; border-radius: 6px;
+    color: var(--text-0); font-size: 13.5px; cursor: pointer;
+  }
+  .plus-popover .pop-item:hover { background: var(--bg-3); }
+  .plus-popover .pop-item .ico { width: 16px; color: var(--text-2); font-size: 14px; }
+  .plus-popover .pop-item .kbd {
+    margin-left: auto; color: var(--text-3); font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .plus-popover .pop-item .arrow { margin-left: auto; color: var(--text-3); }
+  .plus-popover hr { border: 0; border-top: 1px solid var(--line-soft); margin: 4px 0; }
+
+  /* context bar (under composer) */
+  .ctx-bar {
+    display: flex; align-items: center; gap: 14px;
+    padding: 8px 4px 0; font-size: 11px; color: var(--text-3);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .ctx-bar .ctx-progress {
+    flex: 1; height: 4px; border-radius: 2px;
+    background: var(--bg-3); overflow: hidden; min-width: 80px; max-width: 240px;
+  }
+  .ctx-bar .ctx-progress .fill {
+    height: 100%; background: linear-gradient(90deg, var(--brand) 0%, #6B86FF 100%);
+  }
+  .ctx-bar .compacted {
+    color: var(--accent); display: inline-flex; align-items: center; gap: 4px;
+  }
+
+  /* ===== Update banner (Screen #11) ===== */
+  .update-shell {
+    background: var(--bg-0); padding: 60px 24px;
+    display: flex; align-items: center; justify-content: center;
+    min-height: 420px; position: relative;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(77,107,254,.06) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(20,228,162,.04) 0%, transparent 50%);
+  }
+  .update-shell::before {
+    content: 'src/auth.ts'; position: absolute; top: 30px; left: 32px;
+    color: var(--text-3); font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  }
+  .update-shell::after {
+    content: '··· faded chat content ···'; position: absolute; top: 60px; left: 32px; right: 32px;
+    color: var(--text-3); font-size: 10px; font-family: 'JetBrains Mono', monospace; opacity: .25; text-align: center;
+  }
+  .update-banner {
+    display: inline-flex; align-items: center; gap: 14px;
+    padding: 14px 18px 14px 16px;
+    background: rgba(20, 24, 33, 0.95); backdrop-filter: blur(20px);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 20px 60px -10px rgba(0,0,0,.6), 0 0 0 1px rgba(77,107,254,.15);
+    cursor: pointer; transition: 0.2s;
+    min-width: 320px; position: relative; z-index: 2;
+  }
+  .update-banner:hover { transform: translateY(-2px); box-shadow: 0 28px 70px -10px rgba(0,0,0,.7); }
+  .update-banner .ub-icon {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: linear-gradient(135deg, var(--brand) 0%, #6B86FF 100%);
+    display: inline-flex; align-items: center; justify-content: center;
+    color: #fff; flex-shrink: 0;
+  }
+  .update-banner .ub-icon svg { width: 72%; height: 72%; }
+  .update-banner .ub-body { flex: 1; min-width: 0; }
+  .update-banner .ub-title { color: var(--text-0); font-size: 14px; font-weight: 600; line-height: 1.2; }
+  .update-banner .ub-ver { color: var(--text-3); font-size: 11.5px; font-family: 'JetBrains Mono', monospace; margin-top: 2px; }
+  .update-banner .ub-arrow { color: var(--text-2); font-size: 16px; flex-shrink: 0; padding-right: 2px; }
+  .update-banner.mandatory {
+    border-color: rgba(255,84,112,.5);
+    box-shadow: 0 20px 60px -10px rgba(0,0,0,.6), 0 0 0 1px rgba(255,84,112,.35);
+  }
+  .update-banner.mandatory .ub-ver { color: #FF8FA3; }
+
+  /* ===== Right-side file panel ===== */
+  .four-col {
+    display: grid;
+    grid-template-columns: 220px 1fr 520px 48px;
+    min-height: 700px;
+    background: var(--bg-1);
+  }
+  .four-col .sidebar { padding: 14px 10px; }
+  .four-col .chat-main { min-width: 0; }
+  .four-col .chat-stream { padding: 18px 18px 8px; gap: 14px; }
+  .four-col .chat-header { padding: 12px 18px; }
+  .four-col .chat-header .crumb { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .four-col .composer-cc { padding: 10px 14px 12px; }
+  .four-col .composer-cc .input-box { padding: 9px 12px; }
+  .four-col .composer-cc .toolbar { gap: 8px; margin-top: 8px; flex-wrap: nowrap; }
+  .four-col .composer-cc .toolbar .icon-btn,
+  .four-col .composer-cc .toolbar .mic-group { flex-shrink: 0; }
+  .four-col .composer-cc .toolbar .model-picker { flex-shrink: 0; padding: 4px 8px; }
+  .four-col .composer-cc .toolbar .mode-badge { flex-shrink: 0; padding: 3px 8px; font-size: 11px; }
+  .four-col .composer-cc .ctx-bar { font-size: 10.5px; gap: 10px; padding-top: 6px; }
+  .four-col .composer-cc .ctx-bar .ctx-progress { max-width: 100px; }
+  .file-panel {
+    background: var(--bg-0);
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .file-panel .fp-tabs {
+    display: flex; align-items: center;
+    background: var(--bg-1); border-bottom: 1px solid var(--line);
+    padding: 0 6px; gap: 0;
+  }
+  .file-panel .fp-tab {
+    padding: 9px 12px 9px 14px; display: inline-flex; align-items: center; gap: 8px;
+    color: var(--text-2); font-size: 12px; cursor: pointer;
+    border-right: 1px solid var(--line-soft);
+    font-family: 'JetBrains Mono', monospace;
+    position: relative;
+  }
+  .file-panel .fp-tab.active {
+    background: var(--bg-0); color: var(--text-0);
+    box-shadow: inset 0 2px 0 var(--brand);
+  }
+  .file-panel .fp-tab .close {
+    width: 14px; height: 14px; border-radius: 3px;
+    display: inline-flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 13px;
+  }
+  .file-panel .fp-tab.active .close:hover { background: var(--bg-3); color: var(--text-0); }
+  .file-panel .fp-tab .dirty { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+
+  .file-panel .fp-viewbar {
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 14px; border-bottom: 1px solid var(--line-soft);
+    background: var(--bg-1);
+  }
+  .file-panel .fp-viewbar .seg {
+    display: inline-flex; gap: 0;
+    background: var(--bg-0); border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  }
+  .file-panel .fp-viewbar .seg button {
+    background: transparent; border: 0; color: var(--text-2);
+    padding: 4px 12px; font-size: 11.5px; font-family: inherit; cursor: pointer;
+  }
+  .file-panel .fp-viewbar .seg button.active { background: var(--brand); color: #fff; }
+  .file-panel .fp-viewbar .right { margin-left: auto; display: flex; gap: 6px; color: var(--text-2); font-size: 11px; }
+  .file-panel .fp-viewbar .right .keycap { padding: 1px 6px; border-radius: 3px; background: var(--bg-3); border: 1px solid var(--line); font-family: 'JetBrains Mono', monospace; }
+
+  .file-panel .fp-meta {
+    padding: 6px 14px; font-size: 11px; color: var(--text-3);
+    font-family: 'JetBrains Mono', monospace;
+    border-bottom: 1px solid var(--line-soft);
+    background: var(--bg-1);
+    display: flex; gap: 14px;
+  }
+  .file-panel .fp-code {
+    flex: 1; overflow: hidden;
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px; line-height: 1.6;
+    background: var(--bg-0);
+    padding: 12px 0 12px 0;
+  }
+  .file-panel .fp-code .line { display: flex; padding-left: 0; }
+  .file-panel .fp-code .ln {
+    color: var(--text-3); width: 42px; text-align: right; padding-right: 14px;
+    user-select: none; flex-shrink: 0;
+  }
+  .file-panel .fp-code .ln.del { color: var(--error); }
+  .file-panel .fp-code .ln.add { color: var(--accent); }
+  .file-panel .fp-code .code { color: var(--text-0); white-space: pre; padding-right: 14px; }
+  .file-panel .fp-code .code.del { background: rgba(255,84,112,.08); color: #FFB4C0; }
+  .file-panel .fp-code .code.add { background: rgba(20,228,162,.08); color: #B6F4DC; }
+  .file-panel .fp-code .code.dim { color: var(--text-2); }
+
+  .kw  { color: #C7A8FF; }
+  .str { color: #B6F4DC; }
+  .fn  { color: #8AA2FF; }
+  .cmt { color: var(--text-3); font-style: italic; }
+  .num { color: #FFB020; }
+
+  /* ===== Command palette (renamed from .palette to avoid clash with color palette) ===== */
+  .cmd-palette-shell {
+    background: var(--bg-0); padding: 80px 20px 40px;
+    display: flex; align-items: flex-start; justify-content: center;
+    min-height: 580px;
+    background-image: radial-gradient(circle at 50% 0%, rgba(77,107,254,.08) 0%, transparent 60%);
+  }
+  .cmd-palette {
+    width: 580px; background: #14171F;
+    border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: 0 30px 80px -10px rgba(0,0,0,.7);
+    overflow: hidden;
+    display: block;
+  }
+  .cmd-palette .search {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .cmd-palette .search .prefix { color: var(--brand); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; }
+  .cmd-palette .search input {
+    flex: 1; background: transparent; border: 0; outline: none;
+    color: var(--text-0); font-family: 'JetBrains Mono', monospace; font-size: 15px;
+  }
+  .cmd-palette .search .hint { color: var(--text-3); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .cmd-palette .list { max-height: 420px; overflow: hidden; padding: 6px; }
+  .cmd-palette .group { padding: 6px 12px 4px; font-size: 10.5px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3); }
+  .cmd-palette .row {
+    display: flex; align-items: center; gap: 12px; padding: 9px 12px;
+    border-radius: 6px; cursor: pointer; font-size: 13px;
+  }
+  .cmd-palette .row.active { background: rgba(77,107,254,.14); }
+  .cmd-palette .row .icon {
+    width: 22px; height: 22px; border-radius: 5px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; flex-shrink: 0;
+  }
+  .cmd-palette .row .icon.skill { background: rgba(199,168,255,.18); color: #C7A8FF; }
+  .cmd-palette .row .icon.cmd   { background: rgba(77,107,254,.18); color: #8AA2FF; }
+  .cmd-palette .row .icon.plug  { background: rgba(20,228,162,.15); color: var(--accent); }
+  .cmd-palette .row .name { color: var(--text-0); font-family: 'JetBrains Mono', monospace; font-weight: 500; font-size: 13px; flex-shrink: 0; }
+  .cmd-palette .row .desc { color: var(--text-2); font-size: 12px; flex: 1; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .cmd-palette .row .src { color: var(--text-3); font-size: 10.5px; font-family: 'JetBrains Mono', monospace; flex-shrink: 0; }
+  .cmd-palette .footer-bar {
+    display: flex; gap: 14px; padding: 10px 18px;
+    background: var(--bg-1); border-top: 1px solid var(--line);
+    color: var(--text-3); font-size: 11px;
+  }
+  .cmd-palette .footer-bar .kbd { padding: 1px 6px; border-radius: 3px; background: var(--bg-3); border: 1px solid var(--line); color: var(--text-1); font-family: 'JetBrains Mono', monospace; }
+
+  /* ===== Plan mode highlight ===== */
+  .mode-badge.plan-active { color: #C7A8FF; background: rgba(199,168,255,.16); border: 1px solid rgba(199,168,255,.35); }
+  .composer-cc.plan-mode .input-box { border-color: rgba(199,168,255,.55); box-shadow: 0 0 0 3px rgba(199,168,255,.12); }
+  .plan-card {
+    margin: 12px 0; padding: 14px 18px; border-radius: 12px;
+    background: linear-gradient(180deg, rgba(199,168,255,.10), rgba(199,168,255,.04));
+    border: 1px solid rgba(199,168,255,.3);
+  }
+  .plan-card .ph { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .plan-card .ph .tag { padding: 2px 8px; background: rgba(199,168,255,.2); color: #DFD0FF; font-size: 10.5px; letter-spacing: 1px; border-radius: 999px; font-weight: 700; }
+  .plan-card .ph .title { color: var(--text-0); font-weight: 600; font-size: 14px; }
+  .plan-card ol { margin: 0; padding-left: 22px; color: var(--text-1); font-size: 13.5px; line-height: 1.7; }
+  .plan-card ol li code { background: var(--bg-3); color: #B4C2FF; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+  .plan-card .actions { display: flex; gap: 8px; margin-top: 12px; }
+  .plan-card .btn-approve { background: #B79BFF; color: #1A0F2E; border: 0; padding: 7px 16px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .plan-card .btn-iterate { background: transparent; color: var(--text-1); border: 1px solid var(--line); padding: 7px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; }
+  .locked-tool {
+    margin: 10px 0; padding: 10px 14px; border-radius: 8px;
+    background: rgba(255,84,112,.06); border: 1px dashed rgba(255,84,112,.35);
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--text-2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .locked-tool .lock-ico { color: var(--error); }
+
+  /* ===== Settings shell (used by Plugins, Settings, MCP screens) ===== */
+  .settings-shell {
+    display: grid; grid-template-columns: 220px 1fr;
+    min-height: 620px; background: var(--bg-1);
+  }
+  .set-nav { background: var(--bg-0); border-right: 1px solid var(--line); padding: 18px 10px; }
+  .set-nav .title { font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--text-3); padding: 6px 10px 10px; font-weight: 700; }
+  .set-nav .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 7px 10px; border-radius: 6px; color: var(--text-1); font-size: 13px; cursor: pointer;
+  }
+  .set-nav .nav-item.active { background: rgba(77,107,254,.12); color: #B4C2FF; }
+  .set-nav .nav-item .ico { width: 16px; color: var(--text-3); font-size: 13px; text-align: center; }
+  .set-nav .nav-item.active .ico { color: var(--brand); }
+  .set-nav .nav-item .num { margin-left: auto; color: var(--text-3); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+
+  .set-main { padding: 24px 32px; overflow: hidden; }
+  .set-main h3 { margin: 0 0 4px; color: var(--text-0); font-size: 20px; font-weight: 700; }
+  .set-main .lead { color: var(--text-2); font-size: 13px; margin: 0 0 22px; }
+
+  /* Tab strip */
+  .tab-strip { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .tab-strip .tab {
+    padding: 10px 14px 12px; color: var(--text-2); font-size: 13px; font-weight: 500;
+    cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .tab-strip .tab.active { color: var(--text-0); border-bottom-color: var(--brand); }
+  .tab-strip .tab .count { color: var(--text-3); font-size: 11px; margin-left: 4px; font-family: 'JetBrains Mono', monospace; }
+
+  /* Plugin / MCP card */
+  .ent-card {
+    border: 1px solid var(--line); background: var(--bg-2);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 16px;
+  }
+  .ent-card .ec-ico {
+    width: 40px; height: 40px; border-radius: 9px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--bg-3); color: var(--text-1); font-size: 16px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .ent-card .ec-ico.green { background: rgba(20,228,162,.15); color: var(--accent); }
+  .ent-card .ec-ico.purple { background: rgba(199,168,255,.15); color: #C7A8FF; }
+  .ent-card .ec-ico.brand { background: rgba(77,107,254,.18); color: #8AA2FF; }
+  .ent-card .ec-body { flex: 1; min-width: 0; }
+  .ent-card .ec-title { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+  .ent-card .ec-title .name { color: var(--text-0); font-weight: 600; font-size: 14px; font-family: 'JetBrains Mono', monospace; }
+  .ent-card .ec-title .ver { color: var(--text-3); font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+  .ent-card .ec-title .author { color: var(--text-3); font-size: 11px; }
+  .ent-card .ec-desc { color: var(--text-2); font-size: 12.5px; margin-bottom: 6px; }
+  .ent-card .ec-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+  .ent-card .ec-tags .tag {
+    font-size: 10.5px; padding: 2px 7px; border-radius: 4px;
+    background: var(--bg-3); color: var(--text-1); font-family: 'JetBrains Mono', monospace;
+  }
+  .ent-card .ec-tags .tag.skill { color: #C7A8FF; }
+  .ent-card .ec-tags .tag.cmd { color: #8AA2FF; }
+  .ent-card .ec-tags .tag.mcp { color: var(--accent); }
+  .ent-card .ec-action { flex-shrink: 0; }
+
+  /* Toggle switch */
+  .switch { width: 36px; height: 20px; border-radius: 999px; background: var(--bg-3); position: relative; cursor: pointer; transition: 0.2s; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--text-2); transition: 0.2s; }
+  .switch.on { background: var(--brand); }
+  .switch.on::after { left: 18px; background: #fff; }
+
+  /* Permission rule rows */
+  .rule-row {
+    display: grid; grid-template-columns: 80px 1fr 30px;
+    gap: 10px; align-items: center; padding: 8px 10px;
+    background: var(--bg-2); border: 1px solid var(--line-soft);
+    border-radius: 6px; margin-bottom: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+  }
+  .rule-row .verdict { padding: 2px 8px; border-radius: 4px; font-size: 10.5px; font-weight: 700; text-align: center; font-family: 'Inter', sans-serif; letter-spacing: 0.5px; }
+  .rule-row .verdict.allow { background: rgba(20,228,162,.15); color: var(--accent); }
+  .rule-row .verdict.ask   { background: rgba(255,176,32,.15); color: #FFB020; }
+  .rule-row .verdict.deny  { background: rgba(255,84,112,.15); color: var(--error); }
+  .rule-row .pattern { color: var(--text-0); }
+  .rule-row .x { color: var(--text-3); cursor: pointer; text-align: center; }
+
+  /* JSON preview */
+  .json-preview {
+    background: var(--bg-0); border: 1px solid var(--line-soft);
+    border-radius: 8px; padding: 14px 18px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.7;
+    overflow: hidden;
+  }
+  .json-preview .jk { color: #8AA2FF; }
+  .json-preview .js { color: #B6F4DC; }
+  .json-preview .jn { color: #FFB020; }
+  .json-preview .jc { color: var(--text-3); font-style: italic; }
+  .json-preview .jp { color: var(--text-2); }
+
+  @media (max-width: 980px) {
+    .four-col { grid-template-columns: 1fr; }
+    .file-panel { display: none; }
+    .cmd-palette { width: 95%; }
+    .settings-shell { grid-template-columns: 1fr; }
+    .set-nav { display: none; }
+    .palette { grid-template-columns: repeat(3, 1fr); }
+    .desktop-shell { grid-template-columns: 1fr; }
+    .sidebar, .inspector { display: none; }
+    .row-2, .type-grid, .components { grid-template-columns: 1fr; }
+    .flow { grid-template-columns: 1fr 1fr; }
+    header.hero h1 { font-size: 38px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="logo">
+    <span class="mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg></span>
+    <span>DeepCode · Visual Design v0.4</span>
+  </div>
+  <h1>Claude Code 的形，DeepSeek 的魂。</h1>
+  <p class="tagline">面向开发者的本地 AI 编程代理 — 整体复刻 Claude Code 全部能力，底层全面切换到 DeepSeek。</p>
+  <p class="sub">两种形态 · 一个内核：<code>npm i -g deepcode-cli</code> CLI / <code>DeepCode.dmg</code> Mac 客户端</p>
+</header>
+
+<div class="page">
+
+<!-- ========== 1. 设计原则 ========== -->
+<section>
+  <span class="label">01 · 设计原则</span>
+  <h2>克制、对齐、可读</h2>
+  <p class="lead">DeepCode 不是一个"AI 工具"，它是一个长期陪伴写代码的环境。视觉上向 Claude Code 的克制风格看齐，色彩仅在"AI 思考 / 工具执行 / 状态变化"这几个关键瞬间发声。</p>
+  <div class="row-2">
+    <div class="panel">
+      <h4>原则 A · 对齐熟悉感</h4>
+      <p style="margin:0;color:var(--l-text-1);font-size:14px;line-height:1.6">
+        Claude Code 用户切到 DeepCode，<b>不应有任何重新学习成本</b>。slash 命令、工具卡片、approval 流程、会话侧栏的布局位置、键盘快捷键，全部保持一致。差异仅体现在：品牌色（蓝）、模型名（DeepSeek）、文件名（<code class="mono">DEEPCODE.md</code>）。
+      </p>
+    </div>
+    <div class="panel">
+      <h4>原则 B · 终端美学优先</h4>
+      <p style="margin:0;color:var(--l-text-1);font-size:14px;line-height:1.6">
+        Mac 客户端本质是"<b>一个长得好看的终端 + 编辑器</b>"，而不是聊天 App。等宽字体、行号、ANSI 色、diff 视图是一等公民；emoji 和插画退到零；动效只在数据真正变化时出现。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 2. 品牌色板 ========== -->
+<section>
+  <span class="label">02 · 色板</span>
+  <h2>主色取自 DeepSeek 品牌蓝</h2>
+  <p class="lead">蓝是身份色，仅用于 logo、活跃态、AI 输出的边缘点缀。绿（mint）用于"运行中 / 工具成功"，红用于报错，黄用于审批待确认。中性灰阶占据 90% 的画面。</p>
+  <div class="palette">
+    <div class="swatch"><div class="chip" style="background:#4D6BFE"></div><div class="meta"><b>Brand</b><span class="mono">#4D6BFE</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#2F49D1"></div><div class="meta"><b>Brand Deep</b><span class="mono">#2F49D1</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#E8EDFF"></div><div class="meta"><b>Brand Soft</b><span class="mono">#E8EDFF</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#14E4A2"></div><div class="meta"><b>Accent / OK</b><span class="mono">#14E4A2</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#FFB020"></div><div class="meta"><b>Warn</b><span class="mono">#FFB020</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#FF5470"></div><div class="meta"><b>Error</b><span class="mono">#FF5470</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#0B0D12"></div><div class="meta"><b>BG 0 (深)</b><span class="mono">#0B0D12</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#11141B"></div><div class="meta"><b>BG 1</b><span class="mono">#11141B</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#171B24"></div><div class="meta"><b>BG 2</b><span class="mono">#171B24</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#262C3A"></div><div class="meta"><b>Line</b><span class="mono">#262C3A</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#F2F4F8;border:1px solid #E5E8EE"></div><div class="meta"><b>Text 0 (浅)</b><span class="mono">#F2F4F8</span></div></div>
+    <div class="swatch"><div class="chip" style="background:#8A92A4"></div><div class="meta"><b>Text 2</b><span class="mono">#8A92A4</span></div></div>
+  </div>
+</section>
+
+<!-- ========== 3. 字体 ========== -->
+<section>
+  <span class="label">03 · 字体</span>
+  <h2>Inter + JetBrains Mono</h2>
+  <p class="lead">UI 文本一律 Inter（中文回落到苹方 / Source Han Sans）。代码、终端、工具卡片一律 JetBrains Mono — 它对 <code>=&gt;</code> <code>!=</code> <code>-&gt;</code> 等连字处理在 Claude Code 之上有更好的可读性。</p>
+  <div class="type-grid">
+    <div class="type-card">
+      <div class="name">UI · Inter</div>
+      <div class="demo">写代码这件事，本来就该是顺手的。</div>
+      <div class="scale">
+        <span>32 / 700</span><span>22 / 600</span><span>15 / 400</span><span>13 / 500</span><span>11 / 700 / 1.5px</span>
+      </div>
+    </div>
+    <div class="type-card">
+      <div class="name">Mono · JetBrains Mono</div>
+      <div class="demo mono">const fix = await edit({...})</div>
+      <div class="scale">
+        <span>14 / 500</span><span>13 / 400</span><span>12 / 500</span><span>11 / 600</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 4. 组件 ========== -->
+<section>
+  <span class="label">04 · 组件库</span>
+  <h2>按钮、输入框、状态徽章</h2>
+  <p class="lead">按钮只有四种角色：主操作 / 次要 / 幽灵 / 危险。徽章用于会话状态、模型标记、token 用量提示。</p>
+  <div class="components">
+    <div class="panel">
+      <h4>按钮 · Buttons</h4>
+      <div class="btn-row">
+        <button class="btn btn-primary">Send (⌘+↵)</button>
+        <button class="btn btn-secondary">Cancel</button>
+        <button class="btn btn-ghost">/help</button>
+        <button class="btn btn-danger">Stop agent</button>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" disabled style="opacity:.5;cursor:not-allowed">Validating…</button>
+        <button class="btn btn-secondary"><span style="color:var(--brand-deep);font-weight:600">⌘K</span>&nbsp;&nbsp;Command palette</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>输入 · Inputs</h4>
+      <div style="margin-bottom:12px"><input class="input" value="sk-d1********************************a8c2" /></div>
+      <div style="margin-bottom:12px"><input class="input" placeholder="https://api.deepseek.com/v1 (默认)" /></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <span class="badge badge-ok">● connected</span>
+        <span class="badge badge-info">deepseek-chat</span>
+        <span class="badge badge-warn">⚠ approval: ask</span>
+        <span class="badge badge-info">128k context · 12.4k used</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 5. 用户旅程 ========== -->
+<section>
+  <span class="label">05 · 用户旅程</span>
+  <h2>从下载到第一次让它改文件，≤ 90 秒</h2>
+  <p class="lead">这是衡量整个产品体验的核心 metric。视觉与交互的每一个决策都为这条线服务。</p>
+  <div class="flow">
+    <div class="node">
+      <div class="step-num">01</div>
+      <h5>获取</h5>
+      <p>CLI: <code>npm i -g @oratis/deepcode</code><br>GUI: 拖入 Applications</p>
+    </div>
+    <div class="node">
+      <div class="step-num">02</div>
+      <h5>首启 Onboarding</h5>
+      <p>3 步引导：介绍 → 粘贴 DeepSeek API Key → 选择默认模型</p>
+    </div>
+    <div class="node">
+      <div class="step-num">03</div>
+      <h5>验证 + 落盘</h5>
+      <p>调 <code class="mono">/user/balance</code> 验证；写入 Keychain（GUI）或 chmod 600 文件（CLI）</p>
+    </div>
+    <div class="node">
+      <div class="step-num">04</div>
+      <h5>开始对话</h5>
+      <p>进入项目目录，<code>"修一下 src/auth.ts 的 bug"</code> — 工具流开始执行</p>
+    </div>
+  </div>
+</section>
+
+<!-- ========== 6. Onboarding 高保真 ========== -->
+<section>
+  <span class="label">06 · 屏幕 #1 — Onboarding</span>
+  <h2>首次启动 · 引导填入 DeepSeek API Key</h2>
+  <p class="lead">这是新用户对 DeepCode 的第一印象。三步式 stepper，每步只问一件事，输入框 focus 状态有蓝色光晕，API key 校验通过会出现绿色 pill 提示。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> · Welcome</span>
+    </div>
+    <div class="onboarding-shell">
+      <div class="onboarding-card">
+        <div class="mark-big"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg></div>
+        <h3>Connect to DeepSeek</h3>
+        <p class="sub">DeepCode 调用 DeepSeek 的 API 帮你写代码。这把 key 只保存在你这台电脑的 Keychain 里，绝不上传。</p>
+        <div class="stepper">
+          <div class="step done"></div>
+          <div class="step active"></div>
+          <div class="step"></div>
+        </div>
+        <div class="field">
+          <label>DeepSeek API Key</label>
+          <input type="password" value="sk-d1f6************************a8c2" />
+          <div class="help">没有 key？前往 <a href="#">platform.deepseek.com</a> 注册并创建 →</div>
+          <div class="validation-pill">✓ 已验证 · 余额 ¥ 31.42</div>
+        </div>
+        <div class="field">
+          <label>Base URL <span style="color:var(--text-3);font-weight:400">(可选 · 用于代理或国内中转)</span></label>
+          <input value="https://api.deepseek.com/v1" />
+        </div>
+        <div class="footer">
+          <span class="skip">⌘+, 之后还能在设置里改</span>
+          <button class="next">Continue →</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：1) 模糊背景的径向蓝光，是品牌色唯一一次"放声"；2) Key 输入框以 mono 字体显示，自动打码（只露前 4 / 后 4）；3) 验证通过的 pill 出现在输入框紧下方，给即时反馈，不让用户怀疑"它有没有真的存上"。</p>
+</section>
+
+<!-- ========== 7. CLI 高保真 ========== -->
+<section>
+  <span class="label">07 · 屏幕 #2 — CLI REPL</span>
+  <h2>终端形态 · 与 Claude Code 像素级对齐</h2>
+  <p class="lead">REPL 是 DeepCode 的"原生形态"。所有 Mac 客户端能做的事，CLI 都做得到 — 因为它们共用 <code>@deepcode/core</code>。下面是一次典型的"修 bug"会话。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>~/projects/api-server</b> — deepcode — 120×34</span>
+    </div>
+    <div class="cli">
+<span class="dim">╭──────────────────────────────────────────────────────────────╮</span>
+<span class="dim">│</span>  <span class="brand">▎</span> <b>DeepCode</b> <span class="dim">v0.1.0</span>  <span class="dim">·</span>  <span class="ok">deepseek-chat</span>  <span class="dim">·</span>  <span class="dim2">approval: ask</span>  <span class="dim">│</span>
+<span class="dim">╰──────────────────────────────────────────────────────────────╯</span>
+
+<span class="dim2">Working in</span> <span class="brand">~/projects/api-server</span>  <span class="dim">·</span>  <span class="dim2">14 files modified since last session</span>
+<span class="dim2">Type</span> <span class="keycap">/help</span> <span class="dim2">for commands,</span> <span class="keycap">⌃C</span> <span class="dim2">twice to exit.</span>
+
+<span class="prompt">›</span> <span class="user">用户登录在 dev 环境一直报 401，src/auth.ts 第 88 行附近，帮我查并修掉。</span>
+
+<span class="tool">●</span> <span class="dim2">Read</span> <span class="dim">src/auth.ts</span>  <span class="ok">✓</span> <span class="dim">324 lines</span>
+<span class="tool">●</span> <span class="dim2">Grep</span> <span class="dim">"verifyToken" --type ts</span>  <span class="ok">✓</span> <span class="dim">3 hits in 2 files</span>
+<span class="tool">●</span> <span class="dim2">Read</span> <span class="dim">src/auth.test.ts</span>  <span class="ok">✓</span> <span class="dim">82 lines</span>
+
+<span class="dim2">看到了，</span><span class="user">第 88 行的</span> <span class="dim">verifyToken</span> <span class="user">用了 jwt.verify 的同步签名但传了 async 回调，导致 dev 配置下 secret 解析早于 token 拿到，于是 401。两处可改：</span>
+<span class="user">  1) 改回 sync 写法去掉回调（推荐，和 test 里的期望一致）</span>
+<span class="user">  2) 改成 await + 整段 async </span>
+<span class="user">我用方案 1。</span>
+
+<span class="tool">●</span> <span class="dim2">Edit</span> <span class="dim">src/auth.ts</span>  <span class="warn">⏸ 需要批准</span>
+   <span class="dim">─────────────────────────────────────────────</span>
+   <span class="dim">  86 │</span> export function verifyToken(token: string) {
+   <span class="err">- 87 │</span><span class="err">   return jwt.verify(token, getSecret(), (err, decoded) =&gt; {</span>
+   <span class="err">- 88 │</span><span class="err">     if (err) throw new AuthError(401, "invalid token");</span>
+   <span class="err">- 89 │</span><span class="err">     return decoded;</span>
+   <span class="err">- 90 │</span><span class="err">   });</span>
+   <span class="ok">+ 87 │</span><span class="ok">   try { return jwt.verify(token, getSecret()); }</span>
+   <span class="ok">+ 88 │</span><span class="ok">   catch { throw new AuthError(401, "invalid token"); }</span>
+   <span class="dim">  91 │</span> }
+   <span class="dim">─────────────────────────────────────────────</span>
+   <span class="keycap">y</span> <span class="dim2">允许</span>   <span class="keycap">n</span> <span class="dim2">拒绝</span>   <span class="keycap">a</span> <span class="dim2">本会话内对此工具自动允许</span><span class="cursor"></span>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 顶部 banner 一行汇总"身份 / 模型 / approval 档位"，启动后无需再去翻命令；② 工具调用一律 <code>●</code> bullet 起首，工具名 dim、文件名亮 — 视线先扫工具名再看目标；③ diff 用红绿前缀符号，<b>不</b>用背景色块（终端兼容更好）；④ 审批提示在末尾用 keycap 风格强调 y/n/a 三键，新用户也能立刻反应。</p>
+</section>
+
+<!-- ========== 8. Mac 客户端高保真 ========== -->
+<section>
+  <span class="label">08 · 屏幕 #3 — Mac 客户端主视图</span>
+  <h2>三栏布局 · 会话 / 对话 / 检查面板</h2>
+  <p class="lead">左侧是会话列表（含状态点）；中间是对话流，工具调用是"卡片"而不是"折叠块"，diff 嵌入内联，让代码变更可读性最大化；右侧是当次任务的"仪表盘"：模型、token、todos、当前文件。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — api-server</span>
+    </div>
+    <div class="desktop-shell">
+      <!-- Sidebar -->
+      <aside class="sidebar">
+        <div class="brand-row"><span class="mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg></span><span class="name">DeepCode</span></div>
+        <div class="new-btn">+ New session  <span style="color:var(--text-3);float:right">⌘N</span></div>
+
+        <div class="section-title">Today</div>
+        <div class="item active"><span class="dot"></span><span>Fix auth 401 bug</span><span class="meta">now</span></div>
+        <div class="item"><span class="dot"></span><span>Refactor user model</span><span class="meta">2h</span></div>
+
+        <div class="section-title">Yesterday</div>
+        <div class="item"><span class="dot"></span><span>Add rate limiter</span><span class="meta">·</span></div>
+        <div class="item"><span class="dot"></span><span>Write README for /v2</span><span class="meta">·</span></div>
+        <div class="item"><span class="dot"></span><span>Migrate to drizzle</span><span class="meta">·</span></div>
+
+        <div class="section-title">Earlier</div>
+        <div class="item"><span class="dot"></span><span>Setup CI pipeline</span><span class="meta">·</span></div>
+        <div class="item"><span class="dot"></span><span>Bootstrap project</span><span class="meta">·</span></div>
+      </aside>
+
+      <!-- Main -->
+      <main class="chat-main">
+        <div class="chat-header">
+          <span class="crumb"><b>api-server</b> · main · 3 modified</span>
+          <div class="right">
+            <span class="pill"><span class="dot"></span>connected</span>
+            <span class="pill">deepseek-chat</span>
+            <span class="pill">approval: ask</span>
+          </div>
+        </div>
+        <div class="chat-stream">
+          <!-- user -->
+          <div class="msg user">
+            <div class="avatar">YO</div>
+            <div class="body">
+              <div class="author">You · 16:42</div>
+              <div class="content">用户登录在 dev 环境一直报 401，<code>src/auth.ts</code> 第 88 行附近，帮我查并修掉。</div>
+            </div>
+          </div>
+          <!-- assistant -->
+          <div class="msg assistant">
+            <div class="avatar">DC</div>
+            <div class="body">
+              <div class="author">DeepCode · deepseek-chat</div>
+              <div class="content">
+                收到。先把 <code>auth.ts</code> 和它的测试读出来，确认调用形态后再动刀。
+                <div class="tool-card">
+                  <div class="tc-head">
+                    <span class="name">▸ Read</span>
+                    <span style="color:var(--text-2)">src/auth.ts</span>
+                    <span class="badge badge-ok" style="margin-left:auto">✓ 324 lines · 4ms</span>
+                  </div>
+                </div>
+                <div class="tool-card">
+                  <div class="tc-head">
+                    <span class="name">▸ Grep</span>
+                    <span style="color:var(--text-2)">"verifyToken" --type ts</span>
+                    <span class="badge badge-ok" style="margin-left:auto">✓ 3 hits</span>
+                  </div>
+                  <div class="tc-body" style="color:var(--text-2)">src/auth.ts:88
+src/auth.ts:142
+src/middleware/auth-guard.ts:23</div>
+                </div>
+                <div style="margin:8px 0 4px">问题出在 88 行 — <code>jwt.verify</code> 用了同步签名却传了 async 回调，dev 下 secret 解析早于 token 到达。我改回同步写法，对齐 test 里的期望：</div>
+                <div class="tool-card">
+                  <div class="tc-head">
+                    <span class="name">▸ Edit</span>
+                    <span style="color:var(--text-2)">src/auth.ts</span>
+                    <span class="badge badge-warn" style="margin-left:auto">⏸ pending approval</span>
+                  </div>
+                  <div class="tc-body"><span style="color:var(--text-3)">  86</span>  export function verifyToken(token: string) {
+<span class="diff-del">- 87    return jwt.verify(token, getSecret(), (err, decoded) =&gt; {</span>
+<span class="diff-del">- 88      if (err) throw new AuthError(401, "invalid token");</span>
+<span class="diff-del">- 89      return decoded;</span>
+<span class="diff-del">- 90    });</span>
+<span class="diff-add">+ 87    try { return jwt.verify(token, getSecret()); }</span>
+<span class="diff-add">+ 88    catch { throw new AuthError(401, "invalid token"); }</span>
+<span style="color:var(--text-3)">  91</span>  }</div>
+                </div>
+                <div style="margin-top:10px;display:flex;gap:8px">
+                  <button class="btn btn-primary" style="font-size:12.5px;padding:7px 14px">Approve (↵)</button>
+                  <button class="btn btn-secondary" style="font-size:12.5px;padding:7px 14px;background:var(--bg-2);color:var(--text-0);border-color:var(--line)">Reject (esc)</button>
+                  <button class="btn btn-ghost" style="font-size:12.5px;padding:7px 14px;color:var(--text-2)">Always allow Edit in this session</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-cc">
+          <div class="input-box">
+            <div class="placeholder">问点什么… &nbsp;<b>@</b> 引用文件 &nbsp;·&nbsp; <b>/</b> 触发命令 &nbsp;·&nbsp; <b>#</b> 写入 DEEPCODE.md</div>
+          </div>
+          <div class="toolbar">
+            <button class="icon-btn plus" title="附件 / 命令 / 插件">+</button>
+            <div class="mic-group">
+              <button class="icon-btn" title="语音输入">●</button>
+              <div class="divider"></div>
+              <span class="caret">⌄</span>
+            </div>
+            <span class="mode-badge bypass">⚡ Bypass permissions</span>
+            <span class="spacer"></span>
+            <div class="model-picker">
+              <span class="dot"></span>
+              <span class="name">DeepSeek-R1</span>
+              <span class="meta">128k · High</span>
+              <span style="color:var(--text-3);font-size:11px">⌄</span>
+            </div>
+            <button class="send-btn ready" title="发送 ⌘↵">↵</button>
+          </div>
+          <div class="ctx-bar">
+            <span>12,438 / 128,000</span>
+            <div class="ctx-progress"><div class="fill" style="width:9.7%"></div></div>
+            <span>9.7%</span>
+            <span style="color:var(--text-2)">¥ 0.018 / turn</span>
+            <span class="compacted">⚡ compacted 3.4k → 1.1k</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- Inspector (collapsed by default · click ‹ or ⌘\ to expand) -->
+      <aside class="inspector rail">
+        <button class="rail-btn expand" title="Expand inspector  ⌘\">‹</button>
+        <div class="rail-divider"></div>
+        <button class="rail-btn" title="Plan · 2 of 5 done">
+          ▤<span class="dot-badge">3</span>
+        </button>
+        <button class="rail-btn" title="Context: 12.4k / 128k (9.7%)" style="color:var(--accent);border-color:rgba(20,228,162,.25)">◐</button>
+        <button class="rail-btn" title="Recent files">📁</button>
+        <button class="rail-btn" title="Session info">ⓘ</button>
+        <span class="rail-spacer"></span>
+        <button class="rail-btn" title="Settings">⚙</button>
+      </aside>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 左栏会话按时间分桶，命中态用品牌色低饱和背景 + 1px 边框，避免大色块；② 工具调用卡片头部明确"动作 · 目标 · 状态徽章"三段式，状态徽章决定整个卡片是否要"声张"；③ 审批按钮就放在 diff 紧下方，<b>不</b>放在屏幕底部 — 让审批与上下文不分离；④ <b>右侧 inspector 默认收起为 48px 窄条</b>，仅以小图标暗示其中信息（▤ Plan 含未完成数 · ◐ 上下文用量 · 📁 最近文件 · ⓘ 会话信息），点 ‹ 或按 <code>⌘\</code> 展开 320px 完整面板；这样默认状态把屏幕大部分留给对话本身。</p>
+</section>
+
+<!-- ========== 9. Composer + Menu ========== -->
+<section>
+  <span class="label">09 · 屏幕 #4 — Composer 全特性</span>
+  <h2>输入区 · 像素级对齐 Claude Code</h2>
+  <p class="lead">底部 composer 是 DeepCode 高频交互入口。这一屏展示"<code>+</code> 菜单展开 / mode 徽章 / 模型+思考深度 / 上下文进度 / 触发符提示"全部就位的状态。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> · composer detail</span>
+    </div>
+    <div style="background:var(--bg-1);padding:60px 24px 0;position:relative;min-height:380px">
+      <!-- floating preview of message area -->
+      <div style="opacity:.4;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text-2);padding:0 8px 40px">
+        <div>&gt; 你已经把 401 修了，再帮我加一个 rate limiter 中间件...</div>
+        <div style="margin-top:8px;color:var(--text-3)">▸ Read src/middleware/auth-guard.ts ✓</div>
+      </div>
+
+      <div class="composer-cc" style="border-top:1px solid var(--line);position:relative;border-radius:0">
+        <!-- + popover -->
+        <div class="plus-popover">
+          <div class="pop-item"><span class="ico">📎</span>Add files or photos<span class="kbd">⌘U</span></div>
+          <div class="pop-item"><span class="ico">📁</span>Add folder</div>
+          <div class="pop-item"><span class="ico">▤</span>Slash commands</div>
+          <div class="pop-item"><span class="ico">⊞</span>Connectors<span class="arrow">›</span></div>
+          <hr/>
+          <div class="pop-item"><span class="ico">⊕</span>Add plugins…</div>
+        </div>
+
+        <div class="input-box">
+          <div class="placeholder">问点什么… &nbsp;<b>@</b> 引用文件 &nbsp;·&nbsp; <b>/</b> 触发命令 &nbsp;·&nbsp; <b>#</b> 写入 DEEPCODE.md</div>
+        </div>
+        <div class="toolbar">
+          <button class="icon-btn plus" style="background:var(--brand);color:#fff;border-color:var(--brand)">+</button>
+          <div class="mic-group">
+            <button class="icon-btn">●</button>
+            <div class="divider"></div>
+            <span class="caret">⌄</span>
+          </div>
+          <span class="mode-badge bypass">⚡ Bypass permissions</span>
+          <span class="spacer"></span>
+          <div class="model-picker">
+            <span class="dot"></span>
+            <span class="name">DeepSeek-R1</span>
+            <span class="meta">128k · High</span>
+            <span style="color:var(--text-3);font-size:11px">⌄</span>
+          </div>
+          <button class="send-btn ready">↵</button>
+        </div>
+        <div class="ctx-bar">
+          <span>12,438 / 128,000</span>
+          <div class="ctx-progress"><div class="fill" style="width:9.7%"></div></div>
+          <span>9.7%</span>
+          <span style="color:var(--text-2)">¥ 0.018 / turn</span>
+          <span class="compacted">⚡ compacted 3.4k → 1.1k</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① <code>+</code> 按钮激活时整体变成品牌蓝，弹层从上方浮出，5 项内容、第 5 项 (<code>Add plugins…</code>) 用分隔线明确"插件"是不同于内置项的扩展通道；② Mode 徽章用 mode 自身的语义色（这里 bypass 用警示橙），点击展开下拉切换；③ 模型选择器把模型名 + 上下文窗口 + 思考深度三段信息在一行内表达完毕，hover 才出下拉，避免噪音；④ 上下文进度条不抢戏地呆在最底部，但 9.7% / ¥ / compacted 三个数字始终在视野里。</p>
+</section>
+
+<!-- ========== 10. 右侧文件面板 ========== -->
+<section>
+  <span class="label">10 · 屏幕 #5 — 右侧文件面板</span>
+  <h2>点开文件 · 对话与代码并存</h2>
+  <p class="lead">点击对话流里任何文件名（如 <code>src/auth.ts</code>），右侧滑出 Monaco 文件面板，<b>挤压</b>原 inspector 而不覆盖。可同时打开多个 tab，可在 Source / Diff / History 三视图间切换，可拖宽 320–800px。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — api-server · src/auth.ts</span>
+    </div>
+    <div class="four-col">
+      <!-- Sidebar (slim) -->
+      <aside class="sidebar">
+        <div class="brand-row"><span class="mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg></span><span class="name">DeepCode</span></div>
+        <div class="section-title">Today</div>
+        <div class="item active"><span class="dot"></span><span>Fix auth 401</span></div>
+        <div class="item"><span class="dot"></span><span>Refactor user</span></div>
+        <div class="section-title">Yesterday</div>
+        <div class="item"><span class="dot"></span><span>Rate limiter</span></div>
+        <div class="item"><span class="dot"></span><span>README /v2</span></div>
+      </aside>
+
+      <!-- Chat column (more breathing room) -->
+      <main class="chat-main">
+        <div class="chat-header" style="flex-direction:column;align-items:stretch;gap:6px;padding-top:10px;padding-bottom:10px">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span class="crumb"><b>api-server</b> · Fix auth 401 bug</span>
+            <div style="margin-left:auto;display:flex;gap:8px;align-items:center">
+              <span class="pill" style="color:#FFB020;border-color:rgba(255,176,32,.3);background:rgba(255,176,32,.06)">⚡ bypass</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;font-size:11px;color:var(--text-3);font-family:'JetBrains Mono',monospace">
+            <span>5 turns · 8 min</span>
+            <span style="color:var(--line)">·</span>
+            <span style="color:var(--accent)">● src/auth.ts modified</span>
+            <span style="margin-left:auto">deepseek-reasoner · High</span>
+          </div>
+        </div>
+        <div class="chat-stream">
+          <div class="msg assistant">
+            <div class="avatar">DC</div>
+            <div class="body">
+              <div class="author">DeepCode</div>
+              <div class="content">
+                补丁已应用到 <code style="cursor:pointer;text-decoration:underline;text-decoration-color:var(--brand);text-underline-offset:3px;white-space:nowrap">src/auth.ts</code> <span style="color:var(--brand);font-size:10px;white-space:nowrap">↗&nbsp;opened</span>，跑了一次测试：
+                <div class="tool-card" style="margin-top:10px">
+                  <div class="tc-head">
+                    <span class="name">▸ Bash</span>
+                    <span style="color:var(--text-2);font-size:11.5px;margin-left:4px">npm test</span>
+                    <span class="badge badge-ok" style="margin-left:auto">✓ 8/8 · 1.2s</span>
+                  </div>
+                </div>
+                <div style="margin-top:10px">同步签名问题在 <code style="white-space:nowrap">auth-guard.ts:23</code> 也有，要一起改吗？</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg user">
+            <div class="avatar">YO</div>
+            <div class="body">
+              <div class="author">You</div>
+              <div class="content">好，一起改。</div>
+            </div>
+          </div>
+
+          <div class="msg assistant">
+            <div class="avatar">DC</div>
+            <div class="body">
+              <div class="author">DeepCode</div>
+              <div class="content">
+                同样的方式应用到 guard：
+                <div class="tool-card" style="margin-top:10px">
+                  <div class="tc-head">
+                    <span class="name">▸ Edit</span>
+                    <span style="color:var(--text-2);font-size:11.5px;margin-left:4px">auth-guard.ts</span>
+                    <span class="badge badge-ok" style="margin-left:auto">✓ +2 / −4</span>
+                  </div>
+                </div>
+                <div class="tool-card" style="margin-top:6px">
+                  <div class="tc-head">
+                    <span class="name">▸ Bash</span>
+                    <span style="color:var(--text-2);font-size:11.5px;margin-left:4px">npm test</span>
+                    <span class="badge badge-ok" style="margin-left:auto">✓ 12/12 · 0.9s</span>
+                  </div>
+                </div>
+                <div style="margin-top:10px">两处都对齐了。要我帮你把这次改动 commit 上去吗？</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-cc">
+          <div class="input-box">
+            <div class="placeholder">回复或继续指令…</div>
+          </div>
+          <div class="toolbar">
+            <button class="icon-btn plus">+</button>
+            <div class="mic-group">
+              <button class="icon-btn">●</button>
+              <div class="divider"></div>
+              <span class="caret">⌄</span>
+            </div>
+            <span class="mode-badge bypass">⚡ Bypass</span>
+            <span class="spacer"></span>
+            <div class="model-picker">
+              <span class="dot"></span>
+              <span class="name">R1</span>
+              <span class="meta">High</span>
+            </div>
+            <button class="send-btn">↵</button>
+          </div>
+          <div class="ctx-bar">
+            <span>14.2k / 128k</span>
+            <div class="ctx-progress"><div class="fill" style="width:11%"></div></div>
+            <span>11%</span>
+          </div>
+        </div>
+      </main>
+
+      <!-- File panel (the main attraction of this screen) -->
+      <section class="file-panel">
+        <div class="fp-tabs">
+          <div class="fp-tab active">
+            <span>src/auth.ts</span>
+            <span class="dirty" title="未保存"></span>
+            <span class="close">×</span>
+          </div>
+          <div class="fp-tab">
+            <span>auth.test.ts</span>
+            <span class="close">×</span>
+          </div>
+          <div class="fp-tab" style="color:var(--text-3);border-right:0">
+            <span>+</span>
+          </div>
+        </div>
+        <div class="fp-viewbar">
+          <div class="seg">
+            <button>Source</button>
+            <button class="active">Diff</button>
+            <button>History</button>
+          </div>
+          <div class="right">
+            <span class="keycap">⌘\</span>
+            <span>切换 split / inline</span>
+          </div>
+        </div>
+        <div class="fp-meta">
+          <span>TypeScript</span>
+          <span style="color:var(--accent)">+2</span>
+          <span style="color:var(--error)">−4</span>
+          <span style="margin-left:auto;color:var(--text-2)">vs. snapshot @ 16:42:18</span>
+        </div>
+        <div class="fp-code">
+          <div class="line"><span class="ln">85</span><span class="code dim"><span class="cmt">// Verifies a JWT and returns the decoded payload.</span></span></div>
+          <div class="line"><span class="ln">86</span><span class="code"><span class="kw">export function</span> <span class="fn">verifyToken</span>(token: <span class="kw">string</span>) {</span></div>
+          <div class="line"><span class="ln del">−87</span><span class="code del">  <span class="kw">return</span> jwt.<span class="fn">verify</span>(token, <span class="fn">getSecret</span>(), (err, decoded) =&gt; {</span></div>
+          <div class="line"><span class="ln del">−88</span><span class="code del">    <span class="kw">if</span> (err) <span class="kw">throw new</span> <span class="fn">AuthError</span>(<span class="num">401</span>, <span class="str">"invalid"</span>);</span></div>
+          <div class="line"><span class="ln del">−89</span><span class="code del">    <span class="kw">return</span> decoded;</span></div>
+          <div class="line"><span class="ln del">−90</span><span class="code del">  });</span></div>
+          <div class="line"><span class="ln add">+87</span><span class="code add">  <span class="kw">try</span> { <span class="kw">return</span> jwt.<span class="fn">verify</span>(token, <span class="fn">getSecret</span>()); }</span></div>
+          <div class="line"><span class="ln add">+88</span><span class="code add">  <span class="kw">catch</span> { <span class="kw">throw new</span> <span class="fn">AuthError</span>(<span class="num">401</span>, <span class="str">"invalid"</span>); }</span></div>
+          <div class="line"><span class="ln">91</span><span class="code">}</span></div>
+          <div class="line"><span class="ln">92</span><span class="code"></span></div>
+          <div class="line"><span class="ln">93</span><span class="code dim"><span class="cmt">// Extract the user id from a verified token.</span></span></div>
+          <div class="line"><span class="ln">94</span><span class="code"><span class="kw">export function</span> <span class="fn">userIdOf</span>(token: <span class="kw">string</span>) {</span></div>
+          <div class="line"><span class="ln">95</span><span class="code">  <span class="kw">const</span> decoded = <span class="fn">verifyToken</span>(token);</span></div>
+          <div class="line"><span class="ln">96</span><span class="code">  <span class="kw">return</span> decoded.sub;</span></div>
+          <div class="line"><span class="ln">97</span><span class="code">}</span></div>
+        </div>
+      </section>
+
+      <!-- Right inspector: collapsed by default (same rail style as Screen #3) -->
+      <aside class="inspector rail">
+        <button class="rail-btn expand" title="Expand inspector  ⌘\">‹</button>
+        <div class="rail-divider"></div>
+        <button class="rail-btn" title="Plan · 3 of 4 done">▤<span class="dot-badge">1</span></button>
+        <button class="rail-btn" title="Context: 14.2k / 128k" style="color:var(--accent);border-color:rgba(20,228,162,.25)">◐</button>
+        <button class="rail-btn" title="Snapshots: 3">⏱</button>
+        <span class="rail-spacer"></span>
+        <button class="rail-btn" title="Settings">⚙</button>
+      </aside>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 整体四区从左到右节奏分明 — 会话栏（窄）→ 对话流（弹性）→ <b>文件面板（主角）</b> → 收起的 inspector 鸢尾条；② 文件 tab 用 mono 字体显示路径，未保存用黄点，点 × 关闭，末尾 <code>+</code> 占位提示"还能再开"；③ 三视图切换器 <code>Source / Diff / History</code> 是 segmented control，当前态用品牌色实底；④ Diff 视图<b>不</b>用大色块铺满整行，仅给 6% 透明度的红绿背景 + 醒目的红绿行号；⑤ 当文件面板打开时，对话流里的文件链接会同时获得 <code>⇗ opened in panel</code> 角标，提醒用户"我已经在右边看着它"；⑥ Snapshots 时间轴现在收纳进 History tab，腾出主屏空间。</p>
+</section>
+
+<!-- ========== 11. 命令面板 (Skills + Slash + Plugin commands) ========== -->
+<section>
+  <span class="label">11 · 屏幕 #6 — 命令面板</span>
+  <h2>一处入口 · skills 与 slash 同台</h2>
+  <p class="lead">按 <code>/</code> 或 <code>⌘K</code> 弹出。集合三类可执行项：<b>Skills</b>（描述触发型 / 也可手动调用）、<b>内置 Slash</b>、<b>Plugin 贡献的命令</b>。每一项都标了来源，避免用户搞不清"这玩意儿是从哪儿来的"。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> · Command Palette</span>
+    </div>
+    <div class="cmd-palette-shell">
+      <div class="cmd-palette">
+        <div class="search">
+          <span class="prefix">/</span>
+          <input value="review" />
+          <span class="hint">⏎ run · esc close</span>
+        </div>
+        <div class="list">
+          <div class="group">Skills · auto-triggered by description</div>
+          <div class="row active">
+            <span class="icon skill">▤</span>
+            <span class="name">code-review</span>
+            <span class="desc">评审当前 diff 的正确性 bug，输出高置信发现</span>
+            <span class="src">built-in</span>
+          </div>
+          <div class="row">
+            <span class="icon skill">▤</span>
+            <span class="name">security-review</span>
+            <span class="desc">安全审查当前分支的待提交改动</span>
+            <span class="src">built-in</span>
+          </div>
+          <div class="row">
+            <span class="icon skill">▤</span>
+            <span class="name">verify</span>
+            <span class="desc">跑应用确认改动真的工作 — 不只是测试通过</span>
+            <span class="src">built-in</span>
+          </div>
+
+          <div class="group">Slash commands</div>
+          <div class="row">
+            <span class="icon cmd">/</span>
+            <span class="name">/review</span>
+            <span class="desc">评审 PR（基于 gh CLI 拿 diff）</span>
+            <span class="src">built-in</span>
+          </div>
+          <div class="row">
+            <span class="icon cmd">/</span>
+            <span class="name">/compact</span>
+            <span class="desc">手动压缩上下文</span>
+            <span class="src">built-in</span>
+          </div>
+          <div class="row">
+            <span class="icon cmd">/</span>
+            <span class="name">/mode plan</span>
+            <span class="desc">切换到只读规划模式</span>
+            <span class="src">built-in</span>
+          </div>
+
+          <div class="group">From plugins</div>
+          <div class="row">
+            <span class="icon plug">⊞</span>
+            <span class="name">/sql</span>
+            <span class="desc">解释当前 SQL 查询的执行计划</span>
+            <span class="src">deepcode-plugin-data-tools</span>
+          </div>
+          <div class="row">
+            <span class="icon plug">⊞</span>
+            <span class="name">/tw-extract</span>
+            <span class="desc">从 React 组件抽取 tailwind 类</span>
+            <span class="src">deepcode-plugin-tailwind</span>
+          </div>
+        </div>
+        <div class="footer-bar">
+          <span><span class="kbd">↑↓</span> 移动</span>
+          <span><span class="kbd">⏎</span> 执行</span>
+          <span><span class="kbd">⇥</span> 切换"显示来源"</span>
+          <span style="margin-left:auto"><span class="kbd">⌘N</span> 新建 skill</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① Skills 用 <span style="color:#C7A8FF">紫</span>、Slash 用 <span style="color:#8AA2FF">蓝</span>、Plugin 用 <span style="color:#14E4A2">绿</span>，三色明确区分来源；② 输入框的 <code>/</code> 前缀是品牌色实色提示用户身处命令模式；③ "From plugins" 分组让用户清楚哪些命令是装的插件贡献的、随时可禁用；④ 末尾的 footer 把核心键位摊在视野里，新人也能立刻上手。</p>
+</section>
+
+<!-- ========== 12. Plan mode 状态 ========== -->
+<section>
+  <span class="label">12 · 屏幕 #7 — Plan mode 状态</span>
+  <h2>只读规划 · 写工具被锁、计划等批准</h2>
+  <p class="lead">进入 plan mode 后整个 UI 进入"只读思考"状态：composer 紫色高亮、composer 里 mode 徽章变紫色、写类工具调用被自动 deny 并以虚框显示、agent 必须输出 Plan Card 等用户 <code>Approve</code> 才能继续。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — api-server · plan mode</span>
+    </div>
+    <div class="desktop-shell">
+      <aside class="sidebar">
+        <div class="brand-row"><span class="mark"><svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg></span><span class="name">DeepCode</span></div>
+        <div class="section-title">Active</div>
+        <div class="item active"><span class="dot"></span><span>Migrate to drizzle</span><span class="meta">plan</span></div>
+        <div class="section-title">Today</div>
+        <div class="item"><span class="dot"></span><span>Fix auth 401</span></div>
+      </aside>
+
+      <main class="chat-main">
+        <div class="chat-header">
+          <span class="crumb"><b>api-server</b> · 把 prisma 迁移到 drizzle</span>
+          <div class="right">
+            <span class="pill" style="color:#C7A8FF;border-color:rgba(199,168,255,.4);background:rgba(199,168,255,.08)">▤ plan mode</span>
+          </div>
+        </div>
+        <div class="chat-stream">
+          <div class="msg user">
+            <div class="avatar">YO</div>
+            <div class="body">
+              <div class="author">You</div>
+              <div class="content">把 prisma 完全迁到 drizzle，先给计划。</div>
+            </div>
+          </div>
+          <div class="msg assistant">
+            <div class="avatar">DC</div>
+            <div class="body">
+              <div class="author">DeepCode · plan mode</div>
+              <div class="content">
+                先扫一遍 prisma 的用法面：
+                <div class="tool-card" style="margin-top:8px">
+                  <div class="tc-head"><span class="name">▸ Grep</span><span style="color:var(--text-2);font-size:11.5px">"prisma" --type ts</span><span class="badge badge-ok" style="margin-left:auto">✓ 41 hits in 18 files</span></div>
+                </div>
+                <div class="tool-card">
+                  <div class="tc-head"><span class="name">▸ Read</span><span style="color:var(--text-2);font-size:11.5px">prisma/schema.prisma</span><span class="badge badge-ok" style="margin-left:auto">✓ 184 lines</span></div>
+                </div>
+                <div class="locked-tool">
+                  <span class="lock-ico">🔒</span>
+                  <span>▸ Edit · src/db/client.ts &nbsp;—&nbsp; <b>被 plan mode 阻止</b>（仅记录意图，等批准后执行）</span>
+                </div>
+                <div class="plan-card">
+                  <div class="ph">
+                    <span class="tag">PLAN</span>
+                    <span class="title">prisma → drizzle 迁移</span>
+                  </div>
+                  <ol>
+                    <li>新增 <code>src/db/schema.ts</code> — 把 schema.prisma 的 6 个 model 翻译成 drizzle DSL</li>
+                    <li>新增 <code>src/db/client.ts</code> — postgres-js + drizzle ORM 客户端单例</li>
+                    <li>逐文件替换 prisma 调用（18 处）→ drizzle 等价；先 service 层，再 controller</li>
+                    <li>把 <code>prisma migrate</code> 替换为 <code>drizzle-kit generate</code>，写一份迁移说明</li>
+                    <li>删除 <code>prisma/</code>、<code>node_modules/.prisma</code>，更新 package.json</li>
+                    <li>跑测试 + 启动 dev server 跑两条 happy path 验证</li>
+                  </ol>
+                  <div style="font-size:11px;color:var(--text-3);margin-top:10px;font-family:'JetBrains Mono',monospace">估算：~6 文件新增 · ~18 文件改动 · ~120 行 LOC delta</div>
+                  <div class="actions">
+                    <button class="btn-approve">✓ Approve & Execute</button>
+                    <button class="btn-iterate">↺ Iterate plan</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="composer-cc plan-mode">
+          <div class="input-box">
+            <div class="placeholder">追问 / 调整计划… &nbsp;<span style="color:var(--text-3);font-size:11px">(plan mode 下写工具不会执行)</span></div>
+          </div>
+          <div class="toolbar">
+            <button class="icon-btn plus">+</button>
+            <div class="mic-group"><button class="icon-btn">●</button><div class="divider"></div><span class="caret">⌄</span></div>
+            <span class="mode-badge plan-active">▤ plan mode</span>
+            <span class="spacer"></span>
+            <div class="model-picker"><span class="dot"></span><span class="name">DeepSeek-R1</span><span class="meta">High</span></div>
+            <button class="send-btn ready" style="background:#B79BFF;border-color:#B79BFF">↵</button>
+          </div>
+        </div>
+      </main>
+
+      <aside class="inspector rail">
+        <button class="rail-btn expand" title="Expand">‹</button>
+        <div class="rail-divider"></div>
+        <button class="rail-btn" title="Plan · drafting">▤<span class="dot-badge">6</span></button>
+        <button class="rail-btn" title="Context 18.2k">◐</button>
+        <button class="rail-btn">📁</button>
+        <span class="rail-spacer"></span>
+        <button class="rail-btn">⚙</button>
+      </aside>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① <b>紫色</b>是 plan mode 的专属语义色，从顶 pill / mode badge / composer 边框 / Plan Card / Approve 按钮一脉相承；② 被阻止的写工具不是隐藏，而是<b>显式</b>用红虚框 + 🔒 标识，让用户清楚 agent 想做但没做；③ Plan Card 把"计划本身"做成独立卡片样式，与对话内容明确分层，<b>Approve & Execute</b> 是承诺式按钮；④ 计划下方的 LOC delta 估算让用户对工作量有量化预期。</p>
+</section>
+
+<!-- ========== 13. Plugins 管理 ========== -->
+<section>
+  <span class="label">13 · 屏幕 #8 — Plugins 管理</span>
+  <h2>设置 → Plugins · 一处管装好的能力</h2>
+  <p class="lead">三个 tab：<b>Installed</b>（已装）/ <b>Marketplace</b>（注册表浏览，v1.1+）/ <b>Develop</b>（本地路径开发模式）。每个插件卡片显示它贡献了哪些能力（skills / commands / hooks / MCP），开关切换启用。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — Settings · Plugins</span>
+    </div>
+    <div class="settings-shell">
+      <nav class="set-nav">
+        <div class="title">Settings</div>
+        <div class="nav-item"><span class="ico">⚙</span><span>General</span></div>
+        <div class="nav-item"><span class="ico">◉</span><span>Models</span></div>
+        <div class="nav-item"><span class="ico">⊟</span><span>Permissions</span></div>
+        <div class="nav-item"><span class="ico">⚡</span><span>Hooks</span><span class="num">4</span></div>
+        <div class="nav-item"><span class="ico">⊞</span><span>MCP Servers</span><span class="num">3</span></div>
+        <div class="nav-item active"><span class="ico">⊕</span><span>Plugins</span><span class="num">3</span></div>
+        <div class="nav-item"><span class="ico">▤</span><span>Skills</span><span class="num">17</span></div>
+        <div class="nav-item"><span class="ico">⌖</span><span>Memory</span></div>
+        <div class="nav-item"><span class="ico">▷</span><span>Statusline</span></div>
+        <div class="title" style="margin-top:14px">Account</div>
+        <div class="nav-item"><span class="ico">🔑</span><span>API Key</span></div>
+        <div class="nav-item"><span class="ico">¥</span><span>Usage & Cost</span></div>
+      </nav>
+      <div class="set-main">
+        <h3>Plugins</h3>
+        <p class="lead">扩展 DeepCode 的能力：skills · commands · hooks · MCP · sub-agents · statusLines · modes</p>
+
+        <div class="tab-strip">
+          <div class="tab active">Installed<span class="count">3</span></div>
+          <div class="tab">Marketplace<span class="count">v1.1+</span></div>
+          <div class="tab">Develop</div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico brand">⊞</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">deepcode-plugin-data-tools</span>
+              <span class="ver">v0.3.0</span>
+              <span class="author">· by @oratis</span>
+            </div>
+            <div class="ec-desc">SQL 解释 / CSV 转图表 / DuckDB MCP，写数据相关代码必备</div>
+            <div class="ec-tags">
+              <span class="tag skill">3 skills</span>
+              <span class="tag cmd">2 commands</span>
+              <span class="tag mcp">1 MCP</span>
+              <span class="tag">1 statusLine</span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch on"></div></div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico purple">▤</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">deepcode-plugin-tailwind</span>
+              <span class="ver">v0.1.2</span>
+              <span class="author">· community</span>
+            </div>
+            <div class="ec-desc">Tailwind 类抽取 / utility 重排 / 设计 token 检查</div>
+            <div class="ec-tags">
+              <span class="tag skill">2 skills</span>
+              <span class="tag cmd">1 command</span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch on"></div></div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico green">⊞</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">deepcode-plugin-firebase</span>
+              <span class="ver">v0.0.4</span>
+              <span class="author">· community</span>
+            </div>
+            <div class="ec-desc">Firestore schema 推断 / Cloud Functions 调试</div>
+            <div class="ec-tags">
+              <span class="tag skill">1 skill</span>
+              <span class="tag mcp">1 MCP</span>
+              <span class="tag" style="color:var(--warn)">⚠ MCP 待授权</span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch"></div></div>
+        </div>
+
+        <div style="margin-top:18px;padding:14px 16px;border-radius:8px;border:1px dashed var(--line);color:var(--text-2);font-size:13px">
+          <span style="font-family:'JetBrains Mono',monospace;color:var(--text-1)">+</span>&nbsp;&nbsp;
+          安装新插件：<code style="color:var(--text-0)">deepcode plugin install gh:user/repo</code>
+          &nbsp;or&nbsp; 拖拽本地文件夹到 <b>Develop</b> tab
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 左侧 nav 列出全部 settings 一级页（Plugins 现在是一等公民），数量徽章让用户一眼看到自己装了多少；② 插件卡片用 <b>贡献能力 tag</b> 而不是"星级 / 下载量"作为主信息 —— 让用户先看到"<i>它能做什么</i>"；③ 开关本身就是启用/禁用，不需要二次确认；④ 第三个插件的"⚠ MCP 待授权"是真实场景 —— 提示用户某些 contribution 需要单独开启。</p>
+</section>
+
+<!-- ========== 14. Settings 总览 (Permissions) ========== -->
+<section>
+  <span class="label">14 · 屏幕 #9 — Settings · Permissions</span>
+  <h2>JSON ↔ GUI 双向 · 看得见也改得到</h2>
+  <p class="lead">权限规则用可视化表格管理；右侧实时同步生成的 <code>settings.json</code> 片段。任一侧改动都立即映射到对方。advanced 用户可以直接编辑 JSON。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — Settings · Permissions</span>
+    </div>
+    <div class="settings-shell">
+      <nav class="set-nav">
+        <div class="title">Settings</div>
+        <div class="nav-item"><span class="ico">⚙</span><span>General</span></div>
+        <div class="nav-item"><span class="ico">◉</span><span>Models</span></div>
+        <div class="nav-item active"><span class="ico">⊟</span><span>Permissions</span></div>
+        <div class="nav-item"><span class="ico">⚡</span><span>Hooks</span><span class="num">4</span></div>
+        <div class="nav-item"><span class="ico">⊞</span><span>MCP Servers</span><span class="num">3</span></div>
+        <div class="nav-item"><span class="ico">⊕</span><span>Plugins</span><span class="num">3</span></div>
+        <div class="nav-item"><span class="ico">▤</span><span>Skills</span><span class="num">17</span></div>
+        <div class="nav-item"><span class="ico">⌖</span><span>Memory</span></div>
+        <div class="nav-item"><span class="ico">▷</span><span>Statusline</span></div>
+      </nav>
+      <div class="set-main">
+        <h3>Permissions</h3>
+        <p class="lead">控制哪些工具调用 / 文件路径自动允许、需要确认或直接拒绝。规则按工具 + 参数 matcher 匹配，支持 glob。</p>
+
+        <div style="display:grid;grid-template-columns:1fr 380px;gap:24px;align-items:flex-start">
+          <div>
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+              <span style="font-size:13px;color:var(--text-2);font-weight:500">Default mode</span>
+              <select style="background:var(--bg-2);border:1px solid var(--line);color:var(--text-0);padding:6px 10px;border-radius:6px;font-family:inherit;font-size:13px">
+                <option>ask (everything confirms)</option>
+              </select>
+            </div>
+
+            <div style="font-size:11px;letter-spacing:1px;color:var(--text-3);text-transform:uppercase;font-weight:700;margin:14px 0 6px">Rules · in order</div>
+            <div class="rule-row"><span class="verdict allow">ALLOW</span><span class="pattern">Bash(npm test:*)</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict allow">ALLOW</span><span class="pattern">Read(./**)</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict allow">ALLOW</span><span class="pattern">Edit(./src/**)</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict ask">ASK</span><span class="pattern">WebFetch</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict ask">ASK</span><span class="pattern">Bash(git push:*)</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict deny">DENY</span><span class="pattern">Read(./.env*)</span><span class="x">×</span></div>
+            <div class="rule-row"><span class="verdict deny">DENY</span><span class="pattern">Read(./**/secrets/**)</span><span class="x">×</span></div>
+
+            <button class="btn btn-secondary" style="margin-top:10px;background:var(--bg-2);color:var(--text-0);border-color:var(--line)">+ Add rule</button>
+
+            <div style="font-size:11px;letter-spacing:1px;color:var(--text-3);text-transform:uppercase;font-weight:700;margin:20px 0 6px">Additional directories</div>
+            <div class="rule-row" style="grid-template-columns:1fr 30px"><span class="pattern">~/Projects/shared-libs</span><span class="x">×</span></div>
+          </div>
+
+          <div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <span style="font-size:11px;letter-spacing:1px;color:var(--text-3);text-transform:uppercase;font-weight:700">.deepcode/settings.json</span>
+              <span style="font-size:11px;color:var(--text-3);font-family:'JetBrains Mono',monospace">live preview</span>
+            </div>
+            <div class="json-preview">
+<span class="jp">{</span>
+  <span class="jk">"permissions"</span>: {
+    <span class="jk">"defaultMode"</span>: <span class="js">"ask"</span>,
+    <span class="jk">"allow"</span>: [
+      <span class="js">"Bash(npm test:*)"</span>,
+      <span class="js">"Read(./**)"</span>,
+      <span class="js">"Edit(./src/**)"</span>
+    ],
+    <span class="jk">"ask"</span>: [
+      <span class="js">"WebFetch"</span>,
+      <span class="js">"Bash(git push:*)"</span>
+    ],
+    <span class="jk">"deny"</span>: [
+      <span class="js">"Read(./.env*)"</span>,
+      <span class="js">"Read(./**/secrets/**)"</span>
+    ],
+    <span class="jk">"additionalDirectories"</span>: [
+      <span class="js">"~/Projects/shared-libs"</span>
+    ]
+  }
+<span class="jp">}</span>
+            </div>
+            <div style="margin-top:10px;display:flex;gap:8px">
+              <button class="btn btn-secondary" style="background:var(--bg-2);color:var(--text-0);border-color:var(--line);font-size:12px;padding:6px 12px">Edit as JSON</button>
+              <button class="btn btn-ghost" style="font-size:12px;padding:6px 12px;color:var(--text-2)">Copy to .local</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 左 GUI + 右 JSON live preview 的双视图，让点鼠标的人和写 dotfile 的人同台合作；② 规则颜色编码贯穿全产品（绿 allow / 黄 ask / 红 deny），用户审批时看到的也是同一套色；③ "Copy to .local" 按钮提示用户：项目级规则可以下沉到 <code>.local.json</code> 不入 git；④ Additional directories 单独区段 —— 它是 DeepCode 工作目录之外的额外可读路径，权限语义不同。</p>
+</section>
+
+<!-- ========== 15. MCP Manager ========== -->
+<section>
+  <span class="label">15 · 屏幕 #10 — MCP Manager</span>
+  <h2>所有 MCP server 一处看板</h2>
+  <p class="lead">列出当前会话连上的 MCP server，状态（connected / disconnected / pending auth）、暴露的工具数、传输方式（stdio / http / sse）一目了然。点开 server 卡片可看完整工具清单与 OAuth 配置。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> — Settings · MCP Servers</span>
+    </div>
+    <div class="settings-shell">
+      <nav class="set-nav">
+        <div class="title">Settings</div>
+        <div class="nav-item"><span class="ico">⚙</span><span>General</span></div>
+        <div class="nav-item"><span class="ico">◉</span><span>Models</span></div>
+        <div class="nav-item"><span class="ico">⊟</span><span>Permissions</span></div>
+        <div class="nav-item"><span class="ico">⚡</span><span>Hooks</span><span class="num">4</span></div>
+        <div class="nav-item active"><span class="ico">⊞</span><span>MCP Servers</span><span class="num">3</span></div>
+        <div class="nav-item"><span class="ico">⊕</span><span>Plugins</span><span class="num">3</span></div>
+        <div class="nav-item"><span class="ico">▤</span><span>Skills</span><span class="num">17</span></div>
+      </nav>
+      <div class="set-main">
+        <h3>MCP Servers</h3>
+        <p class="lead">Model Context Protocol — 给 DeepCode 接入外部工具与数据源。三种 scope：<b>User</b>（全局）/ <b>Project</b>（团队共享）/ <b>Local</b>（本机）。</p>
+
+        <div class="tab-strip">
+          <div class="tab active">All<span class="count">3</span></div>
+          <div class="tab">User</div>
+          <div class="tab">Project<span class="count">2</span></div>
+          <div class="tab">Local<span class="count">1</span></div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico green">●</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">filesystem</span>
+              <span class="ver">stdio</span>
+              <span class="author">· project scope</span>
+            </div>
+            <div class="ec-desc"><code style="color:var(--text-1);background:var(--bg-3);padding:1px 5px;border-radius:3px;font-size:11px">npx @modelcontextprotocol/server-filesystem /tmp</code></div>
+            <div class="ec-tags">
+              <span class="tag mcp">12 tools exposed</span>
+              <span class="tag" style="color:var(--accent)">● connected · 18ms</span>
+              <span class="tag">last call: 4s ago</span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch on"></div></div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico green">●</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">github</span>
+              <span class="ver">stdio</span>
+              <span class="author">· project scope</span>
+            </div>
+            <div class="ec-desc"><code style="color:var(--text-1);background:var(--bg-3);padding:1px 5px;border-radius:3px;font-size:11px">npx @modelcontextprotocol/server-github</code> · auth via <code style="background:var(--bg-3);padding:1px 5px;border-radius:3px;font-size:11px">$GITHUB_TOKEN</code></div>
+            <div class="ec-tags">
+              <span class="tag mcp">26 tools exposed</span>
+              <span class="tag" style="color:var(--accent)">● connected · 42ms</span>
+              <span class="tag">last call: 2m ago</span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch on"></div></div>
+        </div>
+
+        <div class="ent-card">
+          <div class="ec-ico" style="background:rgba(255,176,32,.18);color:var(--warn)">⚠</div>
+          <div class="ec-body">
+            <div class="ec-title">
+              <span class="name">company-internal</span>
+              <span class="ver">sse</span>
+              <span class="author">· user scope</span>
+            </div>
+            <div class="ec-desc"><code style="color:var(--text-1);background:var(--bg-3);padding:1px 5px;border-radius:3px;font-size:11px">https://mcp.company.com/sse</code> · OAuth required</div>
+            <div class="ec-tags">
+              <span class="tag" style="color:var(--warn)">⚠ pending auth — <span style="text-decoration:underline;cursor:pointer">click to authorize</span></span>
+            </div>
+          </div>
+          <div class="ec-action"><div class="switch"></div></div>
+        </div>
+
+        <div style="margin-top:18px;display:flex;gap:8px">
+          <button class="btn btn-primary" style="font-size:13px;padding:8px 16px">+ Add server</button>
+          <button class="btn btn-secondary" style="background:var(--bg-2);color:var(--text-0);border-color:var(--line);font-size:13px;padding:8px 16px">Import from claude_desktop_config.json</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① 状态点用颜色 + 延迟数字给出"<i>这个 server 现在到底活着没</i>"的快速判断；② 暴露的工具数（"12 tools exposed"）让用户能预估 context 消耗；③ OAuth 待授权状态明确点出"click to authorize"，不让用户自己摸索；④ "Import from claude_desktop_config.json" 按钮 —— 从 Claude Code 迁移过来零成本。</p>
+</section>
+
+<!-- ========== 16. 屏幕 #11 — 自动更新 Banner ========== -->
+<section>
+  <span class="label">16 · 屏幕 #11 — 自动更新</span>
+  <h2>"Relaunch to update" · 对齐 Claude Code 的更新体验</h2>
+  <p class="lead">后台轮询 GitHub Releases 拉到新版后，主窗口右上角浮出非阻塞 banner。整个 banner 可点击 → 保存当前会话状态 → 退出 → 替换 .app bundle → 重启 → 自动 resume。详见 §4b。</p>
+  <div class="mockup">
+    <div class="titlebar">
+      <div class="traffic"><span></span><span></span><span></span></div>
+      <span class="title"><b>DeepCode</b> · update available</span>
+    </div>
+    <div class="update-shell">
+      <div style="display:flex;flex-direction:column;gap:18px;align-items:center">
+        <!-- Standard banner -->
+        <div class="update-banner">
+          <div class="ub-icon">
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg>
+          </div>
+          <div class="ub-body">
+            <div class="ub-title">Relaunch to update</div>
+            <div class="ub-ver">v0.2.1</div>
+          </div>
+          <span class="ub-arrow">→</span>
+        </div>
+
+        <div style="font-size:11px;color:var(--text-3);font-family:'JetBrains Mono',monospace">↑ 普通更新 · stable channel</div>
+
+        <!-- Mandatory security release variant -->
+        <div class="update-banner mandatory" style="margin-top:8px">
+          <div class="ub-icon" style="background:linear-gradient(135deg,#FF5470 0%,#FF8FA3 100%)">
+            <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" fill="currentColor" aria-hidden="true"><path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z"/></svg>
+          </div>
+          <div class="ub-body">
+            <div class="ub-title">Security update — relaunch required</div>
+            <div class="ub-ver">v0.2.2+security.1</div>
+          </div>
+          <span class="ub-arrow" style="color:#FF8FA3">→</span>
+        </div>
+
+        <div style="font-size:11px;color:var(--text-3);font-family:'JetBrains Mono',monospace">↑ 强制更新 · `mandatory: true` 时 banner 变红、不可关</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">视觉要点：① banner 用半透明深底 + 模糊 + 微微蓝色描边，与 Claude Code 同样的"不打扰但显眼"原则；② 猫 icon 在小尺寸下保持识别度（圆角方块 + 渐变蓝）；③ 版本号用 mono 字体，遵循 semver；④ 整个 banner 是单一可点击区域，没有二级按钮 — 减少误操作；⑤ 强制升级变体 (`+security.X` tag) 改用红色调，明确"这次不可拒"；⑥ 右上角小 × 关闭按钮在普通版本可关（下次启动重弹），在 mandatory 版本被移除。</p>
+</section>
+
+<!-- ========== 17. 状态系统 ========== -->
+<section>
+  <span class="label">17 · 状态系统</span>
+  <h2>八种状态徽章覆盖全部 agent 生命周期</h2>
+  <div class="panel" style="background:var(--bg-1);border-color:var(--line)">
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center">
+      <span class="badge badge-ok">✓ done</span>
+      <span class="badge badge-info">● thinking</span>
+      <span class="badge" style="background:rgba(77,107,254,.15);color:#8AA2FF">▶ running</span>
+      <span class="badge badge-warn">⏸ pending approval</span>
+      <span class="badge" style="background:rgba(199,168,255,.15);color:#C7A8FF">⚙ tool: bash</span>
+      <span class="badge" style="background:rgba(255,84,112,.15);color:#FF5470">✕ failed</span>
+      <span class="badge" style="background:rgba(138,146,164,.15);color:#C7CCD8">↻ retrying</span>
+      <span class="badge" style="background:rgba(20,228,162,.15);color:#14E4A2">⚡ compacted</span>
+    </div>
+    <p style="margin:16px 0 0;color:var(--text-2);font-size:13px">CLI 端用同样的字符 + ANSI 色组合（<code style="color:var(--text-1)">✓ ● ▶ ⏸ ⚙ ✕ ↻ ⚡</code>），保证终端与 GUI 在"扫一眼就知道发生了什么"上对齐。</p>
+  </div>
+</section>
+
+<!-- ========== 18. 决策与下一步 ========== -->
+<section>
+  <span class="label">18 · 决策 & 下一步</span>
+  <h2>v0.4 锁定 · 进入实现</h2>
+  <div class="row-2">
+    <div class="panel">
+      <h4>已锁定决策</h4>
+      <ul style="margin:0;padding-left:20px;color:var(--l-text-1);font-size:14px;line-height:1.8">
+        <li>品牌名：<b>DeepCode</b>（驼峰、无空格）</li>
+        <li>主色：DeepSeek 蓝 <code>#4D6BFE</code></li>
+        <li>CLI 包名：<code>deepcode-cli</code>，命令 <code>deepcode</code></li>
+        <li>项目配置文件：<code>DEEPCODE.md</code>（保留）</li>
+        <li>Base URL：可配置，默认 <code>https://api.deepseek.com/v1</code></li>
+        <li>v1 仅深色主题，浅色 v1.1 出</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h4>已纳入实现范围（v0.3 含 v0.2 + 新增）</h4>
+      <ul style="margin:0;padding-left:20px;color:var(--l-text-1);font-size:14px;line-height:1.8">
+        <li><code>settings.json</code> 全集对齐（三层合并 · GUI ↔ JSON 双向）</li>
+        <li>四档 Mode：<code>ask / auto-edit / plan / bypass</code> + 插件扩展</li>
+        <li>Composer 全特性 + 右侧文件面板（Source/Diff/History）</li>
+        <li><b>Skills 体系</b>（15 个内置 · 用户/项目/插件三层 · 描述触发）</li>
+        <li><b>插件体系</b>（7 个 contributes 贡献点 · 本地+gh 安装）</li>
+        <li><b>Harness 运行时</b>（system-reminder / plan-mode / 后台任务 / cron / worktree / ToolSearch）</li>
+        <li><b>命令面板</b>（skills + slash + plugin commands 同台）</li>
+        <li><b>MCP Manager</b>（三种 scope · OAuth 流 · 从 Claude Code 导入）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:24px">
+    <h4>已覆盖屏幕（10 屏）</h4>
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px 24px;font-size:13px;color:var(--l-text-1)">
+      <div>#1 · Onboarding</div>
+      <div>#6 · 命令面板（Skills + Slash）</div>
+      <div>#2 · CLI REPL</div>
+      <div>#7 · Plan mode 状态</div>
+      <div>#3 · Mac 客户端主视图</div>
+      <div>#8 · Plugins 管理</div>
+      <div>#4 · Composer 全特性</div>
+      <div>#9 · Settings · Permissions（JSON ↔ GUI）</div>
+      <div>#5 · 右侧文件面板</div>
+      <div>#10 · MCP Manager</div>
+    </div>
+  </div>
+  <div class="panel" style="margin-top:24px">
+    <h4>下一份产出</h4>
+    <ul style="margin:0;padding-left:20px;color:var(--l-text-1);font-size:14px;line-height:1.8">
+      <li>Figma 可点击原型（基于这 10 屏）</li>
+      <li><code>BEHAVIOR_PARITY.md</code>：与 Claude Code 每个 slash command / settings 字段 / hook event 一一对照表</li>
+      <li>monorepo 骨架 PR（M0 · 本周）</li>
+    </ul>
+  </div>
+</section>
+
+</div>
+
+<footer>
+  DeepCode · Visual Design v0.4 · 2026-05-27 · 11 screens · 配套阅读：<code>docs/DEVELOPMENT_PLAN.md</code>
+</footer>
+
+</body>
+</html>

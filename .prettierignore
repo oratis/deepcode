@@ -1,0 +1,9 @@
+node_modules
+dist
+build
+out
+coverage
+*.tsbuildinfo
+pnpm-lock.yaml
+docs/VISUAL_DESIGN.html
+reference

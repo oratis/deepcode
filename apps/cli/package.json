@@ -1,0 +1,34 @@
+{
+  "name": "deepcode-cli",
+  "version": "0.0.0",
+  "description": "DeepCode CLI — DeepSeek-powered AI coding agent, parity with Claude Code",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "deepcode": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "main": "./dist/cli.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'cli tests in M2' && exit 0",
+    "lint": "echo 'lint: configured in M1' && exit 0",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "start": "node ./dist/cli.js"
+  },
+  "dependencies": {
+    "@deepcode/core": "workspace:*",
+    "@deepcode/shared-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

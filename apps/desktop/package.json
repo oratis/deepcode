@@ -1,0 +1,26 @@
+{
+  "name": "@deepcode/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "DeepCode Mac desktop client (Electron + React)",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "echo 'desktop tests in M6' && exit 0",
+    "lint": "echo 'lint: configured in M1' && exit 0",
+    "clean": "rm -rf dist dist-electron release *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@deepcode/core": "workspace:*",
+    "@deepcode/shared-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

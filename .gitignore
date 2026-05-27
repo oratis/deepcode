@@ -1,0 +1,47 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build artifacts
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+*.pem
+.deepcode/credentials.json
+
+# Test outputs
+coverage/
+.nyc_output/
+
+# Electron build outputs
+apps/desktop/release/
+apps/desktop/dist-electron/
+
+# Reference fork (claude-code upstream, read-only)
+reference/
+
+# OS
+Thumbs.db
+
+# Local sessions / cache (when running deepcode in repo)
+.deepcode/sessions/
+.deepcode/projects/
