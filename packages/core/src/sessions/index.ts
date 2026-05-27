@@ -1,6 +1,13 @@
-// Module: sessions
+// Sessions subsystem entry — jsonl storage + snapshots + manager.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.5
 // Milestone: M1
-// Spec: docs/DEVELOPMENT_PLAN.md §3.5 jsonl session storage + snapshots (also drives §3.15.9 rewind)
-// Status: placeholder — implemented in M1
 
-export {};
+export { SessionManager } from './manager.js';
+export type { SessionManagerOpts } from './manager.js';
+export {
+  defaultSessionsDir,
+  newSessionId,
+  type SessionMeta,
+  type SessionFiles,
+} from './storage.js';
+export { captureSnapshot, listSnapshots, restoreSnapshot, type Snapshot } from './snapshots.js';
