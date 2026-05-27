@@ -50,3 +50,40 @@ export {
 // Agent loop
 export { runAgent, AGENT_MODULE_VERSION } from './agent.js';
 export type { RunAgentOptions, RunAgentResult } from './agent.js';
+
+// Config + Permissions (M2)
+export {
+  loadSettings,
+  writeSettings,
+  settingsPaths,
+  deepMerge,
+  evaluatePermission,
+  matchRule,
+  parseRule,
+  primaryInput,
+  type DeepCodeSettings,
+  type PermissionRules,
+  type LoadedSettings,
+  type LoadSettingsOpts,
+  type PermissionVerdict,
+  type PermissionRequest,
+  type Hooks,
+  type HookHandler,
+  type HookMatcher,
+  type HookEventName,
+  type McpServerConfig,
+  type StatusLineConfig,
+  type SandboxConfig,
+  type UpdateConfig,
+  type WorktreeConfig,
+  type AutoModeConfig,
+} from './config/index.js';
+
+// Credentials (M2)
+export {
+  CredentialsStore,
+  resolveCredentials,
+  redact,
+  type Credentials,
+  type CredentialsStoreOpts,
+} from './credentials/index.js';
