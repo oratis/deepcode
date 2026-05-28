@@ -12,6 +12,44 @@
 import { invoke } from '@tauri-apps/api/core';
 import type { ToolHandler, ToolResult } from '@deepcode/core/dist/types.js';
 
+/**
+ * Tolerant key pick — accepts either snake_case or camelCase. DeepSeek
+ * occasionally normalizes JSON Schema keys to camelCase regardless of
+ * what we asked for; if the agent loop doesn't see the field by the
+ * exact name in the schema, the value is undefined and the Tauri call
+ * fails with "missing required key …". This helper lets us accept both.
+ */
+function pickStr(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): string | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (typeof v === 'string') return v;
+  }
+  return undefined;
+}
+function pickNum(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (typeof v === 'number') return v;
+  }
+  return undefined;
+}
+function pickBool(
+  input: Record<string, unknown>,
+  ...keys: string[]
+): boolean | undefined {
+  for (const k of keys) {
+    const v = input[k];
+    if (typeof v === 'boolean') return v;
+  }
+  return undefined;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Read
 // ──────────────────────────────────────────────────────────────────────────
@@ -34,15 +72,19 @@ export const MacReadTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
+      const filePath = pickStr(input, 'file_path', 'filePath', 'path');
+      if (!filePath) {
+        return { content: 'Error: missing file_path', isError: true };
+      }
       const r = (await invoke('tool_read', {
-        filePath: input['file_path'] as string,
-        offset: input['offset'] as number | undefined,
-        limit: input['limit'] as number | undefined,
+        filePath,
+        offset: pickNum(input, 'offset'),
+        limit: pickNum(input, 'limit'),
       })) as { content: string; linesTotal: number; linesShown: number; offset: number };
       return {
         content: r.content,
         data: {
-          file: input['file_path'],
+          file: filePath,
           lines_total: r.linesTotal,
           lines_shown: r.linesShown,
           offset: r.offset,
@@ -75,14 +117,16 @@ export const MacWriteTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
-      await invoke('tool_write', {
-        filePath: input['file_path'] as string,
-        content: input['content'] as string,
-      });
-      const lines = String(input['content'] ?? '').split('\n').length;
+      const filePath = pickStr(input, 'file_path', 'filePath', 'path');
+      const content = pickStr(input, 'content', 'text', 'body') ?? '';
+      if (!filePath) {
+        return { content: 'Error: missing file_path', isError: true };
+      }
+      await invoke('tool_write', { filePath, content });
+      const lines = content.split('\n').length;
       return {
-        content: `Wrote ${input['file_path']} (${lines} lines).`,
-        data: { file: input['file_path'], lines },
+        content: `Wrote ${filePath} (${lines} lines).`,
+        data: { file: filePath, lines },
       };
     } catch (err) {
       return { content: `Error: ${(err as Error).message ?? String(err)}`, isError: true };
@@ -113,17 +157,27 @@ export const MacEditTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
+      const filePath = pickStr(input, 'file_path', 'filePath', 'path');
+      const oldStr = pickStr(input, 'old_string', 'oldString', 'old');
+      const newStr = pickStr(input, 'new_string', 'newString', 'new');
+      const replaceAll = pickBool(input, 'replace_all', 'replaceAll') ?? false;
+      if (!filePath || oldStr === undefined || newStr === undefined) {
+        return {
+          content: 'Error: missing file_path / old_string / new_string',
+          isError: true,
+        };
+      }
       const r = (await invoke('tool_edit', {
         input: {
-          file_path: input['file_path'] as string,
-          old_string: input['old_string'] as string,
-          new_string: input['new_string'] as string,
-          replace_all: (input['replace_all'] as boolean | undefined) ?? false,
+          file_path: filePath,
+          old_string: oldStr,
+          new_string: newStr,
+          replace_all: replaceAll,
         },
       })) as { replaced: number; diffPreview: string };
       return {
-        content: `Replaced ${r.replaced} occurrence(s) in ${input['file_path']}.\n${r.diffPreview}`,
-        data: { file: input['file_path'], replaced: r.replaced },
+        content: `Replaced ${r.replaced} occurrence(s) in ${filePath}.\n${r.diffPreview}`,
+        data: { file: filePath, replaced: r.replaced },
       };
     } catch (err) {
       return { content: `Error: ${(err as Error).message ?? String(err)}`, isError: true };
@@ -153,11 +207,15 @@ export const MacBashTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
+      const command = pickStr(input, 'command', 'cmd');
+      if (!command) {
+        return { content: 'Error: missing command', isError: true };
+      }
       const r = (await invoke('tool_bash', {
         input: {
-          command: input['command'] as string,
-          cwd: input['cwd'] as string | undefined,
-          timeout_ms: input['timeout_ms'] as number | undefined,
+          command,
+          cwd: pickStr(input, 'cwd', 'working_dir'),
+          timeout_ms: pickNum(input, 'timeout_ms', 'timeoutMs', 'timeout'),
         },
       })) as { stdout: string; stderr: string; exitCode: number; timedOut: boolean };
       const combined =
@@ -193,9 +251,11 @@ export const MacGlobTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
+      const pattern = pickStr(input, 'pattern', 'glob');
+      if (!pattern) return { content: 'Error: missing pattern', isError: true };
       const r = (await invoke('tool_glob', {
-        pattern: input['pattern'] as string,
-        cwd: input['cwd'] as string | undefined,
+        pattern,
+        cwd: pickStr(input, 'cwd', 'path', 'working_dir'),
       })) as { files: string[]; truncated: boolean };
       const body =
         r.files.length === 0
@@ -233,12 +293,15 @@ export const MacGrepTool: ToolHandler = {
   },
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     try {
+      const pattern = pickStr(input, 'pattern', 'regex');
+      if (!pattern) return { content: 'Error: missing pattern', isError: true };
       const r = (await invoke('tool_grep', {
         input: {
-          pattern: input['pattern'] as string,
-          path: input['path'] as string | undefined,
-          include: input['include'] as string | undefined,
-          case_insensitive: (input['case_insensitive'] as boolean | undefined) ?? false,
+          pattern,
+          path: pickStr(input, 'path', 'cwd', 'dir'),
+          include: pickStr(input, 'include', 'glob'),
+          case_insensitive:
+            pickBool(input, 'case_insensitive', 'caseInsensitive', 'ignore_case') ?? false,
         },
       })) as {
         matches: Array<{ file: string; line: number; text: string }>;

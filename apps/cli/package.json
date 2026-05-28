@@ -1,6 +1,6 @@
 {
   "name": "deepcode-cli",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DeepCode CLI — DeepSeek-powered AI coding agent, parity with Claude Code",
   "license": "MIT",
   "type": "module",

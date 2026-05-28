@@ -5,6 +5,38 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-05-28
+
+### Fixes — caught from user playtest of 0.1.1
+- **Tool input field-name fix.** `tool_write` (and read / edit / bash /
+  glob / grep) were failing with `missing required key filePath` when
+  DeepSeek emitted snake_case keys but the wrapper expected camelCase.
+  All 6 Mac tool wrappers now accept either case via a tolerant
+  `pickStr / pickNum / pickBool` helper.
+- **Project folder picker.** First launch now shows a "Pick a project
+  folder" overlay before chat. The chosen path is persisted to
+  `~/.deepcode/settings.json#projectPath` and threaded into every
+  agent turn as `cwd`. Sidebar shows the active project + a `⇄`
+  switch button.
+- **Session persistence.** Each turn now writes a JSONL session under
+  `~/.deepcode/sessions/<id>.jsonl`. Sidebar refreshes after every
+  turn so newly-started sessions appear in the Today bucket.
+- **Mid-turn controls locked.** Mode / model / effort dropdowns disable
+  while the agent is responding or awaiting approval (was previously
+  freely switchable mid-turn).
+- **Inspector rail buttons work.** All 6 rail icons now route to
+  their respective screens (Plan → Permissions, Sessions, Plugins,
+  Skills, MCP, About, Settings). Expand-chevron ‹ still deferred.
+
+### UX improvements
+- **Proper dropdowns** for mode / model / effort — click-popover with
+  inline descriptions and meta annotations, replacing the brittle
+  click-to-cycle pattern.
+- 5 official mode options surfaced (default / acceptEdits / plan /
+  dontAsk / bypassPermissions) instead of 3.
+- ReplScreen carries projectPath through to the system prompt so the
+  LLM knows where it's working.
+
 ## [0.1.1] — 2026-05-28
 
 ### Visual redesign — phase 1

@@ -1,9 +1,10 @@
-// Right-column collapsed inspector (48 px) — design spec screen #3.
-// Five rail buttons with optional dot-badge counts:
-//   ‹ (expand) · ▤ (Plan + N) · ◐ (context %) · 📁 (files) · ⓘ (info) · ⚙ (settings)
+// Right-column collapsed inspector rail (48 px).
+// Design spec screen #3.
 //
-// For v0.1.1 expand is a stub — clicking ‹ does nothing yet (the
-// full-width inspector panel lands in P2 with the rest of the screens).
+// Each rail button routes to a screen so users can reach Plan / Files /
+// Info / Settings without scrolling for a hidden menu. The ‹ expand
+// chevron is still deferred (the full-width inspector panel lands in
+// the next phase) — we leave it disabled with a tooltip.
 
 import type { ScreenName } from './Nav.js';
 
@@ -14,7 +15,7 @@ interface InspectorRailProps {
   contextFill?: number;
   /** Active screen so settings cog highlights when on settings. */
   activeScreen: ScreenName;
-  /** Switch screen — only wired for settings cog right now. */
+  /** Switch screen. */
   onChange: (screen: ScreenName) => void;
 }
 
@@ -38,22 +39,25 @@ export function InspectorRail({
       <button
         type="button"
         className="rail-btn"
-        title="Expand inspector  (⌘\\) — coming in P2"
+        title="Expand inspector (⌘\\) — coming in next phase"
         disabled
       >
         ‹
       </button>
       <div className="rail-divider" />
+
       <button
         type="button"
-        className="rail-btn"
-        title={planCount ? `Plan · ${planCount} pending` : 'Plan'}
+        className={'rail-btn' + (activeScreen === 'permissions' ? ' active' : '')}
+        title={planCount ? `Plan & permissions · ${planCount} pending` : 'Plan & permissions'}
+        onClick={() => onChange('permissions')}
       >
         ▤
         {planCount !== undefined && planCount > 0 && (
           <span className="dot-badge">{planCount}</span>
         )}
       </button>
+
       <button
         type="button"
         className="rail-btn"
@@ -63,20 +67,56 @@ export function InspectorRail({
             : `Context: ${Math.round(contextFill * 100)}% used`
         }
         style={{ color: ctxColor, borderColor: 'rgba(20,228,162,.18)' }}
+        onClick={() => onChange('repl')}
       >
         ◐
       </button>
+
       <button
         type="button"
-        className="rail-btn"
-        title="Recent files"
-        onClick={() => onChange('repl')}
+        className={'rail-btn' + (activeScreen === 'sessions' ? ' active' : '')}
+        title="Sessions"
+        onClick={() => onChange('sessions')}
       >
-        📁
+        ◫
       </button>
-      <button type="button" className="rail-btn" title="Session info">
+
+      <button
+        type="button"
+        className={'rail-btn' + (activeScreen === 'plugins' ? ' active' : '')}
+        title="Plugins"
+        onClick={() => onChange('plugins')}
+      >
+        ⊞
+      </button>
+
+      <button
+        type="button"
+        className={'rail-btn' + (activeScreen === 'skills' ? ' active' : '')}
+        title="Skills"
+        onClick={() => onChange('skills')}
+      >
+        ✦
+      </button>
+
+      <button
+        type="button"
+        className={'rail-btn' + (activeScreen === 'mcp' ? ' active' : '')}
+        title="MCP servers"
+        onClick={() => onChange('mcp')}
+      >
+        ⊕
+      </button>
+
+      <button
+        type="button"
+        className={'rail-btn' + (activeScreen === 'about' ? ' active' : '')}
+        title="About / Info"
+        onClick={() => onChange('about')}
+      >
         ⓘ
       </button>
+
       <span className="rail-spacer" />
       <button
         type="button"

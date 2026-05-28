@@ -90,8 +90,36 @@ export async function saveKeybindings(value: KeybindingsConfigOnDisk): Promise<v
   await invoke('save_keybindings', { value });
 }
 
+/** Show native folder-picker dialog. Returns absolute path or null on cancel. */
+export async function pickFolder(): Promise<string | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const result: unknown = await open({
+    multiple: false,
+    directory: true,
+    title: 'Choose a project folder for DeepCode',
+  });
+  if (typeof result === 'string') return result;
+  if (Array.isArray(result) && result.length > 0 && typeof result[0] === 'string') {
+    return result[0];
+  }
+  return null;
+}
+
 export async function listSessions(): Promise<SessionMeta[]> {
   return (await invoke('list_sessions')) as SessionMeta[];
+}
+
+/** Create a new session JSONL file. Returns the generated id. */
+export async function sessionCreate(cwd: string): Promise<string> {
+  return (await invoke('session_create', { cwd })) as string;
+}
+
+/** Append one JSON message line to a session's JSONL file. */
+export async function sessionAppend(
+  id: string,
+  message: Record<string, unknown>,
+): Promise<void> {
+  await invoke('session_append', { id, message });
 }
 
 export async function cliPath(): Promise<string | null> {

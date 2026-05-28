@@ -71,6 +71,8 @@ export interface DeepCodeAPI {
       /** 'low' | 'medium' | 'high' | 'xhigh' | 'max' — controls
        *  maxTokens + temperature. Defaults to 'medium'. */
       effort?: string;
+      /** Absolute project folder path. When unset, tools error. */
+      cwd?: string;
       allowedTools?: string[];
     }) => Promise<{ turnId: string }>;
     abort: (args: { turnId: string }) => Promise<boolean>;

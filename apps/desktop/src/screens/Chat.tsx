@@ -1,35 +1,22 @@
-// Chat screen — REPL + side terminal pane.
-// Spec: docs/VISUAL_DESIGN.html screen #2 + #8
-// Milestone: M6-rest (terminal embed)
-
-import { useState } from 'react';
-import { Terminal } from '../components/Terminal.js';
-import { ReplScreen } from './Repl.js';
+// Legacy ChatScreen — kept for type-export symmetry only. The new shell
+// renders ReplScreen directly. The xterm terminal side-pane lives here
+// for now but isn't reachable from the active navigation; it'll move
+// into the "+ menu" panel work in the next phase.
 
 export function ChatScreen(): JSX.Element {
-  const [showTerm, setShowTerm] = useState(false);
   return (
-    <div className="relative flex h-full">
-      <div className="flex-1">
-        <ReplScreen />
-      </div>
-      <div
-        className={
-          showTerm
-            ? 'border-l border-border w-1/2'
-            : 'border-l border-border w-0 overflow-hidden'
-        }
-      >
-        {showTerm && <Terminal />}
-      </div>
-      <button
-        type="button"
-        onClick={() => setShowTerm((v) => !v)}
-        className="absolute right-3 top-3 z-10 rounded border border-border bg-bg-elevated px-2 py-1 text-xs text-muted hover:text-fg"
-        title={showTerm ? 'Hide terminal' : 'Show terminal (xterm)'}
-      >
-        {showTerm ? '◧ Hide terminal' : '⌃ Terminal'}
-      </button>
+    <div
+      style={{
+        padding: 32,
+        color: 'var(--text-2)',
+        fontSize: 13,
+      }}
+    >
+      <h2 style={{ color: 'var(--text-0)', margin: '0 0 12px' }}>Chat</h2>
+      <p>
+        The chat surface has moved into the main REPL. Click the ◐ icon in
+        the right rail to go there.
+      </p>
     </div>
   );
 }
