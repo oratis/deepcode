@@ -222,6 +222,21 @@ export {
   type PluginCapabilityBridge,
 } from './plugins/index.js';
 
+// Keybindings (M8 — ~/.deepcode/keybindings.json + Vim mode state machine)
+export {
+  DEFAULT_KEYBINDINGS,
+  loadKeybindings,
+  saveKeybindings,
+  keybindingsPath,
+  resolveKeyAction,
+  normalizeChord,
+  VimState,
+  type KeyBinding,
+  type KeybindingsConfig,
+  type VimMode,
+  type KeyResolveOpts,
+} from './keybindings/index.js';
+
 // System reminders (M3c-rest — date / cwd / todos / external file mods / AGENTS.md missing)
 export {
   buildSystemReminders,
