@@ -1,4 +1,5 @@
-// Window-attached API exposed by electron/preload.ts via contextBridge.
+// Canonical renderer types. Window.deepcode is installed at runtime by
+// src/lib/window-shim.ts (which uses Tauri's invoke() under the hood).
 
 export interface UpdateInfo {
   version: string;
@@ -75,6 +76,8 @@ export interface DeepCodeAPI {
     onEvent: (cb: (e: unknown) => void) => () => void;
   };
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => () => void;
+  /** Tauri-only: open a URL in the user's default browser. */
+  openUrl?: (url: string) => Promise<void>;
 }
 
 declare global {

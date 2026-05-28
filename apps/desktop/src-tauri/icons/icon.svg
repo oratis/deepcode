@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 100 100">
+  <!-- DeepCode logo: white cat silhouette on brand-blue gradient square -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4D6BFE"/>
+      <stop offset="1" stop-color="#2238A8"/>
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
+  <!-- White cat silhouette: two pointy ears + round head -->
+  <path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z" fill="#ffffff"/>
+</svg>

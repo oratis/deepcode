@@ -1,38 +1,48 @@
 {
   "name": "@deepcode/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
-  "description": "DeepCode Mac desktop client (Electron + React + Tailwind + xterm + monaco)",
+  "description": "DeepCode Mac desktop client — Tauri + React",
   "license": "MIT",
   "type": "module",
-  "main": "dist-electron/main.cjs",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "build:renderer": "vite build",
-    "build:electron": "tsc -p tsconfig.electron.json",
-    "build:all": "pnpm build:renderer && pnpm build:electron",
-    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && tsc -p tsconfig.electron.json --watch & electron .\"",
-    "pack": "pnpm build:all && electron-builder --dir",
-    "dist": "pnpm build:all && electron-builder --mac dmg",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "tauri:build:universal": "tauri build --target universal-apple-darwin",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
-    "lint": "echo 'lint: configured in M1' && exit 0",
-    "clean": "rm -rf dist dist-electron release *.tsbuildinfo"
+    "lint": "echo 'lint: configured at repo root' && exit 0",
+    "clean": "rm -rf dist src-tauri/target *.tsbuildinfo"
   },
   "dependencies": {
     "@deepcode/core": "workspace:*",
-    "@deepcode/shared-ui": "workspace:*"
+    "@deepcode/shared-ui": "workspace:*",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
+    "@tauri-apps/plugin-opener": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
-    "react": "^18.3.0",
-    "react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "autoprefixer": "^10.5.0",
+    "postcss": "^8.5.15",
+    "tailwindcss": "^3.4",
     "typescript": "^5.7.0",
+    "vite": "^5.4.0",
     "vitest": "^2.1.9"
   },
-  "//notes": "Real build deps (electron, electron-builder, vite, @vitejs/plugin-react, tailwindcss, postcss, autoprefixer, concurrently, wait-on) install separately via `pnpm add -D --filter @deepcode/desktop electron electron-builder vite ...` — they pull ~250 MB and slow CI. Configs above are in place; just install the deps when ready to ship the Mac client.",
   "engines": {
     "node": ">=22"
   }

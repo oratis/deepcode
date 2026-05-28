@@ -1,12 +1,12 @@
-// Desktop has no renderer tests yet (lands once Electron + Vite deps are
-// installed). Explicitly disable vite + css processing so vitest doesn't
-// try to load vite.config.ts / postcss.config.js with deps absent.
+// Desktop renderer tests — kept minimal until UI integration tests land.
+// Tauri deps now installed; vite config is real.
 
-export default {
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
   test: {
     include: ['src/**/*.test.{ts,tsx}'],
-    css: false,
+    environment: 'jsdom',
+    globals: true,
   },
-  // Disable vite config discovery entirely
-  configFile: false,
-} as const;
+});
