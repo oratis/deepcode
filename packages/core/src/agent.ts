@@ -67,6 +67,9 @@ export interface RunAgentOptions {
   /** Inject system reminders before the user message (date, todos, etc).
    *  Pass `false` to disable; pass a partial list to limit which builders run. */
   systemReminders?: false | { enabled?: ReminderType[] };
+  /** Host callback for AskUserQuestion tool. Optional — when absent the tool
+   *  errors. */
+  askUser?: NonNullable<ToolContext['askUser']>;
 }
 
 export interface RunAgentResult {
@@ -78,6 +81,8 @@ export interface RunAgentResult {
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
   /** Reason the loop terminated. */
   stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
+  /** Mode-control signals flipped by tools during this run (M3c-rest). */
+  modeSignal?: { exitPlanMode?: boolean };
 }
 
 const DEFAULT_MAX_TURNS = 16;
@@ -121,6 +126,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (opts.session) await opts.session.manager.append(opts.session.id, userMsg);
   }
 
+  // modeSignal is mutable — ExitPlanMode flips exitPlanMode = true; the agent
+  // loop owner reads this between turns to switch mode plan → default.
+  const modeSignal: { exitPlanMode?: boolean } = {};
   const toolCtx: ToolContext = {
     cwd: opts.cwd,
     signal: opts.signal,
@@ -128,6 +136,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     sessionDir: opts.session
       ? `${opts.session.manager.root}/${opts.session.id}`
       : undefined,
+    askUser: opts.askUser,
+    modeSignal,
   };
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;
@@ -139,6 +149,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         turnsUsed,
         usage: totalUsage,
         stopReason: 'aborted',
+        modeSignal,
       };
     }
 
@@ -163,7 +174,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     } catch (err) {
       const message = (err as Error).message ?? 'unknown';
       opts.onEvent?.({ type: 'error', error: message });
-      return { history, turnsUsed, usage: totalUsage, stopReason: 'error' };
+      return { history, turnsUsed, usage: totalUsage, stopReason: 'error', modeSignal };
     }
 
     totalUsage.inputTokens += result.usage.inputTokens;
@@ -200,7 +211,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // If no tool calls, we're done
     if (result.stopReason !== 'tool_use') {
-      return { history, turnsUsed, usage: totalUsage, stopReason: 'end_turn' };
+      return { history, turnsUsed, usage: totalUsage, stopReason: 'end_turn', modeSignal };
     }
 
     // Execute tool calls and append a single user-role message with tool_result blocks
@@ -361,7 +372,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   }
 
-  return { history, turnsUsed, usage: totalUsage, stopReason: 'max_turns' };
+  return { history, turnsUsed, usage: totalUsage, stopReason: 'max_turns', modeSignal };
 }
 
 export const AGENT_MODULE_VERSION = '0.1.0';

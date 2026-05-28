@@ -2,8 +2,10 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §3.2
 
 import type { ToolHandler } from '../types.js';
+import { AskUserQuestionTool } from './ask-user.js';
 import { BashTool } from './bash.js';
 import { EditTool } from './edit.js';
+import { ExitPlanModeTool } from './exit-plan.js';
 import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 import { ReadTool } from './read.js';
@@ -16,6 +18,7 @@ import { WriteTool } from './write.js';
  * Built-in tools shipped by default.
  *   · 6 P0 tools from M1 (Read/Write/Edit/Bash/Grep/Glob)
  *   · 3 M3c-rest tools (TodoWrite/WebFetch/WebSearch)
+ *   · 2 agent-control tools (AskUserQuestion/ExitPlanMode)
  */
 export const BUILTIN_TOOLS: ToolHandler[] = [
   ReadTool,
@@ -27,6 +30,8 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   TodoWriteTool,
   WebFetchTool,
   WebSearchTool,
+  AskUserQuestionTool,
+  ExitPlanModeTool,
 ];
 
 export class ToolRegistry {

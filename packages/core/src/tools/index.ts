@@ -13,5 +13,7 @@ export type { TodoItem, TodoStatus } from './todo.js';
 export { WebFetchTool } from './web-fetch.js';
 export { WebSearchTool, parseDuckDuckGoHtml } from './web-search.js';
 export type { SearchHit } from './web-search.js';
+export { AskUserQuestionTool } from './ask-user.js';
+export { ExitPlanModeTool } from './exit-plan.js';
 export { ToolRegistry, BUILTIN_TOOLS } from './registry.js';
 export type { ToolDefinition, ToolContext, ToolResult, ToolHandler } from './types.js';

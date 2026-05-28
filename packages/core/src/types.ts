@@ -116,6 +116,21 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Optional platform sandbox config — passed through to Bash tool (M3.5). */
   sandboxConfig?: import('./config/types.js').SandboxConfig;
+  /**
+   * Host callback for interactive prompts (AskUserQuestion). Returns undefined
+   * in headless mode. Called by the AskUserQuestion tool with the question +
+   * options; resolves to the chosen label (or 'Other: <text>' if free input).
+   */
+  askUser?: (req: {
+    question: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect?: boolean;
+  }) => Promise<string>;
+  /**
+   * Mutable host state that the ExitPlanMode tool flips. The agent loop reads
+   * this between turns and changes its mode accordingly.
+   */
+  modeSignal?: { exitPlanMode?: boolean };
 }
 
 export interface ToolResult {
