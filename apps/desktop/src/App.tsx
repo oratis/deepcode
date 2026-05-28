@@ -1,17 +1,23 @@
 // Top-level React component for desktop client.
 // Spec: docs/VISUAL_DESIGN.html
-// Milestone: M6 skeleton — onboarding + REPL placeholder + update banner
+// Milestone: M6-rest — Onboarding gate + Nav + 5 screens
 
 import { useEffect, useState } from 'react';
+import { Nav, type ScreenName } from './components/Nav.js';
+import { UpdateBanner } from './components/UpdateBanner.js';
+import { ChatScreen } from './screens/Chat.js';
+import { MCPManagerScreen } from './screens/MCPManager.js';
 import { OnboardingScreen } from './screens/Onboarding.js';
 import { ReplScreen } from './screens/Repl.js';
-import { UpdateBanner } from './components/UpdateBanner.js';
+import { SessionsScreen } from './screens/Sessions.js';
+import { SettingsScreen } from './screens/Settings.js';
 import type { UpdateInfo } from './types/global.js';
 
 export function App(): JSX.Element {
   const [version, setVersion] = useState<string>('');
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
+  const [screen, setScreen] = useState<ScreenName>('repl');
 
   useEffect(() => {
     void window.deepcode.version().then(setVersion);
@@ -35,9 +41,21 @@ export function App(): JSX.Element {
         <span className="font-semibold">DeepCode</span>
         <span className="text-muted">v{version}</span>
       </header>
+      {hasKey && <Nav active={screen} onChange={setScreen} />}
       <main className="flex-1 overflow-hidden">
         {!hasKey ? (
           <OnboardingScreen onComplete={() => setHasKey(true)} />
+        ) : screen === 'chat' ? (
+          <ChatScreen />
+        ) : screen === 'sessions' ? (
+          <SessionsScreen
+            onPick={() => setScreen('repl')}
+            onNew={() => setScreen('repl')}
+          />
+        ) : screen === 'settings' ? (
+          <SettingsScreen />
+        ) : screen === 'mcp' ? (
+          <MCPManagerScreen />
         ) : (
           <ReplScreen />
         )}
