@@ -1,8 +1,9 @@
 // Onboarding screen — first-run flow capturing the DeepSeek API key.
-// Spec: docs/VISUAL_DESIGN.html screen #1
-// Milestone: M6 skeleton
+// Design spec: docs/VISUAL_DESIGN.html screen #2 (hero gradient + big mark).
 
 import { useState } from 'react';
+import { BrandMark } from '../components/BrandMark.js';
+import { openUrl } from '../lib/tauri-api.js';
 
 interface OnboardingProps {
   onComplete: () => void;
@@ -36,52 +37,74 @@ export function OnboardingScreen({ onComplete }: OnboardingProps): JSX.Element {
   }
 
   return (
-    <div className="flex h-full items-center justify-center p-8">
-      <form
-        className="w-full max-w-md space-y-4 rounded-lg border border-border bg-bg-elevated p-6"
-        onSubmit={handleSubmit}
-      >
-        <div>
-          <h1 className="text-xl font-semibold">Welcome to DeepCode</h1>
-          <p className="mt-1 text-sm text-muted">
-            DeepCode talks to the DeepSeek API. Paste your key to get started.
-          </p>
-        </div>
-        <label className="block">
-          <span className="text-sm">DeepSeek API key</span>
+    <div className="onboarding">
+      <div className="card">
+        <span className="brand-chip">
+          <BrandMark />
+          DeepCode
+        </span>
+
+        <h1>DeepSeek-powered coding agent.</h1>
+        <p className="tagline">
+          From this key to your first edit in under 90 seconds.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="api-key">DeepSeek API Key</label>
           <input
+            id="api-key"
             type="password"
+            className="input"
+            placeholder="sk-..."
             autoFocus
             value={apiKey}
             onChange={(e) => setApiKey(e.target.value)}
-            placeholder="sk-..."
-            className="mt-1 w-full rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent"
+            spellCheck={false}
+            autoComplete="off"
           />
-        </label>
-        <label className="block">
-          <span className="text-sm">Base URL (optional)</span>
-          <input
-            type="url"
-            value={baseURL}
-            onChange={(e) => setBaseURL(e.target.value)}
-            placeholder="https://api.deepseek.com/v1"
-            className="mt-1 w-full rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent"
-          />
-        </label>
-        {error && (
-          <div className="rounded bg-error/10 px-3 py-2 text-sm text-error">{error}</div>
-        )}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full rounded bg-accent px-4 py-2 font-medium text-bg disabled:opacity-50"
-        >
-          {submitting ? 'Saving…' : 'Save & continue'}
-        </button>
-        <p className="text-xs text-muted">
-          Your key is stored at <code>~/.deepcode/credentials.json</code> (chmod 600).
-        </p>
-      </form>
+          <div className="hint">
+            Get one at{' '}
+            <a
+              href="#"
+              onClick={(e) => {
+                e.preventDefault();
+                void openUrl('https://platform.deepseek.com/api_keys');
+              }}
+            >
+              platform.deepseek.com
+            </a>
+            . Your key is stored locally in ~/.deepcode/credentials.json — it
+            never leaves your machine except to call api.deepseek.com.
+          </div>
+
+          <div style={{ marginTop: 16 }}>
+            <label htmlFor="base-url">Custom base URL (optional, for proxies)</label>
+            <input
+              id="base-url"
+              type="text"
+              className="input"
+              placeholder="https://api.deepseek.com/v1"
+              value={baseURL}
+              onChange={(e) => setBaseURL(e.target.value)}
+              spellCheck={false}
+              autoComplete="off"
+            />
+          </div>
+
+          {error && <div className="error">{error}</div>}
+
+          <div className="actions">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={submitting || !apiKey.trim()}
+            >
+              {submitting && <span className="spinner" />}
+              {submitting ? 'Saving…' : 'Continue →'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

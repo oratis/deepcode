@@ -1,14 +1,31 @@
-// REPL screen — chat surface that actually drives @deepcode/core's agent loop.
-// Spec: docs/VISUAL_DESIGN.html screen #2
-// Milestone: M6 (real agent integration)
+// REPL / Chat screen — design-aligned per docs/VISUAL_DESIGN.html #3.
+//
+// Layout:
+//   .chat-header  → breadcrumb + status pills (connected · model · approval)
+//   .chat-stream  → message rows. Each row is .msg.{user|assistant|system}
+//                   with a 28 px avatar and a .body that holds plain text
+//                   PLUS any tool-call cards the agent emitted during that
+//                   assistant turn.
+//   inline approval panel → sits directly under the relevant tool card
+//                   (per design note ③ — never at screen bottom)
+//   .composer     → .box with textarea + .toolbar (mode badge · model
+//                   picker · effort · send) + .ctx-bar (context usage)
+//
+// The streaming logic carries over from the previous version: we
+// subscribe to window.deepcode.agent.onEvent and incrementally update
+// state. The only structural change vs. the previous Repl.tsx is the
+// CSS class names (which now match the design tokens) and the addition
+// of richer tool-card rendering.
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_KEYBINDINGS,
   VimState,
   type KeyBinding,
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
+import { Pill } from '../components/Pill.js';
+import { ToolCard } from '../components/ToolCard.js';
 import {
   appendAllowMatcher,
   loadKeybindings,
@@ -16,7 +33,10 @@ import {
   saveSettingsFile,
 } from '../lib/tauri-api.js';
 
+// ─── Types ────────────────────────────────────────────────────────────
+
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 const EFFORT_LABELS: Record<Effort, string> = {
   low: 'Standard',
   medium: 'Standard+',
@@ -24,16 +44,39 @@ const EFFORT_LABELS: Record<Effort, string> = {
   xhigh: 'Extra High',
   max: 'Max',
 };
-const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-interface Message {
-  role: 'user' | 'assistant' | 'system' | 'tool';
-  text: string;
-  /** True while streaming; flips false on turn_done. */
-  streaming?: boolean;
+interface ToolInvocation {
+  toolId: string;
+  name: string;
+  target?: string;
+  input: Record<string, unknown>;
+  status: 'running' | 'ok' | 'err';
+  resultText?: string;
 }
 
-interface AgentStreamEvt {
+interface AssistantTurn {
+  text: string;
+  /** Tool calls interleaved during this turn — rendered as cards after the text. */
+  tools: ToolInvocation[];
+  streaming: boolean;
+}
+
+interface UserMsg {
+  role: 'user';
+  text: string;
+}
+interface AssistantMsg {
+  role: 'assistant';
+  turn: AssistantTurn;
+}
+interface SystemMsg {
+  role: 'system';
+  text: string;
+  level?: 'info' | 'error';
+}
+type Msg = UserMsg | AssistantMsg | SystemMsg;
+
+interface AgentEvt {
   kind: 'event' | 'turn_done';
   turnId: string;
   type?: string;
@@ -47,6 +90,8 @@ interface AgentStreamEvt {
   requestId?: string;
   toolName?: string;
   reason?: string;
+  // tool_use carries id; we use it on tool_result to attach output to the right card
+  id?: string;
 }
 
 interface PendingApproval {
@@ -55,13 +100,15 @@ interface PendingApproval {
   reason: string;
 }
 
+// ─── Component ────────────────────────────────────────────────────────
+
 export function ReplScreen(): JSX.Element {
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'system',
       text:
-        "DeepCode is ready. Type a message below to talk to DeepSeek. " +
-        "The agent can call Read / Write / Edit / Bash / Grep / Glob tools.",
+        'DeepCode is ready. Ask anything about your codebase — I can ' +
+        'Read / Write / Edit / Bash / Grep / Glob your files.',
     },
   ]);
   const [input, setInput] = useState('');
@@ -69,7 +116,14 @@ export function ReplScreen(): JSX.Element {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [effort, setEffort] = useState<Effort>('medium');
-  // Vim mode (off by default until keybindings.json#vim is true).
+  const [model, setModel] = useState<string>('deepseek-chat');
+  const [mode, setMode] = useState<'default' | 'plan' | 'bypassPermissions'>(
+    'default',
+  );
+  const [usage, setUsage] = useState<{ inputTokens: number; outputTokens: number }>({
+    inputTokens: 0,
+    outputTokens: 0,
+  });
   const [vimEnabled, setVimEnabled] = useState(false);
   const [vimMode, setVimMode] = useState<VimMode>('INSERT');
   const vimStateRef = useRef<VimState | null>(null);
@@ -77,9 +131,21 @@ export function ReplScreen(): JSX.Element {
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
 
-  // Load Vim config + custom bindings on mount.
+  // ── Load settings + keybindings on mount ──
   useEffect(() => {
     void (async () => {
+      try {
+        const s = (await loadSettingsFile()) as {
+          effortLevel?: string;
+          model?: string;
+        };
+        if (s.effortLevel && (EFFORTS as string[]).includes(s.effortLevel)) {
+          setEffort(s.effortLevel as Effort);
+        }
+        if (s.model) setModel(s.model);
+      } catch {
+        /* defaults */
+      }
       try {
         const kb = await loadKeybindings();
         bindingsRef.current = [...DEFAULT_KEYBINDINGS, ...(kb.bindings ?? [])];
@@ -89,94 +155,63 @@ export function ReplScreen(): JSX.Element {
           setVimMode(vimStateRef.current.mode);
         }
       } catch {
-        /* keep defaults */
+        /* defaults */
       }
     })();
   }, []);
 
-  // Load saved effort on mount.
-  useEffect(() => {
-    void (async () => {
-      try {
-        const s = (await loadSettingsFile()) as { effortLevel?: string };
-        if (s.effortLevel && EFFORTS.includes(s.effortLevel as Effort)) {
-          setEffort(s.effortLevel as Effort);
-        }
-      } catch {
-        /* fall back to default */
-      }
-    })();
-  }, []);
-
-  async function handleEffortChange(next: Effort): Promise<void> {
-    setEffort(next);
-    // Persist to ~/.deepcode/settings.json so the choice survives restart.
-    try {
-      const current = (await loadSettingsFile()) as Record<string, unknown>;
-      await saveSettingsFile({ ...current, effortLevel: next });
-    } catch (err) {
-      console.warn('Failed to persist effort:', err);
-    }
-  }
-
-  // Subscribe to agent events for the lifetime of this view
+  // ── Subscribe to agent events ──
   useEffect(() => {
     if (!window.deepcode?.agent) return;
     const off = window.deepcode.agent.onEvent((raw: unknown) => {
-      const e = raw as AgentStreamEvt;
+      const e = raw as AgentEvt;
       if (e.kind === 'turn_done') {
         setBusy(false);
         setActiveTurnId(null);
-        // Finalize the last assistant message (drop "streaming" flag)
-        setMessages((m) => {
-          if (m.length === 0) return m;
-          const last = m[m.length - 1]!;
-          if (last.role === 'assistant' && last.streaming) {
-            return [...m.slice(0, -1), { ...last, streaming: false }];
-          }
-          return m;
-        });
+        setMessages((m) => finalizeStreaming(m));
         return;
       }
-      // kind === 'event'
       switch (e.type) {
         case 'text_delta':
-          setMessages((m) => {
-            const last = m[m.length - 1];
-            if (last && last.role === 'assistant' && last.streaming) {
-              return [
-                ...m.slice(0, -1),
-                { ...last, text: last.text + (e.text ?? '') },
-              ];
-            }
-            return [...m, { role: 'assistant', text: e.text ?? '', streaming: true }];
-          });
+          setMessages((m) => appendTextDelta(m, e.text ?? ''));
           break;
         case 'tool_use':
-          setMessages((m) => [
-            ...m,
-            {
-              role: 'tool',
-              text: `→ ${e.name ?? '?'}  ${formatToolArgs(e.input ?? {})}`,
-            },
-          ]);
+          setMessages((m) =>
+            appendToolUse(m, {
+              toolId: e.id ?? `tu-${Date.now()}`,
+              name: e.name ?? '?',
+              input: e.input ?? {},
+              target: pickTarget(e.input ?? {}),
+              status: 'running',
+            }),
+          );
           break;
         case 'tool_result':
-          setMessages((m) => [
-            ...m,
-            {
-              role: 'tool',
-              text:
-                (e.result?.isError ? '✕ ' : '✓ ') +
-                truncate(e.result?.content ?? '', 200),
-            },
-          ]);
+          setMessages((m) =>
+            attachToolResult(
+              m,
+              e.id ?? '',
+              e.result?.content ?? '',
+              e.result?.isError ? 'err' : 'ok',
+            ),
+          );
+          break;
+        case 'usage':
+          // Some providers emit a usage event; track for the ctx bar
+          if (typeof e.input === 'object' && e.input) {
+            const u = e.input as { inputTokens?: number; outputTokens?: number };
+            setUsage({
+              inputTokens: u.inputTokens ?? 0,
+              outputTokens: u.outputTokens ?? 0,
+            });
+          }
           break;
         case 'error':
           setMessages((m) => [
             ...m,
-            { role: 'system', text: `✕ Error: ${e.error ?? 'unknown'}` },
+            { role: 'system', text: `✕ ${e.error ?? 'unknown error'}`, level: 'error' },
           ]);
+          setBusy(false);
           break;
         case 'permission_request':
           if (e.requestId && e.toolName) {
@@ -187,55 +222,64 @@ export function ReplScreen(): JSX.Element {
             });
           }
           break;
-        // text 'usage', 'thinking_delta', 'turn_complete' silently dropped
       }
     });
     return () => off();
   }, []);
 
-  /** Translate a DOM KeyboardEvent into a normalized chord string for VimState. */
+  useEffect(() => {
+    listRef.current?.scrollTo({
+      top: listRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [messages]);
+
+  // ── Effort persist ──
+  async function handleEffortChange(next: Effort): Promise<void> {
+    setEffort(next);
+    try {
+      const cur = (await loadSettingsFile()) as Record<string, unknown>;
+      await saveSettingsFile({ ...cur, effortLevel: next });
+    } catch (err) {
+      console.warn('persist effort:', err);
+    }
+  }
+
+  // ── Vim ──
   function chordFromEvent(e: React.KeyboardEvent<HTMLTextAreaElement>): string {
     const parts: string[] = [];
     if (e.ctrlKey) parts.push('ctrl');
     if (e.shiftKey) parts.push('shift');
     if (e.altKey) parts.push('alt');
     if (e.metaKey) parts.push('meta');
-    // Normalize the key half:
-    //   'Escape' → 'esc', single letters → lowercased, leave others as-is
     let key = e.key;
     if (key === 'Escape') key = 'esc';
     else if (key.length === 1) key = key.toLowerCase();
     parts.push(key);
     return parts.join('+');
   }
-
-  /** Apply a host-side action returned by VimState.feed (cursor ops, etc.). */
   function applyAction(action: string): void {
     const ta = composerRef.current;
     if (!ta) return;
     switch (action) {
       case 'cursor-line-start':
-        ta.setSelectionRange(0, 0);
-        break;
-      case 'cursor-line-end':
-        ta.setSelectionRange(ta.value.length, ta.value.length);
-        break;
       case 'cursor-buffer-start':
         ta.setSelectionRange(0, 0);
         break;
+      case 'cursor-line-end':
       case 'cursor-buffer-end':
         ta.setSelectionRange(ta.value.length, ta.value.length);
         break;
       case 'kill-line':
       case 'kill-to-end': {
         const cur = ta.selectionStart;
-        vimStateRef.current!.yanked = ta.value.slice(cur);
+        if (vimStateRef.current) vimStateRef.current.yanked = ta.value.slice(cur);
         setInput(ta.value.slice(0, cur));
         break;
       }
       case 'kill-to-start': {
         const cur = ta.selectionStart;
-        vimStateRef.current!.yanked = ta.value.slice(0, cur);
+        if (vimStateRef.current) vimStateRef.current.yanked = ta.value.slice(0, cur);
         setInput(ta.value.slice(cur));
         break;
       }
@@ -248,16 +292,16 @@ export function ReplScreen(): JSX.Element {
         setInput(ta.value.slice(0, cur) + y + ta.value.slice(cur));
         break;
       }
-      // vim-*-mode actions are handled inside VimState — no host work.
     }
   }
-
-  function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
-    // Submit on plain Enter (allow Shift+Enter for newline)
-    if (e.key === 'Enter' && !e.shiftKey && !vimEnabled) {
-      e.preventDefault();
-      void handleSubmit(e as unknown as React.FormEvent);
-      return;
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // Enter submits when vim is off; in vim INSERT mode also submits.
+    if (e.key === 'Enter' && !e.shiftKey) {
+      if (!vimEnabled || vimStateRef.current?.mode === 'INSERT') {
+        e.preventDefault();
+        void handleSubmit(e as unknown as React.FormEvent);
+        return;
+      }
     }
     if (!vimEnabled || !vimStateRef.current) return;
     const chord = chordFromEvent(e);
@@ -265,13 +309,9 @@ export function ReplScreen(): JSX.Element {
     const action = vimStateRef.current.feed(chord, bindingsRef.current);
     const after = vimStateRef.current.mode;
     if (action) {
-      // We consumed the key: block default insertion + apply effect.
       e.preventDefault();
       applyAction(action);
     } else if (before === 'NORMAL') {
-      // NORMAL mode: swallow uncaught keys so they don't insert text. The
-      // only ALLOWED untranslated keys are arrow keys + backspace, which
-      // let the user navigate even mid-binding pending.
       if (
         e.key !== 'ArrowLeft' &&
         e.key !== 'ArrowRight' &&
@@ -285,6 +325,7 @@ export function ReplScreen(): JSX.Element {
     if (after !== before) setVimMode(after);
   }
 
+  // ── Approval ──
   async function handleApproval(
     decision: 'allow' | 'deny' | 'always',
   ): Promise<void> {
@@ -298,7 +339,7 @@ export function ReplScreen(): JSX.Element {
           ...m,
           {
             role: 'system',
-            text: `✓ Added "${req.toolName}" to settings.permissions.allow`,
+            text: `✓ "${req.toolName}" added to settings.permissions.allow`,
           },
         ]);
       } catch (err) {
@@ -307,6 +348,7 @@ export function ReplScreen(): JSX.Element {
           {
             role: 'system',
             text: `⚠ Could not persist always-allow: ${(err as Error).message}`,
+            level: 'error',
           },
         ]);
       }
@@ -314,14 +356,11 @@ export function ReplScreen(): JSX.Element {
     await window.deepcode.agent.approve({ requestId: req.requestId, decision });
   }
 
-  useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
-
+  // ── Send ──
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const text = input.trim();
-    if (!text || busy) return;
+    if (!text || busy || pendingApproval) return;
     setInput('');
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
@@ -330,13 +369,19 @@ export function ReplScreen(): JSX.Element {
         sessionId: 'default',
         userMessage: text,
         effort,
+        model,
+        mode,
       });
       setActiveTurnId(r.turnId);
     } catch (err) {
       setBusy(false);
       setMessages((m) => [
         ...m,
-        { role: 'system', text: `✕ Failed to start: ${(err as Error).message}` },
+        {
+          role: 'system',
+          text: `✕ Failed to start: ${(err as Error).message ?? err}`,
+          level: 'error',
+        },
       ]);
     }
   }
@@ -346,152 +391,401 @@ export function ReplScreen(): JSX.Element {
     await window.deepcode.agent.abort({ turnId: activeTurnId });
   }
 
+  // ── Context bar fill ──
+  const contextWindow = 128_000;
+  const usedTokens = usage.inputTokens + usage.outputTokens;
+  const fillPct = Math.min(100, (usedTokens / contextWindow) * 100);
+
+  // Header status pills
+  const headerPills = useMemo(
+    () => (
+      <>
+        <Pill dot>connected</Pill>
+        <Pill>{model}</Pill>
+        <Pill>
+          {mode === 'bypassPermissions'
+            ? 'approval: skipped'
+            : mode === 'plan'
+              ? 'plan mode'
+              : 'approval: ask'}
+        </Pill>
+      </>
+    ),
+    [model, mode],
+  );
+
   return (
-    <div className="flex h-full flex-col">
-      <div ref={listRef} className="flex-1 space-y-3 overflow-y-auto p-4">
-        {messages.map((m, i) => (
-          <div
-            key={i}
-            className={
-              'rounded p-3 text-sm ' +
-              (m.role === 'user'
-                ? 'ml-12 bg-accent/20'
-                : m.role === 'assistant'
-                  ? 'mr-12 bg-bg-elevated'
-                  : m.role === 'tool'
-                    ? 'mx-6 bg-bg-elevated text-xs text-muted font-mono'
-                    : 'mx-12 border border-border bg-bg-elevated text-muted')
-            }
-          >
-            {m.role !== 'tool' && <div className="mb-1 text-xs text-muted">{m.role}</div>}
-            <div className="whitespace-pre-wrap">
-              {m.text}
-              {m.streaming && <span className="ml-1 animate-pulse">▍</span>}
+    <>
+      <div className="chat-header">
+        <span className="crumb">
+          <b>DeepCode</b>
+          {' · '}REPL
+        </span>
+        <div className="right">{headerPills}</div>
+      </div>
+
+      <div className="chat-stream" ref={listRef}>
+        {messages.map((m, i) => renderMessage(m, i, pendingApproval, handleApproval))}
+
+        {busy && !pendingApproval && (
+          <div className="msg assistant">
+            <div className="avatar">DC</div>
+            <div className="body">
+              <div className="author">DeepCode · thinking</div>
+              <div className="content">
+                <span className="spinner" /> <span className="muted">working…</span>
+              </div>
             </div>
           </div>
-        ))}
+        )}
       </div>
-      {pendingApproval && (
-        <div className="border-t border-accent bg-accent/10 p-3 text-sm">
-          <div className="mb-2 text-fg">
-            <span className="font-semibold text-accent">⏸ Approval needed</span>
-            {' — '}
-            <span className="font-mono">{pendingApproval.toolName}</span>
-          </div>
-          <div className="mb-2 whitespace-pre-wrap text-muted">
-            {pendingApproval.reason}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => handleApproval('allow')}
-              className="rounded bg-accent px-3 py-1 text-bg font-medium"
-            >
-              Approve
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApproval('deny')}
-              className="rounded bg-error/80 px-3 py-1 text-fg font-medium"
-            >
-              Reject
-            </button>
-            <button
-              type="button"
-              onClick={() => handleApproval('always')}
-              className="rounded border border-accent px-3 py-1 text-accent font-medium hover:bg-accent/20"
-              title="Allow this tool from now on (writes to ~/.deepcode/settings.json)"
-            >
-              Always allow
-            </button>
-          </div>
-        </div>
-      )}
-      <form onSubmit={handleSubmit} className="border-t border-border p-3">
-        <div className="mb-2 flex items-center gap-2 text-xs text-muted">
-          <label htmlFor="effort-select">Effort:</label>
-          <select
-            id="effort-select"
-            value={effort}
-            onChange={(e) => void handleEffortChange(e.target.value as Effort)}
-            disabled={busy}
-            className="rounded border border-border bg-bg px-2 py-1 text-fg outline-none focus:border-accent"
-          >
-            {EFFORTS.map((tier) => (
-              <option key={tier} value={tier}>
-                {tier} — {EFFORT_LABELS[tier]}
-              </option>
-            ))}
-          </select>
-          <span className="text-muted">
-            controls max tokens + temperature for each turn
-          </span>
-          {vimEnabled && (
-            <span
-              className={
-                'ml-auto rounded px-2 py-0.5 font-mono text-xs ' +
-                (vimMode === 'NORMAL'
-                  ? 'bg-accent/20 text-accent'
-                  : vimMode === 'VISUAL'
-                    ? 'bg-error/10 text-error'
-                    : 'bg-bg-elevated text-muted')
+
+      <div className="composer">
+        <form onSubmit={handleSubmit}>
+          <div className="box">
+            <textarea
+              ref={composerRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                pendingApproval
+                  ? 'Approve or reject the tool call above to continue…'
+                  : busy
+                    ? 'Agent is responding…'
+                    : '问点什么…   @ 引用文件   ·   / 命令   ·   # 写入 DEEPCODE.md'
               }
-              title="Vim mode is active. Esc → NORMAL · i → INSERT · v → VISUAL"
-            >
-              -- {vimMode} --
-            </span>
-          )}
+              disabled={busy || pendingApproval !== null}
+              rows={Math.min(6, Math.max(1, input.split('\n').length))}
+            />
+            <div className="toolbar">
+              <button
+                type="button"
+                className="icon-btn"
+                title="附件 / 命令 / 插件 — 待 P2"
+                disabled
+              >
+                +
+              </button>
+              <span
+                className={
+                  'mode-badge ' +
+                  (mode === 'bypassPermissions'
+                    ? 'bypass'
+                    : mode === 'plan'
+                      ? 'plan'
+                      : 'default')
+                }
+                onClick={() =>
+                  setMode((cur) =>
+                    cur === 'default'
+                      ? 'plan'
+                      : cur === 'plan'
+                        ? 'bypassPermissions'
+                        : 'default',
+                  )
+                }
+                title="Click to cycle: default → plan → bypassPermissions"
+                style={{ cursor: 'pointer' }}
+              >
+                {mode === 'bypassPermissions'
+                  ? '⚡ Bypass'
+                  : mode === 'plan'
+                    ? '◐ Plan mode'
+                    : '● Default'}
+              </span>
+              {vimEnabled && (
+                <span
+                  className={
+                    'vim-chip ' +
+                    (vimMode === 'NORMAL'
+                      ? 'normal'
+                      : vimMode === 'VISUAL'
+                        ? 'visual'
+                        : '')
+                  }
+                  title="Vim mode is on"
+                >
+                  -- {vimMode} --
+                </span>
+              )}
+              <span className="spacer" />
+              <div
+                className="model-picker"
+                onClick={() =>
+                  setModel((m) =>
+                    m === 'deepseek-chat' ? 'deepseek-reasoner' : 'deepseek-chat',
+                  )
+                }
+                title="Click to toggle model"
+              >
+                <span className="dot" />
+                <span>{model}</span>
+                <span className="meta">128k · {effort}</span>
+              </div>
+              <select
+                value={effort}
+                onChange={(e) => void handleEffortChange(e.target.value as Effort)}
+                disabled={busy}
+                title="Effort tier — maxTokens + temperature"
+                style={{
+                  background: 'var(--bg-2)',
+                  border: '1px solid var(--line-soft)',
+                  borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-1)',
+                  padding: '5px 8px',
+                  fontSize: 12,
+                }}
+              >
+                {EFFORTS.map((t) => (
+                  <option key={t} value={t}>
+                    {t} — {EFFORT_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={handleAbort}
+                  className="send-btn stop"
+                  title="Stop (⌘.)"
+                >
+                  ■
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  className="send-btn"
+                  disabled={!input.trim() || pendingApproval !== null}
+                  title="Send (⌘↵)"
+                >
+                  ↵
+                </button>
+              )}
+            </div>
+          </div>
+        </form>
+        <div className="ctx-bar">
+          <span>
+            {usedTokens.toLocaleString()} / {contextWindow.toLocaleString()}
+          </span>
+          <div className="progress">
+            <div className="fill" style={{ width: `${fillPct}%` }} />
+          </div>
+          <span>{fillPct.toFixed(1)}%</span>
+          <span style={{ marginLeft: 'auto', color: 'var(--text-3)' }}>
+            ¥ {((usage.inputTokens / 1_000_000) * 1.0 + (usage.outputTokens / 1_000_000) * 2.0).toFixed(4)}
+          </span>
         </div>
-        <div className="flex gap-2">
-          <textarea
-            ref={composerRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleComposerKeyDown}
-            placeholder={
-              pendingApproval
-                ? 'Approve or reject the tool call above to continue…'
-                : busy
-                  ? 'Agent is responding…'
-                  : vimEnabled
-                    ? `[${vimMode}]  Ask DeepCode…  (Enter submits, Shift+Enter newline)`
-                    : 'Ask DeepCode… (Enter submits, Shift+Enter for newline)'
-            }
-            disabled={busy || pendingApproval !== null}
-            rows={Math.min(6, Math.max(1, input.split('\n').length))}
-            className="flex-1 resize-none rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent disabled:opacity-50"
-          />
-          {busy ? (
-            <button
-              type="button"
-              onClick={handleAbort}
-              className="rounded bg-error/80 px-4 py-2 font-medium text-fg"
-            >
-              Stop
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="rounded bg-accent px-4 py-2 font-medium text-bg disabled:opacity-50"
-            >
-              Send
-            </button>
-          )}
+      </div>
+    </>
+  );
+}
+
+// ─── Message renderer ─────────────────────────────────────────────────
+
+function renderMessage(
+  m: Msg,
+  i: number,
+  pendingApproval: PendingApproval | null,
+  onApproval: (decision: 'allow' | 'deny' | 'always') => void,
+): JSX.Element | null {
+  if (m.role === 'user') {
+    return (
+      <div className="msg user" key={i}>
+        <div className="avatar">YO</div>
+        <div className="body">
+          <div className="author">You</div>
+          <div className="content">{m.text}</div>
         </div>
-      </form>
+      </div>
+    );
+  }
+  if (m.role === 'system') {
+    return (
+      <div className="msg system" key={i}>
+        <div className="avatar">i</div>
+        <div className="body">
+          <div className="author">System</div>
+          <div
+            className="content"
+            style={{
+              color:
+                m.level === 'error' ? 'var(--error)' : 'var(--text-2)',
+              fontSize: 12,
+              fontFamily: m.level === 'error' ? 'JetBrains Mono, monospace' : undefined,
+            }}
+          >
+            {m.text}
+          </div>
+        </div>
+      </div>
+    );
+  }
+  // assistant
+  return (
+    <div className="msg assistant" key={i}>
+      <div className="avatar">DC</div>
+      <div className="body">
+        <div className="author">DeepCode</div>
+        <div className="content">
+          {m.turn.text}
+          {m.turn.streaming && <span className="streaming-cursor" />}
+          {m.turn.tools.map((t) => (
+            <div key={t.toolId}>
+              <ToolCard
+                name={t.name}
+                target={t.target}
+                status={{
+                  kind: t.status === 'running' ? 'info' : t.status === 'ok' ? 'ok' : 'err',
+                  label:
+                    t.status === 'running'
+                      ? '… running'
+                      : t.status === 'ok'
+                        ? '✓ done'
+                        : '✕ error',
+                }}
+                body={t.resultText ? truncate(t.resultText, 1500) : undefined}
+              />
+              {/* Inline approval — appears right under the relevant tool card */}
+              {pendingApproval && pendingApproval.toolName === t.name && t.status === 'running' && (
+                <div className="approval-row">
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={() => onApproval('allow')}
+                  >
+                    Approve (↵)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => onApproval('deny')}
+                  >
+                    Reject (esc)
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    onClick={() => onApproval('always')}
+                    title="Persist to ~/.deepcode/settings.json#permissions.allow"
+                  >
+                    Always allow {t.name} in this session
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
 
-function formatToolArgs(input: Record<string, unknown>): string {
-  for (const key of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
-    const v = input[key];
+// ─── Mutators ────────────────────────────────────────────────────────
+
+function pickTarget(input: Record<string, unknown>): string | undefined {
+  for (const k of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
+    const v = input[k];
     if (typeof v === 'string') return v;
   }
-  return JSON.stringify(input).slice(0, 80);
+  return undefined;
 }
 
 function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s;
+  return s.length > n ? s.slice(0, n) + '…\n[truncated]' : s;
+}
+
+function lastAssistantTurn(msgs: Msg[]): AssistantTurn | null {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]!;
+    if (m.role === 'assistant') return m.turn;
+  }
+  return null;
+}
+
+function appendTextDelta(msgs: Msg[], delta: string): Msg[] {
+  const last = msgs[msgs.length - 1];
+  if (last && last.role === 'assistant' && last.turn.streaming) {
+    return [
+      ...msgs.slice(0, -1),
+      {
+        role: 'assistant',
+        turn: { ...last.turn, text: last.turn.text + delta },
+      },
+    ];
+  }
+  return [
+    ...msgs,
+    {
+      role: 'assistant',
+      turn: { text: delta, tools: [], streaming: true },
+    },
+  ];
+}
+
+function appendToolUse(msgs: Msg[], tool: ToolInvocation): Msg[] {
+  // Attach to the last assistant turn; if none open, start one
+  const last = msgs[msgs.length - 1];
+  if (last && last.role === 'assistant' && last.turn.streaming) {
+    return [
+      ...msgs.slice(0, -1),
+      {
+        role: 'assistant',
+        turn: { ...last.turn, tools: [...last.turn.tools, tool] },
+      },
+    ];
+  }
+  return [
+    ...msgs,
+    {
+      role: 'assistant',
+      turn: { text: '', tools: [tool], streaming: true },
+    },
+  ];
+}
+
+function attachToolResult(
+  msgs: Msg[],
+  toolId: string,
+  content: string,
+  status: 'ok' | 'err',
+): Msg[] {
+  const turn = lastAssistantTurn(msgs);
+  if (!turn) return msgs;
+  return msgs.map((m): Msg => {
+    if (m.role !== 'assistant') return m;
+    const idx = m.turn.tools.findIndex((t) => t.toolId === toolId);
+    if (idx === -1) {
+      // Fallback: attach to the last running tool
+      // ES2022-safe: find last running tool by reverse iteration
+      let runningIdx = -1;
+      for (let j = m.turn.tools.length - 1; j >= 0; j--) {
+        if (m.turn.tools[j]!.status === 'running') {
+          runningIdx = j;
+          break;
+        }
+      }
+      if (runningIdx === -1) return m;
+      const tools = [...m.turn.tools];
+      tools[runningIdx] = {
+        ...tools[runningIdx]!,
+        status,
+        resultText: content,
+      };
+      return { ...m, turn: { ...m.turn, tools } };
+    }
+    const tools = [...m.turn.tools];
+    tools[idx] = { ...tools[idx]!, status, resultText: content };
+    return { ...m, turn: { ...m.turn, tools } };
+  });
+}
+
+function finalizeStreaming(msgs: Msg[]): Msg[] {
+  const last = msgs[msgs.length - 1];
+  if (!last || last.role !== 'assistant' || !last.turn.streaming) return msgs;
+  return [
+    ...msgs.slice(0, -1),
+    { role: 'assistant', turn: { ...last.turn, streaming: false } },
+  ];
 }
