@@ -1,1 +1,97 @@
-/* Tailwind / global styles entry — M6 */
+/* Tailwind / global styles entry — M6 skeleton.
+ * Real Tailwind setup (postcss + vite-plugin) lands in M6-rest. The skeleton
+ * relies on CSS variables + plain styles so the React tree renders without
+ * a build pipeline beyond `tsc`.
+ */
+
+:root {
+  color-scheme: dark;
+  --bg: #0e0e10;
+  --bg-elevated: #18181b;
+  --fg: #f4f4f5;
+  --muted: #71717a;
+  --accent: #a3e635;
+  --error: #f87171;
+  --border: #27272a;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body, html, #root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 14px;
+}
+
+/* Minimum class-equivalents so the skeleton's Tailwind-flavored markup is
+ * legible without postcss. Real Tailwind replaces this block in M6-rest. */
+.bg-bg { background: var(--bg); }
+.bg-bg-elevated { background: var(--bg-elevated); }
+.text-fg { color: var(--fg); }
+.text-muted { color: var(--muted); }
+.bg-accent { background: var(--accent); }
+.text-accent { color: var(--accent); }
+.bg-error\/10 { background: rgba(248, 113, 113, 0.1); }
+.text-error { color: var(--error); }
+.border-border { border-color: var(--border); }
+.bg-accent\/10 { background: rgba(163, 230, 53, 0.1); }
+.bg-accent\/20 { background: rgba(163, 230, 53, 0.2); }
+
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.flex-1 { flex: 1; }
+.gap-2 { gap: 0.5rem; }
+.h-full { height: 100%; }
+.h-screen { height: 100vh; }
+.items-center { align-items: center; }
+.justify-center { justify-content: center; }
+.justify-between { justify-content: space-between; }
+.overflow-hidden { overflow: hidden; }
+.overflow-y-auto { overflow-y: auto; }
+.whitespace-pre-wrap { white-space: pre-wrap; }
+.space-y-3 > * + * { margin-top: 0.75rem; }
+.space-y-4 > * + * { margin-top: 1rem; }
+.p-3 { padding: 0.75rem; }
+.p-4 { padding: 1rem; }
+.p-6 { padding: 1.5rem; }
+.p-8 { padding: 2rem; }
+.px-3 { padding-left: 0.75rem; padding-right: 0.75rem; }
+.px-4 { padding-left: 1rem; padding-right: 1rem; }
+.py-1 { padding-top: 0.25rem; padding-bottom: 0.25rem; }
+.py-2 { padding-top: 0.5rem; padding-bottom: 0.5rem; }
+.mt-1 { margin-top: 0.25rem; }
+.ml-12 { margin-left: 3rem; }
+.mr-12 { margin-right: 3rem; }
+.mx-12 { margin-left: 3rem; margin-right: 3rem; }
+.mb-1 { margin-bottom: 0.25rem; }
+.text-xs { font-size: 0.75rem; }
+.text-sm { font-size: 0.875rem; }
+.text-xl { font-size: 1.25rem; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.rounded { border-radius: 0.25rem; }
+.rounded-lg { border-radius: 0.5rem; }
+.border { border-width: 1px; border-style: solid; }
+.border-t { border-top-width: 1px; border-top-style: solid; }
+.border-b { border-bottom-width: 1px; border-bottom-style: solid; }
+.w-full { width: 100%; }
+.max-w-md { max-width: 28rem; }
+.outline-none { outline: none; }
+
+input, button {
+  font: inherit;
+  color: inherit;
+}
+input:focus { border-color: var(--accent); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+code {
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: 0.95em;
+}
