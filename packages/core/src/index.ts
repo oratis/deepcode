@@ -241,6 +241,17 @@ export {
   type MarketplaceConfig,
 } from './plugins/index.js';
 
+// Voice input (M8 — whisper.cpp wrapper + stub provider)
+export {
+  WhisperCppProvider,
+  StubVoiceProvider,
+  parseWhisperOutput,
+  type VoiceProvider,
+  type VoiceTranscript,
+  type TranscribeOpts,
+  type WhisperCppOpts,
+} from './voice/index.js';
+
 // Auto-mode classifier (M3c-rest — LLM-judged tool gate when mode === 'auto')
 export {
   classifyAutoMode,

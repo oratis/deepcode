@@ -96,3 +96,27 @@ code {
   font-family: ui-monospace, SFMono-Regular, monospace;
   font-size: 0.95em;
 }
+
+/* Additional utility classes used by the M6-rest screens. */
+.border-l { border-left-width: 1px; border-left-style: solid; }
+.border-b-2 { border-bottom-width: 2px; border-bottom-style: solid; }
+.border-accent { border-color: var(--accent); }
+.cursor-pointer { cursor: pointer; }
+.hidden { display: none; }
+@media (min-width: 1024px) { .lg\:block { display: block; } }
+.w-1\/3 { width: 33.333%; }
+.max-w-xl { max-width: 36rem; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.ml-2 { margin-left: 0.5rem; }
+.mt-2 { margin-top: 0.5rem; }
+.mt-3 { margin-top: 0.75rem; }
+.mt-4 { margin-top: 1rem; }
+.p-2 { padding: 0.5rem; }
+.gap-1 { gap: 0.25rem; }
+.space-y-2 > * + * { margin-top: 0.5rem; }
+.text-center { text-align: center; }
+.text-left { text-align: left; }
+.font-mono { font-family: ui-monospace, SFMono-Regular, monospace; }
+.hover\:border-accent:hover { border-color: var(--accent); }
+.hover\:text-fg:hover { color: var(--fg); }
+table { border-collapse: collapse; width: 100%; }
