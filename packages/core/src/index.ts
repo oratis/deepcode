@@ -222,6 +222,13 @@ export {
   type PluginCapabilityBridge,
 } from './plugins/index.js';
 
+// Auto-mode classifier (M3c-rest — LLM-judged tool gate when mode === 'auto')
+export {
+  classifyAutoMode,
+  type AutoVerdict,
+  type ClassifyOpts,
+} from './auto-mode/index.js';
+
 // Worktree (M8 — isolated git worktree creation for background tasks)
 export {
   createWorktree,
