@@ -27,6 +27,8 @@ export {
   type DnsProxyHandle,
 } from './dns-proxy.js';
 
+export type { BwrapArgsOpts } from './profile.js';
+
 export interface SandboxedCommand {
   /** Command + args to spawn (the actual sandbox wrapper invocation). */
   command: string;
