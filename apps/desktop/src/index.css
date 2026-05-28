@@ -155,3 +155,10 @@ select:focus { outline: none; border-color: var(--accent); }
 }
 .mx-6 { margin-left: 1.5rem; margin-right: 1.5rem; }
 .disabled\:opacity-50:disabled { opacity: 0.5; }
+.relative { position: relative; }
+.absolute { position: absolute; }
+.top-3 { top: 0.75rem; }
+.right-3 { right: 0.75rem; }
+.z-10 { z-index: 10; }
+.w-1\/2 { width: 50%; }
+.w-0 { width: 0; }
