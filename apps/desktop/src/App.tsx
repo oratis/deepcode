@@ -1,9 +1,10 @@
 // Top-level React component for desktop client.
 // Spec: docs/VISUAL_DESIGN.html
-// Milestone: M6-rest — Onboarding gate + Nav + 9 screens
+// Milestone: 0.1.1 — design-aligned 3-column shell
 
 import { useEffect, useState } from 'react';
-import { Nav, type ScreenName } from './components/Nav.js';
+import { InspectorRail } from './components/InspectorRail.js';
+import { Sidebar } from './components/Sidebar.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
 import { AboutScreen } from './screens/About.js';
@@ -16,20 +17,18 @@ import { ReplScreen } from './screens/Repl.js';
 import { SessionsScreen } from './screens/Sessions.js';
 import { SettingsScreen } from './screens/Settings.js';
 import { SkillsScreen } from './screens/Skills.js';
+import type { ScreenName } from './components/Nav.js';
 import type { UpdateInfo } from './types/global.js';
 
 export function App(): JSX.Element {
-  const [version, setVersion] = useState<string>('');
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [screen, setScreen] = useState<ScreenName>('repl');
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
   useEffect(() => {
-    void window.deepcode.version().then(setVersion);
     void window.deepcode.creds.load().then((c) => setHasKey(c.hasKey));
     const offShim = window.deepcode.onUpdateDownloaded((info) => setUpdate(info));
-    // Also subscribe to the real Tauri updater (so even if the shim
-    // surface drifts, the banner still fires).
     const offReal = onUpdateDownloaded((info) => setUpdate(info));
     startUpdaterPolling();
     return () => {
@@ -40,27 +39,47 @@ export function App(): JSX.Element {
 
   if (hasKey === null) {
     return (
-      <div className="flex h-screen items-center justify-center bg-bg text-fg">
+      <div
+        style={{
+          height: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          color: 'var(--text-2)',
+          background: 'var(--bg-0)',
+        }}
+      >
         Loading…
       </div>
     );
   }
 
+  // Pre-onboarding: standalone hero — no shell.
+  if (!hasKey) {
+    return <OnboardingScreen onComplete={() => setHasKey(true)} />;
+  }
+
+  // Main shell: 3-column grid.
   return (
-    <div className="flex h-screen flex-col bg-bg text-fg">
+    <div className="app-shell">
       {update && <UpdateBanner info={update} />}
-      <header className="flex items-center justify-between border-b border-border px-4 py-2 text-sm">
-        <span className="font-semibold">DeepCode</span>
-        <span className="text-muted">v{version}</span>
-      </header>
-      {hasKey && <Nav active={screen} onChange={setScreen} />}
-      <main className="flex-1 overflow-hidden">
-        {!hasKey ? (
-          <OnboardingScreen onComplete={() => setHasKey(true)} />
-        ) : (
-          renderScreen(screen, setScreen)
-        )}
-      </main>
+      <Sidebar
+        activeSessionId={activeSessionId}
+        onPickSession={(id) => {
+          setActiveSessionId(id);
+          setScreen('repl');
+        }}
+        onNewSession={() => {
+          setActiveSessionId(null);
+          setScreen('repl');
+        }}
+      />
+      <main className="chat-main">{renderScreen(screen, setScreen)}</main>
+      <InspectorRail
+        activeScreen={screen}
+        onChange={(s) => setScreen(s)}
+        contextFill={undefined}
+      />
     </div>
   );
 }
@@ -74,20 +93,49 @@ function renderScreen(
       return <ChatScreen />;
     case 'sessions':
       return (
-        <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />
+        <div className="legacy-screen">
+          <SessionsScreen
+            onPick={() => setScreen('repl')}
+            onNew={() => setScreen('repl')}
+          />
+        </div>
       );
     case 'plugins':
-      return <PluginsScreen />;
+      return (
+        <div className="legacy-screen">
+          <PluginsScreen />
+        </div>
+      );
     case 'skills':
-      return <SkillsScreen />;
+      return (
+        <div className="legacy-screen">
+          <SkillsScreen />
+        </div>
+      );
     case 'permissions':
-      return <PermissionsScreen />;
+      return (
+        <div className="legacy-screen">
+          <PermissionsScreen />
+        </div>
+      );
     case 'mcp':
-      return <MCPManagerScreen />;
+      return (
+        <div className="legacy-screen">
+          <MCPManagerScreen />
+        </div>
+      );
     case 'settings':
-      return <SettingsScreen />;
+      return (
+        <div className="legacy-screen">
+          <SettingsScreen />
+        </div>
+      );
     case 'about':
-      return <AboutScreen />;
+      return (
+        <div className="legacy-screen">
+          <AboutScreen />
+        </div>
+      );
     case 'repl':
     default:
       return <ReplScreen />;
