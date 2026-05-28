@@ -152,8 +152,9 @@ export class CredentialsStore {
 
 /**
  * Resolve credentials at runtime: apiKeyHelper (if set) overrides stored creds.
- * Spec: docs/DEVELOPMENT_PLAN.md §3.4 — apiKeyHelper refresh on 401 + 5min cycle.
- * M2 implements one-shot resolution; the refresh loop is M3+.
+ * One-shot resolution — use `ApiKeyHelperRefresher` for periodic refresh on
+ * 401 / TTL expiry.
+ * Spec: docs/DEVELOPMENT_PLAN.md §3.4
  */
 export async function resolveCredentials(args: {
   store: CredentialsStore;
@@ -174,6 +175,62 @@ export async function resolveCredentials(args: {
     }
   }
   return args.store.load();
+}
+
+/**
+ * Periodic apiKeyHelper refresher.
+ *
+ * Spec: docs/DEVELOPMENT_PLAN.md §3.4 — re-execute apiKeyHelper on a TTL and
+ * on 401-class failures. Caller wires `.invalidate()` to whenever provider
+ * sees auth-failure response.
+ *
+ * TTL is controlled by env var DEEPCODE_API_KEY_HELPER_TTL_MS (default 300_000).
+ */
+export interface ApiKeyHelperOpts {
+  store: CredentialsStore;
+  apiKeyHelper: string;
+  ttlMs?: number;
+}
+
+export class ApiKeyHelperRefresher {
+  private readonly opts: ApiKeyHelperOpts;
+  private readonly ttlMs: number;
+  private cached: { key: string; expiresAt: number } | null = null;
+
+  constructor(opts: ApiKeyHelperOpts) {
+    this.opts = opts;
+    this.ttlMs =
+      opts.ttlMs ??
+      (process.env.DEEPCODE_API_KEY_HELPER_TTL_MS
+        ? Number.parseInt(process.env.DEEPCODE_API_KEY_HELPER_TTL_MS, 10)
+        : 5 * 60 * 1000);
+  }
+
+  /** Get the current key — refresh if expired. */
+  async get(): Promise<Credentials> {
+    if (this.cached && Date.now() < this.cached.expiresAt) {
+      const stored = await this.opts.store.load();
+      return { ...stored, apiKey: this.cached.key };
+    }
+    return this.refresh();
+  }
+
+  /** Force a refresh (e.g. on 401). */
+  async refresh(): Promise<Credentials> {
+    const creds = await resolveCredentials({
+      store: this.opts.store,
+      apiKeyHelper: this.opts.apiKeyHelper,
+    });
+    if (creds.apiKey) {
+      this.cached = { key: creds.apiKey, expiresAt: Date.now() + this.ttlMs };
+    }
+    return creds;
+  }
+
+  /** Mark the cache stale so next .get() refreshes. */
+  invalidate(): void {
+    this.cached = null;
+  }
 }
 
 /** Display-safe redacted form of a credential — first 4 + last 4. */

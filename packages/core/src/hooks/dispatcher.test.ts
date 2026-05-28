@@ -193,10 +193,13 @@ describe('HookDispatcher', () => {
     expect(r.stdout).toContain('hello there');
   });
 
-  it('unimplemented handler types return error in stderr but do not block', async () => {
+  it('unimplemented handler types (mcp_tool, agent) emit stub stderr but do not block', async () => {
     const d = new HookDispatcher({
       hooks: {
-        PreToolUse: [{ hooks: [{ type: 'http', url: 'https://example.com' }] }],
+        PreToolUse: [
+          { hooks: [{ type: 'mcp_tool', server: 'foo', tool: 'bar' }] },
+          { hooks: [{ type: 'agent', agent: 'reviewer' }] },
+        ],
       },
     });
     const r = await d.dispatch({
@@ -205,8 +208,108 @@ describe('HookDispatcher', () => {
       triggeredAt: 't',
       payload: { tool: 'Bash' },
     });
-    expect(r.stderr).toMatch(/not implemented/);
+    expect(r.stderr).toMatch(/stub/);
     expect(r.anyBlocked).toBe(false);
+  });
+
+  it('http handler POSTs to URL and uses response as stdout', async () => {
+    // Use a local fake HTTP server
+    const { createServer } = await import('node:http');
+    const seen: { body: string; method: string; ct?: string }[] = [];
+    const server = createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => (body += c));
+      req.on('end', () => {
+        seen.push({
+          body,
+          method: req.method!,
+          ct: req.headers['content-type'] as string,
+        });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end('{"decision":"allow"}');
+      });
+    });
+    await new Promise<void>((r) => server.listen(0, r));
+    const port = (server.address() as { port: number }).port;
+    const url = `http://127.0.0.1:${port}/hook`;
+
+    const d = new HookDispatcher({
+      hooks: { PreToolUse: [{ hooks: [{ type: 'http', url }] }] },
+    });
+    const r = await d.dispatch({
+      event: 'PreToolUse',
+      cwd,
+      triggeredAt: 't',
+      payload: { tool: 'Bash' },
+    });
+    server.close();
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.method).toBe('POST');
+    expect(seen[0]?.body).toContain('PreToolUse');
+    expect(seen[0]?.ct).toBe('application/json');
+    expect(r.json?.decision).toBe('allow');
+  }, 5000);
+
+  it('http handler respects allowedHttpHookUrls whitelist', async () => {
+    const d = new HookDispatcher({
+      hooks: {
+        PreToolUse: [{ hooks: [{ type: 'http', url: 'https://evil.example.com/hook' }] }],
+      },
+      allowedHttpHookUrls: ['https://safe.example.com/'],
+    });
+    const r = await d.dispatch({
+      event: 'PreToolUse',
+      cwd,
+      triggeredAt: 't',
+      payload: { tool: 'Bash' },
+    });
+    expect(r.stderr).toMatch(/allowedHttpHookUrls/);
+  });
+
+  it('prompt handler produces additionalContext JSON output', async () => {
+    const d = new HookDispatcher({
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: 'prompt', prompt: 'Remember: always be polite.' }] }],
+      },
+    });
+    const r = await d.dispatch({
+      event: 'UserPromptSubmit',
+      cwd,
+      triggeredAt: 't',
+      payload: {},
+    });
+    expect(r.json?.additionalContext).toBe('Remember: always be polite.');
+  });
+
+  it('if-field filters command handlers via permission-rule syntax', async () => {
+    const d = new HookDispatcher({
+      hooks: {
+        PreToolUse: [
+          {
+            hooks: [
+              {
+                type: 'command',
+                command: 'echo SHOULD_NOT_RUN',
+                if: 'Bash(git push:*)',
+              },
+              {
+                type: 'command',
+                command: 'echo ran',
+                if: 'Bash(git diff:*)',
+              },
+            ],
+          },
+        ],
+      },
+    });
+    const r = await d.dispatch({
+      event: 'PreToolUse',
+      cwd,
+      triggeredAt: 't',
+      payload: { tool: 'Bash', input: { command: 'git diff --stat' } },
+    });
+    expect(r.stdout).not.toContain('SHOULD_NOT_RUN');
+    expect(r.stdout).toContain('ran');
   });
 });
 

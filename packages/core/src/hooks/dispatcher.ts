@@ -4,6 +4,7 @@
 
 import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
+import { matchRule } from '../config/permissions.js';
 import type { HookHandler, HookMatcher, Hooks } from '../config/types.js';
 import type { HookContext, HookHandlerOutput, HookResult } from './types.js';
 
@@ -12,17 +13,21 @@ export interface HookDispatcherOpts {
   disableAllHooks?: boolean;
   /** Default handler timeout if not specified. */
   defaultTimeoutMs?: number;
+  /** http hook URLs allowed (prefix match). Empty array = allow all. */
+  allowedHttpHookUrls?: string[];
 }
 
 export class HookDispatcher {
   private readonly hooks: Hooks;
   private readonly disabled: boolean;
   private readonly defaultTimeoutMs: number;
+  private readonly allowedHttpHookUrls?: string[];
 
   constructor(opts: HookDispatcherOpts) {
     this.hooks = opts.hooks ?? {};
     this.disabled = !!opts.disableAllHooks;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 60_000;
+    this.allowedHttpHookUrls = opts.allowedHttpHookUrls;
   }
 
   /**
@@ -42,6 +47,8 @@ export class HookDispatcher {
     for (const m of matchers) {
       if (!this.matcherApplies(m, ctx)) continue;
       for (const handler of m.hooks) {
+        // `if` field: permission-rule-syntax filter that further gates this specific handler
+        if (handler.if && !ifFieldMatches(handler.if, ctx)) continue;
         const t0 = Date.now();
         const out = await this.runHandler(handler, ctx);
         const dt = Date.now() - t0;
@@ -77,18 +84,50 @@ export class HookDispatcher {
     handler: HookHandler,
     ctx: HookContext,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
-    if (handler.type !== 'command') {
-      // M3 only implements `command` type; others return error stub
-      return {
-        stdout: '',
-        stderr: `Hook handler type "${handler.type}" is not implemented yet (planned M5+).`,
-        exitCode: 0, // don't block agent on unimplemented handlers
-      };
+    const payloadJson = JSON.stringify({ event: ctx.event, payload: ctx.payload });
+    switch (handler.type) {
+      case 'command':
+        return this.runCommandHandler(handler, ctx, payloadJson);
+      case 'http':
+        return this.runHttpHandler(handler, ctx, payloadJson);
+      case 'prompt':
+        // Prompt-type: append the handler's prompt text as additionalContext.
+        // The agent loop owner consumes hook output.json.additionalContext.
+        return {
+          stdout: JSON.stringify({ additionalContext: handler.prompt ?? '' }),
+          stderr: '',
+          exitCode: 0,
+        };
+      case 'mcp_tool':
+        // Stub: would call an MCP server tool. Defer to M5 (MCP-as-hook).
+        return {
+          stdout: '',
+          stderr: `mcp_tool hook handler is a stub (M5+); declare as command for now.`,
+          exitCode: 0,
+        };
+      case 'agent':
+        // Stub: would dispatch a sub-agent. Defer to M4 sub-agents wiring.
+        return {
+          stdout: '',
+          stderr: `agent hook handler is a stub (paired with sub-agent dispatch, M4+).`,
+          exitCode: 0,
+        };
+      default:
+        return {
+          stdout: '',
+          stderr: `Unknown hook handler type: ${(handler as { type: string }).type}`,
+          exitCode: 0,
+        };
     }
+  }
+
+  private async runCommandHandler(
+    handler: HookHandler,
+    ctx: HookContext,
+    payloadJson: string,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     const cmd = handler.command;
-    if (!cmd) {
-      return { stdout: '', stderr: 'Missing command in hook config.', exitCode: 0 };
-    }
+    if (!cmd) return { stdout: '', stderr: 'Missing command in hook config.', exitCode: 0 };
     return runCommand({
       command: cmd,
       cwd: ctx.cwd,
@@ -99,8 +138,64 @@ export class HookDispatcher {
         DEEPCODE_HOOK_EVENT: ctx.event,
         DEEPCODE_TRIGGERED_AT: ctx.triggeredAt,
       },
-      stdin: JSON.stringify({ event: ctx.event, payload: ctx.payload }),
+      stdin: payloadJson,
     });
+  }
+
+  private async runHttpHandler(
+    handler: HookHandler,
+    _ctx: HookContext,
+    payloadJson: string,
+  ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    if (!handler.url)
+      return { stdout: '', stderr: 'Missing url in http hook config.', exitCode: 0 };
+    // Optional URL whitelist (settings.allowedHttpHookUrls passed via opts).
+    // The dispatcher knows the whitelist; enforced at construction time via
+    // allowedHttpHookUrls (we wire it in the constructor below).
+    if (this.allowedHttpHookUrls && this.allowedHttpHookUrls.length > 0) {
+      const allowed = this.allowedHttpHookUrls.some((p) => handler.url!.startsWith(p));
+      if (!allowed) {
+        return {
+          stdout: '',
+          stderr: `http hook URL "${handler.url}" not in allowedHttpHookUrls`,
+          exitCode: 0,
+        };
+      }
+    }
+    try {
+      const headers: Record<string, string> = {
+        'content-type': 'application/json',
+        ...(handler.headers ?? {}),
+      };
+      const controller = new AbortController();
+      const timer = setTimeout(
+        () => controller.abort(),
+        handler.timeout ? handler.timeout * 1000 : 30_000,
+      );
+      try {
+        const res = await fetch(handler.url, {
+          method: 'POST',
+          headers,
+          body: payloadJson,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        const text = await res.text();
+        return {
+          stdout: text,
+          stderr: '',
+          exitCode: res.ok ? 0 : res.status,
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (err) {
+      return {
+        stdout: '',
+        stderr: `http hook fetch failed: ${(err as Error).message}`,
+        exitCode: 1,
+      };
+    }
   }
 }
 
@@ -170,6 +265,17 @@ export function runCommand(
       // already ended — fine
     }
   });
+}
+
+/**
+ * `if` field — permission-rule syntax filter for hook handlers.
+ * Reuses matchRule from the permissions matcher.
+ */
+function ifFieldMatches(ifRule: string, ctx: HookContext): boolean {
+  if (ctx.event !== 'PreToolUse' && ctx.event !== 'PostToolUse') return true;
+  const toolName = (ctx.payload['tool'] as string) ?? '';
+  const input = (ctx.payload['input'] as Record<string, unknown>) ?? {};
+  return matchRule(ifRule, { tool: toolName, input });
 }
 
 /** Extract a JSON object from handler stdout, if any. Returns null on parse failure. */

@@ -172,10 +172,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     }
   }
 
-  // Hook dispatcher (M3)
+  // Hook dispatcher (M3 + M3c-ext)
   const hooks = new HookDispatcher({
     hooks: settings.hooks,
     disableAllHooks: settings.disableAllHooks,
+    allowedHttpHookUrls: settings.allowedHttpHookUrls,
   });
 
   let history: StoredMessage[] = [];
@@ -254,6 +255,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       mode: ctx.mode as Mode,
       permissions: settings.permissions,
       hooks,
+      autoCompact: { contextWindow: 128_000, threshold: 0.8 },
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
         const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();

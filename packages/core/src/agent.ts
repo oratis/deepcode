@@ -1,6 +1,7 @@
 // Agent loop — orchestrates provider <-> tools <-> session.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.1 / §3.15
 
+import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -51,6 +52,15 @@ export interface RunAgentOptions {
   permissions?: PermissionRules;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
+  /** M3c: auto-compact when cumulative tokens approach contextWindow * threshold.
+   *  When triggered, runs the summarizer call and replaces history mid-loop. */
+  autoCompact?: {
+    contextWindow: number;
+    threshold?: number; // default 0.8
+    summarizerModel?: string;
+    keepFirstPairs?: number;
+    keepLastMessages?: number;
+  };
 }
 
 export interface RunAgentResult {
@@ -72,7 +82,7 @@ const DEFAULT_MAX_TURNS = 16;
  */
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
-  const history: StoredMessage[] = [...(opts.history ?? [])];
+  let history: StoredMessage[] = [...(opts.history ?? [])];
   let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
 
   // Append the user message first (if provided)
@@ -286,6 +296,37 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     };
     history.push(resultMsg);
     if (opts.session) await opts.session.manager.append(opts.session.id, resultMsg);
+
+    // M3c: auto-compact if usage crossed threshold
+    if (
+      opts.autoCompact &&
+      shouldCompact({
+        inputTokens: totalUsage.inputTokens,
+        outputTokens: totalUsage.outputTokens,
+        contextWindow: opts.autoCompact.contextWindow,
+        threshold: opts.autoCompact.threshold,
+      })
+    ) {
+      try {
+        const compactResult = await compact(history, {
+          provider: opts.provider,
+          summarizerModel: opts.autoCompact.summarizerModel,
+          keepFirstPairs: opts.autoCompact.keepFirstPairs,
+          keepLastMessages: opts.autoCompact.keepLastMessages,
+        });
+        history = compactResult.history;
+        totalUsage.inputTokens += compactResult.usage.inputTokens;
+        totalUsage.outputTokens += compactResult.usage.outputTokens;
+        opts.onEvent?.({
+          type: 'usage',
+          inputTokens: compactResult.usage.inputTokens,
+          outputTokens: compactResult.usage.outputTokens,
+          reasoningTokens: 0,
+        });
+      } catch {
+        // compaction failure is non-fatal — continue with full history
+      }
+    }
   }
 
   return { history, turnsUsed, usage: totalUsage, stopReason: 'max_turns' };
