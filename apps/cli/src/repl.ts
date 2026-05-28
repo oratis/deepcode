@@ -294,12 +294,35 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
         const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();
         return answer === 'y' || answer === 'yes';
       },
+      askUser: async (req) => {
+        output.write(`\n  ❓ ${req.question}\n`);
+        const opts = req.options ?? [];
+        opts.forEach((o, i) => {
+          output.write(`     ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}\n`);
+        });
+        if (opts.length === 0) {
+          return (await rl.question('     Answer: ')).trim();
+        }
+        const reply = (
+          await rl.question(`     Pick 1-${opts.length} (or type free text): `)
+        ).trim();
+        const n = Number(reply);
+        if (Number.isInteger(n) && n >= 1 && n <= opts.length) {
+          return opts[n - 1]!.label;
+        }
+        return `Other: ${reply}`;
+      },
       onEvent: (e: AgentEvent) => formatEvent(output, e),
     });
     history = result.history;
     ctx.usage.inputTokens += result.usage.inputTokens;
     ctx.usage.outputTokens += result.usage.outputTokens;
     ctx.usage.reasoningTokens += result.usage.reasoningTokens;
+    // M3c-rest: honor ExitPlanMode tool signal — flip plan → default
+    if (result.modeSignal?.exitPlanMode && ctx.mode === 'plan') {
+      ctx.mode = 'default';
+      output.write('\n  ▶ Exited plan mode (agent will now execute).\n');
+    }
     output.write('\n');
     if (result.stopReason === 'error') {
       output.write('  ✕ Error during agent loop. Try again or /status to inspect.\n\n');

@@ -32,6 +32,8 @@ export {
   TodoWriteTool,
   WebFetchTool,
   WebSearchTool,
+  AskUserQuestionTool,
+  ExitPlanModeTool,
   readTodos,
   TODO_FILE,
   parseDuckDuckGoHtml,
