@@ -96,7 +96,13 @@ jobs:
     name: Build + sign + notarize Mac client
     needs: validate
     runs-on: macos-14
-    if: false # Disabled until apps/desktop has actual Electron code (M6)
+    # Activates when the desktop package has the electron dep installed
+    # AND the maintainer has set BUILD_MAC=1 in the GitHub Actions env
+    # (or the apps/desktop/electron-builder.yml file exists which it does
+    # since M6-rest part 1 — flipping the gate to `vars.BUILD_MAC == 'true'`
+    # so the maintainer enables it via Repository Variables once Apple
+    # secrets are wired). See docs/SHIPPING_MAC.md.
+    if: ${{ vars.BUILD_MAC == 'true' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -107,10 +113,22 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
 
+      - name: Activate template configs
+        run: |
+          cd apps/desktop
+          if [ -f vite.config.template.ts ]; then mv vite.config.template.ts vite.config.ts; fi
+          if [ -f postcss.config.template.js ]; then mv postcss.config.template.js postcss.config.js; fi
+
       - name: Set version
         run: |
           cd apps/desktop
           npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+
+      - name: Build renderer + main
+        run: |
+          cd apps/desktop
+          pnpm build:renderer
+          pnpm build:electron
 
       - name: Build (electron-builder)
         env:
@@ -147,21 +165,25 @@ jobs:
         run: |
           echo "Note: this release tag has +security.X suffix — Mac client auto-update will be marked mandatory."
 
-      - name: Generate release notes from PR labels
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install (needed for tsx)
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate release notes (conventional-commit grouped)
         id: notes
         run: |
-          # Lightweight: extract section between last tag and HEAD; group by label.
-          # Real implementation lands in scripts/gen-release-notes.ts (M9-ext).
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$PREV_TAG" ]; then
-            RANGE="$PREV_TAG..HEAD"
+            FROM="$PREV_TAG"
           else
-            RANGE="HEAD"
+            FROM=$(git rev-list --max-parents=0 HEAD)
           fi
-          {
-            echo "## Changes"
-            git log --pretty=format:'- %s' $RANGE
-          } > release-notes.md
+          npx tsx scripts/gen-release-notes.ts "$FROM" HEAD > release-notes.md
           cat release-notes.md
 
       - name: Create GitHub Release
