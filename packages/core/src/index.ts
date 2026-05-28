@@ -154,6 +154,16 @@ export {
   type Frontmatter,
 } from './skills/index.js';
 
+// Sandbox (M3.5 — macOS sandbox-exec + Linux bwrap)
+export {
+  wrapBashCommand,
+  buildMacOsProfile,
+  buildLinuxBwrapArgs,
+  detectPlatform,
+  type SandboxPlatform,
+  type SandboxedCommand,
+} from './sandbox/index.js';
+
 // MCP client (M3c — stdio transport; http/sse/OAuth/serve → M3c-ext)
 export {
   connectMcpServer,

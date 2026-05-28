@@ -1,7 +1,10 @@
 // Bash tool — execute a shell command with timeout, capture stdout+stderr+exitCode.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.2 (P0) + run_in_background param
+// M3.5: optionally wrapped under platform sandbox via ctx.sandboxConfig
 
 import { spawn } from 'node:child_process';
+import { wrapBashCommand } from '../sandbox/index.js';
+import type { SandboxConfig } from '../config/types.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface BashInput {
@@ -51,8 +54,17 @@ export const BashTool: ToolHandler = {
     }
     const timeoutMs = Math.max(1_000, input.timeout ?? DEFAULT_TIMEOUT_MS);
 
+    // M3.5: wrap under platform sandbox if configured. ctx.sandboxConfig is
+    // populated by the agent loop owner (CLI REPL passes settings.sandbox).
+    const sandboxCfg = (ctx as ToolContext & { sandboxConfig?: SandboxConfig }).sandboxConfig;
+    const wrapped = await wrapBashCommand({
+      userCommand: input.command,
+      cwd: ctx.cwd,
+      config: sandboxCfg,
+    });
+
     return new Promise((resolvePromise) => {
-      const child = spawn('/bin/sh', ['-c', input.command], {
+      const child = spawn(wrapped.command, wrapped.args, {
         cwd: ctx.cwd,
         signal: ctx.signal,
       });
