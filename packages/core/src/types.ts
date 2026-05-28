@@ -16,9 +16,20 @@ export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 
 /**
  * Supported DeepSeek model identifiers.
+ *
+ * NOTE (validated against real API 2026-05-28):
+ * - `deepseek-chat` and `deepseek-reasoner` are STABLE ALIASES still accepted by the API.
+ * - Actual current backing models per /v1/models endpoint are `deepseek-v4-flash`
+ *   and `deepseek-v4-pro`. We support both alias names AND concrete v4 names so
+ *   either works in user config.
+ *
  * Spec: docs/DEVELOPMENT_PLAN.md §3.1
  */
-export type DeepSeekModel = 'deepseek-chat' | 'deepseek-reasoner';
+export type DeepSeekModel =
+  | 'deepseek-chat' // alias → currently routes to deepseek-v4-flash
+  | 'deepseek-reasoner' // alias → currently routes to reasoning-capable model
+  | 'deepseek-v4-flash'
+  | 'deepseek-v4-pro';
 
 /**
  * Hook event names — 9 events total.
