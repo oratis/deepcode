@@ -10,6 +10,8 @@ import {
   ToolRegistry,
   applyStyle,
   buildSkillsDescriptionBlock,
+  closeAllMcpServers,
+  connectAllMcpServers,
   findStyle,
   loadMemory,
   loadOutputStyles,
@@ -20,6 +22,7 @@ import {
   runAgent,
   type DeepCodeSettings,
   type Effort,
+  type McpClientHandle,
   type Mode,
   type AgentEvent,
   type StoredMessage,
@@ -98,6 +101,32 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     tools.register(makeSkillTool(skills));
   }
 
+  // M3c: connect MCP servers (best-effort; individual failures don't abort)
+  let mcpServers: McpClientHandle[] = [];
+  let mcpErrors: Array<{ serverName: string; error: string }> = [];
+  if (settings.mcpServers && Object.keys(settings.mcpServers).length > 0) {
+    const enabled = settings.enabledMcpjsonServers;
+    const disabled = settings.disabledMcpjsonServers ?? [];
+    const result = await connectAllMcpServers(settings.mcpServers, {
+      enabledOnly: enabled,
+      disabled,
+    });
+    mcpServers = result.handles;
+    mcpErrors = result.errors;
+    // Register every MCP-tool handler into the live registry
+    for (const handle of mcpServers) {
+      for (const tool of handle.tools) tools.register(tool);
+    }
+    if (mcpServers.length > 0) {
+      output.write(
+        `  ⊞ MCP: ${mcpServers.length} server(s) connected (${mcpServers.reduce((n, h) => n + h.tools.length, 0)} tools)\n`,
+      );
+    }
+    if (mcpErrors.length > 0) {
+      output.write(`  ⊞ MCP: ${mcpErrors.length} server(s) failed (see /mcp)\n`);
+    }
+  }
+
   // Build the composite system prompt
   let systemPrompt = DEFAULT_SYSTEM_PROMPT;
   if (memory.text) systemPrompt += '\n\n' + memory.text;
@@ -122,6 +151,8 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     sessionId: session.id,
     sessions,
     usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+    mcpServers,
+    mcpErrors,
   };
 
   output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
@@ -202,6 +233,10 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   }
 
   rl.close();
+  // Clean up MCP server connections
+  if (mcpServers.length > 0) {
+    await closeAllMcpServers(mcpServers);
+  }
   return 0;
 }
 

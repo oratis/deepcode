@@ -14,11 +14,11 @@
 
 ## End-to-end runs
 
-| Scenario | Result |
-|---|---|
-| Agent reads a file via Read tool | ✓ 2 turns, 2523 in / 137 out tokens, ended `end_turn`, correct answer |
+| Scenario                            | Result                                                                                |
+| ----------------------------------- | ------------------------------------------------------------------------------------- |
+| Agent reads a file via Read tool    | ✓ 2 turns, 2523 in / 137 out tokens, ended `end_turn`, correct answer                 |
 | Reasoner solves a math word problem | ✓ 1 turn, 1188 in / 500 out / 427 reasoning, both `thinking` + `text` blocks streamed |
-| `/v1/models` + alias mapping | ✓ documented in §3.1 update |
+| `/v1/models` + alias mapping        | ✓ documented in §3.1 update                                                           |
 
 ## Changes in this PR
 
