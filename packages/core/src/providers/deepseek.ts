@@ -15,9 +15,14 @@ export interface DeepSeekProviderOpts {
   fetch?: typeof globalThis.fetch;
 }
 
+// Validated against real DeepSeek API 2026-05-28: max_tokens hard limit is 8192,
+// context window 128k. The two "logical" model names are stable API aliases that
+// currently route to the V4 family.
 export const DEEPSEEK_MODELS: Record<DeepSeekModel, { ctx: number; maxOutput: number }> = {
   'deepseek-chat': { ctx: 128_000, maxOutput: 8_192 },
   'deepseek-reasoner': { ctx: 128_000, maxOutput: 8_192 },
+  'deepseek-v4-flash': { ctx: 128_000, maxOutput: 8_192 },
+  'deepseek-v4-pro': { ctx: 128_000, maxOutput: 8_192 },
 };
 
 /**
