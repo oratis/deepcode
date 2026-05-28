@@ -193,7 +193,7 @@ describe('HookDispatcher', () => {
     expect(r.stdout).toContain('hello there');
   });
 
-  it('unimplemented handler types (mcp_tool, agent) emit stub stderr but do not block', async () => {
+  it('mcp_tool & agent handlers note when no dispatcher is wired but do not block', async () => {
     const d = new HookDispatcher({
       hooks: {
         PreToolUse: [
@@ -208,8 +208,68 @@ describe('HookDispatcher', () => {
       triggeredAt: 't',
       payload: { tool: 'Bash' },
     });
-    expect(r.stderr).toMatch(/stub/);
+    expect(r.stderr).toMatch(/no mcpToolDispatcher/);
+    expect(r.stderr).toMatch(/no agentDispatcher/);
     expect(r.anyBlocked).toBe(false);
+  });
+
+  it('mcp_tool handler invokes mcpToolDispatcher when wired', async () => {
+    let captured: { server: string; tool: string } | null = null;
+    const d = new HookDispatcher({
+      hooks: {
+        PreToolUse: [
+          { hooks: [{ type: 'mcp_tool', server: 'slack', tool: 'notify' }] },
+        ],
+      },
+      mcpToolDispatcher: async (h) => {
+        captured = { server: h.server, tool: h.tool };
+        return { stdout: '{"decision":"allow"}', stderr: '', exitCode: 0 };
+      },
+    });
+    const r = await d.dispatch({
+      event: 'PreToolUse',
+      cwd,
+      triggeredAt: 't',
+      payload: { tool: 'Bash' },
+    });
+    expect(captured!.server).toBe('slack');
+    expect(captured!.tool).toBe('notify');
+    expect(r.stdout).toContain('allow');
+  });
+
+  it('agent handler invokes agentDispatcher when wired', async () => {
+    let saw: string | null = null;
+    const d = new HookDispatcher({
+      hooks: {
+        Stop: [{ hooks: [{ type: 'agent', agent: 'reviewer', prompt: 'check it' }] }],
+      },
+      agentDispatcher: async (h) => {
+        saw = h.agent;
+        return { stdout: 'ok', stderr: '', exitCode: 0 };
+      },
+    });
+    const r = await d.dispatch({
+      event: 'Stop',
+      cwd,
+      triggeredAt: 't',
+      payload: {},
+    });
+    expect(saw).toBe('reviewer');
+    expect(r.stdout).toContain('ok');
+  });
+
+  it('mcp_tool missing server/tool returns descriptive stderr', async () => {
+    const d = new HookDispatcher({
+      hooks: { Stop: [{ hooks: [{ type: 'mcp_tool' }] }] },
+      mcpToolDispatcher: async () => ({ stdout: '', stderr: '', exitCode: 0 }),
+    });
+    const r = await d.dispatch({
+      event: 'Stop',
+      cwd,
+      triggeredAt: 't',
+      payload: {},
+    });
+    expect(r.stderr).toMatch(/missing required.*server.*tool/);
   });
 
   it('http handler POSTs to URL and uses response as stdout', async () => {

@@ -10,6 +10,8 @@ import {
   cwdReminder,
   dateReminder,
   externalFileModifiedReminder,
+  noTestYetReminder,
+  planModeActiveReminder,
   prependReminders,
   todosPendingReminder,
 } from './index.js';
@@ -202,6 +204,50 @@ describe('buildSystemReminders', () => {
     // (silent), so other builders still fire.
     const r = await buildSystemReminders({ cwd: dir, sessionDir: '/no/such/path' });
     expect(r).toMatch(/Today's date/);
+  });
+});
+
+describe('planModeActiveReminder', () => {
+  it('returns null when mode is not plan', () => {
+    expect(planModeActiveReminder({ cwd: '/x' })).toBeNull();
+    expect(planModeActiveReminder({ cwd: '/x', mode: 'default' })).toBeNull();
+  });
+  it('nudges to call ExitPlanMode when mode is plan', () => {
+    const r = planModeActiveReminder({ cwd: '/x', mode: 'plan' });
+    expect(r).toMatch(/PLAN MODE/);
+    expect(r).toMatch(/ExitPlanMode/);
+  });
+});
+
+describe('noTestYetReminder', () => {
+  it('returns null when no edits yet', () => {
+    expect(noTestYetReminder({ cwd: '/x' })).toBeNull();
+    expect(noTestYetReminder({ cwd: '/x', editsSinceTests: 0 })).toBeNull();
+  });
+  it('returns null when tests ran recently', () => {
+    const now = Date.now();
+    const r = noTestYetReminder({
+      cwd: '/x',
+      editsSinceTests: 3,
+      lastTestRunAt: now - 1000,
+      now: () => new Date(now),
+    });
+    expect(r).toBeNull();
+  });
+  it('fires when many edits + no recent tests', () => {
+    const r = noTestYetReminder({ cwd: '/x', editsSinceTests: 5 });
+    expect(r).toMatch(/5 edit/);
+    expect(r).toMatch(/run.*tests/i);
+  });
+  it('fires when last test run is stale', () => {
+    const now = Date.now();
+    const r = noTestYetReminder({
+      cwd: '/x',
+      editsSinceTests: 2,
+      lastTestRunAt: now - 20 * 60 * 1000,
+      now: () => new Date(now),
+    });
+    expect(r).toMatch(/edit/);
   });
 });
 
