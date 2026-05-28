@@ -22,7 +22,7 @@
 2. calls a remote tool, returns its text output
 3. `connectAllMcpServers` continues on individual failures
 4. respects `disabled` list
-5. respects `enabledOnly` list  
+5. respects `enabledOnly` list
 6. rejects server config missing `command`
 
 ## NOT in this PR (M3c-ext, next)

@@ -117,8 +117,24 @@ export {
   type LoadMemoryOpts,
 } from './memory/index.js';
 
-// Harness (M3b — tool dispatcher gates: mode × permission × hooks)
-export { dispatchToolCall, type DispatchRequest, type DispatchVerdict } from './harness/index.js';
+// Harness (M3b — tool dispatcher gates; M3c — statusLine runner)
+export {
+  dispatchToolCall,
+  StatusLineRunner,
+  runStatusLineCommand,
+  type DispatchRequest,
+  type DispatchVerdict,
+  type StatusLineRunnerOpts,
+  type StatusLinePayload,
+} from './harness/index.js';
+
+// Compaction (M3c)
+export {
+  compact,
+  shouldCompact,
+  type CompactionOpts,
+  type CompactionResult,
+} from './compaction/index.js';
 
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback } from './agent.js';

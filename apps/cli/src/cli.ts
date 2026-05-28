@@ -69,6 +69,12 @@ async function main(): Promise<number> {
     mode: args.mode,
     model: args.model,
     effort: args.effort,
+    systemPromptOverride: args.systemPrompt,
+    appendSystemPrompt: args.appendSystemPrompt,
+    appendSystemPromptFile: args.appendSystemPromptFile,
+    allowedTools: args.allowedTools,
+    disallowedTools: args.disallowedTools,
+    maxTurns: args.maxTurns,
   });
 }
 
