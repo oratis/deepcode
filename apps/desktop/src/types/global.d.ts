@@ -71,7 +71,12 @@ export interface DeepCodeAPI {
       allowedTools?: string[];
     }) => Promise<{ turnId: string }>;
     abort: (args: { turnId: string }) => Promise<boolean>;
-    approve: (args: { turnId: string; toolCallId: string; allow: boolean }) => Promise<void>;
+    /** Resolve an in-flight permission_request event. `decision === 'always'`
+     *  also persists a matcher to ~/.deepcode/settings.json. */
+    approve: (args: {
+      requestId: string;
+      decision: 'allow' | 'deny' | 'always';
+    }) => Promise<void>;
     answer: (args: { turnId: string; questionId: string; answer: string }) => Promise<void>;
     onEvent: (cb: (e: unknown) => void) => () => void;
   };

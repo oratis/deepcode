@@ -6,6 +6,7 @@ import type { AgentEvent, Mode } from '@deepcode/core/dist/types.js';
 import type { DeepCodeAPI } from '../types/global.js';
 import { abortAgentTurn, startAgentTurn } from './mac-agent.js';
 import {
+  appendAllowMatcher,
   getAppInfo,
   listSessions,
   loadSettingsFile,
@@ -27,6 +28,19 @@ function emitEvent(e: unknown): void {
       /* listeners are isolated */
     }
   }
+}
+
+// Approval round-trips: mac-agent calls onApproval with a promise; we emit
+// a `permission_request` event carrying a unique requestId and stash the
+// resolver here. The UI calls api.agent.approve({ requestId, decision })
+// which pops the resolver and resolves the original promise.
+const pendingApprovals = new Map<
+  string,
+  (decision: 'allow' | 'deny' | 'always') => void
+>();
+
+function nextRequestId(): string {
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
 export function installTauriShim(): void {
@@ -100,6 +114,22 @@ export function installTauriShim(): void {
             emitEvent({ kind: 'event', turnId: pendingTurnId, ...e }),
           onDone: (reason) =>
             emitEvent({ kind: 'turn_done', turnId: pendingTurnId, stopReason: reason }),
+          onApproval: (toolName, reason) => {
+            // Mint a request ID, emit it as a synthetic event, and return
+            // a promise the UI resolves via agent.approve().
+            const requestId = nextRequestId();
+            return new Promise<'allow' | 'deny' | 'always'>((resolve) => {
+              pendingApprovals.set(requestId, resolve);
+              emitEvent({
+                kind: 'event',
+                turnId: pendingTurnId,
+                type: 'permission_request',
+                requestId,
+                toolName,
+                reason,
+              });
+            });
+          },
         });
         pendingTurnId = result.turnId;
         return result;
@@ -107,10 +137,16 @@ export function installTauriShim(): void {
       async abort({ turnId }) {
         return abortAgentTurn(turnId);
       },
-      async approve() {
-        // Approval prompts are handled inline via the onApproval callback
-        // passed to startAgentTurn — not via this method. Kept for API
-        // shape compatibility.
+      async approve({ requestId, decision }) {
+        // Persistence note: when `decision === 'always'`, the caller is
+        // expected to also have called `appendAllowMatcher(toolName)` so
+        // the rule survives the next session. We don't do it here because
+        // the shim no longer has access to the toolName by the time the
+        // user decides. See ReplScreen.tsx where this is wired.
+        const resolver = pendingApprovals.get(requestId);
+        if (!resolver) return; // no-op if already resolved (e.g. stale click)
+        pendingApprovals.delete(requestId);
+        resolver(decision);
       },
       async answer() {
         // AskUserQuestion answers: same — for v1 Mac MVP we don't wire

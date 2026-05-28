@@ -22,6 +22,7 @@ export {
   writeSettings,
   settingsPaths,
   deepMerge,
+  appendAllowMatcher,
   type LoadedSettings,
   type LoadSettingsOpts,
 } from './loader.js';

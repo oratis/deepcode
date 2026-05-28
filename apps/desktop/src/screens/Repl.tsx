@@ -3,6 +3,7 @@
 // Milestone: M6 (real agent integration)
 
 import { useEffect, useRef, useState } from 'react';
+import { appendAllowMatcher } from '../lib/tauri-api.js';
 
 interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -21,6 +22,16 @@ interface AgentStreamEvt {
   result?: { content: string; isError?: boolean };
   error?: string;
   stopReason?: string;
+  // permission_request fields
+  requestId?: string;
+  toolName?: string;
+  reason?: string;
+}
+
+interface PendingApproval {
+  requestId: string;
+  toolName: string;
+  reason: string;
 }
 
 export function ReplScreen(): JSX.Element {
@@ -35,6 +46,7 @@ export function ReplScreen(): JSX.Element {
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   // Subscribe to agent events for the lifetime of this view
@@ -96,11 +108,49 @@ export function ReplScreen(): JSX.Element {
             { role: 'system', text: `✕ Error: ${e.error ?? 'unknown'}` },
           ]);
           break;
+        case 'permission_request':
+          if (e.requestId && e.toolName) {
+            setPendingApproval({
+              requestId: e.requestId,
+              toolName: e.toolName,
+              reason: e.reason ?? `Approve ${e.toolName}?`,
+            });
+          }
+          break;
         // text 'usage', 'thinking_delta', 'turn_complete' silently dropped
       }
     });
     return () => off();
   }, []);
+
+  async function handleApproval(
+    decision: 'allow' | 'deny' | 'always',
+  ): Promise<void> {
+    if (!pendingApproval) return;
+    const req = pendingApproval;
+    setPendingApproval(null);
+    if (decision === 'always') {
+      try {
+        await appendAllowMatcher(req.toolName);
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'system',
+            text: `✓ Added "${req.toolName}" to settings.permissions.allow`,
+          },
+        ]);
+      } catch (err) {
+        setMessages((m) => [
+          ...m,
+          {
+            role: 'system',
+            text: `⚠ Could not persist always-allow: ${(err as Error).message}`,
+          },
+        ]);
+      }
+    }
+    await window.deepcode.agent.approve({ requestId: req.requestId, decision });
+  }
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' });
@@ -158,14 +208,56 @@ export function ReplScreen(): JSX.Element {
           </div>
         ))}
       </div>
+      {pendingApproval && (
+        <div className="border-t border-accent bg-accent/10 p-3 text-sm">
+          <div className="mb-2 text-fg">
+            <span className="font-semibold text-accent">⏸ Approval needed</span>
+            {' — '}
+            <span className="font-mono">{pendingApproval.toolName}</span>
+          </div>
+          <div className="mb-2 whitespace-pre-wrap text-muted">
+            {pendingApproval.reason}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleApproval('allow')}
+              className="rounded bg-accent px-3 py-1 text-bg font-medium"
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApproval('deny')}
+              className="rounded bg-error/80 px-3 py-1 text-fg font-medium"
+            >
+              Reject
+            </button>
+            <button
+              type="button"
+              onClick={() => handleApproval('always')}
+              className="rounded border border-accent px-3 py-1 text-accent font-medium hover:bg-accent/20"
+              title="Allow this tool from now on (writes to ~/.deepcode/settings.json)"
+            >
+              Always allow
+            </button>
+          </div>
+        </div>
+      )}
       <form onSubmit={handleSubmit} className="border-t border-border p-3">
         <div className="flex gap-2">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={busy ? 'Agent is responding…' : 'Ask DeepCode…'}
-            disabled={busy}
+            placeholder={
+              pendingApproval
+                ? 'Approve or reject the tool call above to continue…'
+                : busy
+                  ? 'Agent is responding…'
+                  : 'Ask DeepCode…'
+            }
+            disabled={busy || pendingApproval !== null}
             className="flex-1 rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent disabled:opacity-50"
           />
           {busy ? (

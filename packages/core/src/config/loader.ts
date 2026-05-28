@@ -100,6 +100,34 @@ export async function writeSettings(path: string, settings: DeepCodeSettings): P
   await fs.writeFile(path, json, 'utf8');
 }
 
+/**
+ * Append a single matcher to `permissions.allow[]` inside the settings file
+ * at `path` (creating the file if it doesn't exist). Idempotent — does
+ * nothing if the matcher is already present.
+ *
+ * Used by the approval flow: when the user clicks "Always allow", the host
+ * calls this against the project-local settings.local.json so the rule
+ * survives across sessions.
+ */
+export async function appendAllowMatcher(path: string, matcher: string): Promise<void> {
+  const trimmed = matcher.trim();
+  if (!trimmed) return;
+  const existing = (await readJson(path)) ?? ({} as DeepCodeSettings);
+  const permissions = (existing.permissions ?? {}) as {
+    allow?: string[];
+    deny?: string[];
+    ask?: string[];
+  };
+  const allow = Array.isArray(permissions.allow) ? [...permissions.allow] : [];
+  if (allow.includes(trimmed)) return;
+  allow.push(trimmed);
+  const next: DeepCodeSettings = {
+    ...existing,
+    permissions: { ...permissions, allow },
+  };
+  await writeSettings(path, next);
+}
+
 function resolveDir(p: string): string {
   return p.slice(0, p.lastIndexOf('/'));
 }

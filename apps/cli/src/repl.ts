@@ -12,6 +12,7 @@ import {
   ToolRegistry,
   WebFetchTool,
   WriteTool,
+  appendAllowMatcher,
   applyStyle,
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
@@ -24,6 +25,7 @@ import {
   makeSkillTool,
   resolveCredentials,
   runAgent,
+  settingsPaths,
   wirePlugins,
   type DeepCodeSettings,
   type Effort,
@@ -294,7 +296,21 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       sandboxConfig: settings.sandbox,
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
-        const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();
+        const answer = (
+          await rl.question('     [y]es / [n]o / [a]lways: ')
+        ).trim().toLowerCase();
+        if (answer === 'a' || answer === 'always') {
+          // Persist a bare-tool matcher to project-local settings so the next
+          // run of this tool from this project skips the prompt.
+          try {
+            const { localPath } = settingsPaths({ cwd: ctx.cwd });
+            await appendAllowMatcher(localPath, toolName);
+            output.write(`     ✓ Added "${toolName}" to ${localPath} permissions.allow\n`);
+          } catch (err) {
+            output.write(`     ⚠ Could not persist always-allow: ${(err as Error).message}\n`);
+          }
+          return 'always';
+        }
         return answer === 'y' || answer === 'yes';
       },
       askUser: async (req) => {

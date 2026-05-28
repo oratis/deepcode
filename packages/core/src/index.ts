@@ -72,6 +72,7 @@ export {
   writeSettings,
   settingsPaths,
   deepMerge,
+  appendAllowMatcher,
   evaluatePermission,
   matchRule,
   parseRule,

@@ -78,8 +78,15 @@ export interface StartTurnArgs {
   mode?: Mode;
   onEvent: (e: AgentEvent) => void;
   onDone: (reason: 'end_turn' | 'max_turns' | 'aborted' | 'error') => void;
-  /** Called when the agent needs user approval for a tool call. Resolves to allow/deny. */
-  onApproval?: (toolName: string, reason: string) => Promise<boolean>;
+  /** Called when the agent needs user approval for a tool call. Resolves to:
+   *   'allow'  — permit this one call
+   *   'deny'   — reject
+   *   'always' — permit + persist a permissions.allow matcher
+   */
+  onApproval?: (
+    toolName: string,
+    reason: string,
+  ) => Promise<'allow' | 'deny' | 'always'>;
 }
 
 export interface StartTurnResult {
@@ -118,7 +125,9 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
         approval: args.onApproval
           ? async (toolName, _input, verdict) => {
               const reason = verdict.reason ?? `Approve ${toolName}?`;
-              return await args.onApproval!(toolName, reason);
+              const decision = await args.onApproval!(toolName, reason);
+              if (decision === 'always') return 'always';
+              return decision === 'allow';
             }
           : undefined,
         onEvent: args.onEvent,

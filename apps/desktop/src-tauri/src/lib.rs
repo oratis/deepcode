@@ -15,8 +15,8 @@ mod settings;
 mod tools;
 
 use commands::{
-    cli_path, get_app_info, get_settings_path, list_sessions, load_settings_file, open_url,
-    read_credentials, save_credentials, save_settings_file,
+    append_allow_matcher, cli_path, get_app_info, get_settings_path, list_sessions,
+    load_settings_file, open_url, read_credentials, save_credentials, save_settings_file,
 };
 use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
 use tauri::Manager;
@@ -37,6 +37,7 @@ pub fn run() {
             load_settings_file,
             save_settings_file,
             get_settings_path,
+            append_allow_matcher,
             list_sessions,
             cli_path,
             open_url,

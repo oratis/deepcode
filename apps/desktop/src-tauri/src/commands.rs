@@ -47,6 +47,46 @@ pub fn get_settings_path() -> Option<PathBuf> {
     settings::user_settings_path()
 }
 
+/// Append a matcher string to permissions.allow[] in ~/.deepcode/settings.json,
+/// creating the file (and the permissions object) if needed. Idempotent.
+///
+/// Called from the renderer when the user clicks "Always allow" on an
+/// inline permission prompt. We deliberately target USER-level settings
+/// (not project-local) because the renderer doesn't have a stable cwd
+/// concept — the user can later tighten the rule by editing the file.
+#[tauri::command]
+pub fn append_allow_matcher(matcher: String) -> Result<(), String> {
+    let trimmed = matcher.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let mut value = settings::read_user()?;
+    // Ensure `permissions.allow` is an array.
+    if !value.is_object() {
+        value = serde_json::json!({});
+    }
+    let obj = value.as_object_mut().unwrap();
+    let perms = obj
+        .entry("permissions".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !perms.is_object() {
+        *perms = serde_json::json!({});
+    }
+    let perms_obj = perms.as_object_mut().unwrap();
+    let allow = perms_obj
+        .entry("allow".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !allow.is_array() {
+        *allow = serde_json::json!([]);
+    }
+    let arr = allow.as_array_mut().unwrap();
+    let exists = arr.iter().any(|v| v.as_str() == Some(trimmed));
+    if !exists {
+        arr.push(serde_json::Value::String(trimmed.to_string()));
+    }
+    settings::write_user(&value)
+}
+
 /// List session files under ~/.deepcode/sessions/. Returns just metadata.
 #[derive(Serialize)]
 pub struct SessionMeta {
