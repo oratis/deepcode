@@ -4,7 +4,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
+  DEFAULT_KEYBINDINGS,
+  VimState,
+  type KeyBinding,
+  type VimMode,
+} from '@deepcode/core/dist/keybindings/vim.js';
+import {
   appendAllowMatcher,
+  loadKeybindings,
   loadSettingsFile,
   saveSettingsFile,
 } from '../lib/tauri-api.js';
@@ -62,7 +69,30 @@ export function ReplScreen(): JSX.Element {
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [effort, setEffort] = useState<Effort>('medium');
+  // Vim mode (off by default until keybindings.json#vim is true).
+  const [vimEnabled, setVimEnabled] = useState(false);
+  const [vimMode, setVimMode] = useState<VimMode>('INSERT');
+  const vimStateRef = useRef<VimState | null>(null);
+  const bindingsRef = useRef<KeyBinding[]>(DEFAULT_KEYBINDINGS);
   const listRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // Load Vim config + custom bindings on mount.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const kb = await loadKeybindings();
+        bindingsRef.current = [...DEFAULT_KEYBINDINGS, ...(kb.bindings ?? [])];
+        if (kb.vim) {
+          setVimEnabled(true);
+          vimStateRef.current = new VimState();
+          setVimMode(vimStateRef.current.mode);
+        }
+      } catch {
+        /* keep defaults */
+      }
+    })();
+  }, []);
 
   // Load saved effort on mount.
   useEffect(() => {
@@ -162,6 +192,98 @@ export function ReplScreen(): JSX.Element {
     });
     return () => off();
   }, []);
+
+  /** Translate a DOM KeyboardEvent into a normalized chord string for VimState. */
+  function chordFromEvent(e: React.KeyboardEvent<HTMLTextAreaElement>): string {
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('ctrl');
+    if (e.shiftKey) parts.push('shift');
+    if (e.altKey) parts.push('alt');
+    if (e.metaKey) parts.push('meta');
+    // Normalize the key half:
+    //   'Escape' → 'esc', single letters → lowercased, leave others as-is
+    let key = e.key;
+    if (key === 'Escape') key = 'esc';
+    else if (key.length === 1) key = key.toLowerCase();
+    parts.push(key);
+    return parts.join('+');
+  }
+
+  /** Apply a host-side action returned by VimState.feed (cursor ops, etc.). */
+  function applyAction(action: string): void {
+    const ta = composerRef.current;
+    if (!ta) return;
+    switch (action) {
+      case 'cursor-line-start':
+        ta.setSelectionRange(0, 0);
+        break;
+      case 'cursor-line-end':
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        break;
+      case 'cursor-buffer-start':
+        ta.setSelectionRange(0, 0);
+        break;
+      case 'cursor-buffer-end':
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        break;
+      case 'kill-line':
+      case 'kill-to-end': {
+        const cur = ta.selectionStart;
+        vimStateRef.current!.yanked = ta.value.slice(cur);
+        setInput(ta.value.slice(0, cur));
+        break;
+      }
+      case 'kill-to-start': {
+        const cur = ta.selectionStart;
+        vimStateRef.current!.yanked = ta.value.slice(0, cur);
+        setInput(ta.value.slice(cur));
+        break;
+      }
+      case 'yank-line':
+        if (vimStateRef.current) vimStateRef.current.yanked = ta.value;
+        break;
+      case 'paste-after': {
+        const cur = ta.selectionStart;
+        const y = vimStateRef.current?.yanked ?? '';
+        setInput(ta.value.slice(0, cur) + y + ta.value.slice(cur));
+        break;
+      }
+      // vim-*-mode actions are handled inside VimState — no host work.
+    }
+  }
+
+  function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // Submit on plain Enter (allow Shift+Enter for newline)
+    if (e.key === 'Enter' && !e.shiftKey && !vimEnabled) {
+      e.preventDefault();
+      void handleSubmit(e as unknown as React.FormEvent);
+      return;
+    }
+    if (!vimEnabled || !vimStateRef.current) return;
+    const chord = chordFromEvent(e);
+    const before = vimStateRef.current.mode;
+    const action = vimStateRef.current.feed(chord, bindingsRef.current);
+    const after = vimStateRef.current.mode;
+    if (action) {
+      // We consumed the key: block default insertion + apply effect.
+      e.preventDefault();
+      applyAction(action);
+    } else if (before === 'NORMAL') {
+      // NORMAL mode: swallow uncaught keys so they don't insert text. The
+      // only ALLOWED untranslated keys are arrow keys + backspace, which
+      // let the user navigate even mid-binding pending.
+      if (
+        e.key !== 'ArrowLeft' &&
+        e.key !== 'ArrowRight' &&
+        e.key !== 'ArrowUp' &&
+        e.key !== 'ArrowDown' &&
+        e.key !== 'Backspace'
+      ) {
+        e.preventDefault();
+      }
+    }
+    if (after !== before) setVimMode(after);
+  }
 
   async function handleApproval(
     decision: 'allow' | 'deny' | 'always',
@@ -304,21 +426,40 @@ export function ReplScreen(): JSX.Element {
           <span className="text-muted">
             controls max tokens + temperature for each turn
           </span>
+          {vimEnabled && (
+            <span
+              className={
+                'ml-auto rounded px-2 py-0.5 font-mono text-xs ' +
+                (vimMode === 'NORMAL'
+                  ? 'bg-accent/20 text-accent'
+                  : vimMode === 'VISUAL'
+                    ? 'bg-error/10 text-error'
+                    : 'bg-bg-elevated text-muted')
+              }
+              title="Vim mode is active. Esc → NORMAL · i → INSERT · v → VISUAL"
+            >
+              -- {vimMode} --
+            </span>
+          )}
         </div>
         <div className="flex gap-2">
-          <input
-            type="text"
+          <textarea
+            ref={composerRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleComposerKeyDown}
             placeholder={
               pendingApproval
                 ? 'Approve or reject the tool call above to continue…'
                 : busy
                   ? 'Agent is responding…'
-                  : 'Ask DeepCode…'
+                  : vimEnabled
+                    ? `[${vimMode}]  Ask DeepCode…  (Enter submits, Shift+Enter newline)`
+                    : 'Ask DeepCode… (Enter submits, Shift+Enter for newline)'
             }
             disabled={busy || pendingApproval !== null}
-            className="flex-1 rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent disabled:opacity-50"
+            rows={Math.min(6, Math.max(1, input.split('\n').length))}
+            className="flex-1 resize-none rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent disabled:opacity-50"
           />
           {busy ? (
             <button

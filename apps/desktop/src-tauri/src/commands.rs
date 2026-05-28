@@ -47,6 +47,33 @@ pub fn get_settings_path() -> Option<PathBuf> {
     settings::user_settings_path()
 }
 
+/// Read ~/.deepcode/keybindings.json — returns {} if absent.
+#[tauri::command]
+pub fn load_keybindings() -> Result<serde_json::Value, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(serde_json::json!({}));
+    };
+    let path = home.join(".deepcode").join("keybindings.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(format!("read {}: {}", path.display(), e)),
+    }
+}
+
+/// Write ~/.deepcode/keybindings.json (creates ~/.deepcode/ if needed).
+#[tauri::command]
+pub fn save_keybindings(value: serde_json::Value) -> Result<(), String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let dir = home.join(".deepcode");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
+    let path = dir.join("keybindings.json");
+    let raw = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&path, raw).map_err(|e| format!("write {}: {}", path.display(), e))
+}
+
 /// Append a matcher string to permissions.allow[] in ~/.deepcode/settings.json,
 /// creating the file (and the permissions object) if needed. Idempotent.
 ///
