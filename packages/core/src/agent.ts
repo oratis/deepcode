@@ -7,6 +7,7 @@ import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatche
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
+import { buildSystemReminders, type ReminderType } from './reminders/index.js';
 import { SessionManager } from './sessions/index.js';
 import type { ToolRegistry } from './tools/registry.js';
 import type {
@@ -63,6 +64,9 @@ export interface RunAgentOptions {
     keepFirstPairs?: number;
     keepLastMessages?: number;
   };
+  /** Inject system reminders before the user message (date, todos, etc).
+   *  Pass `false` to disable; pass a partial list to limit which builders run. */
+  systemReminders?: false | { enabled?: ReminderType[] };
 }
 
 export interface RunAgentResult {
@@ -87,11 +91,30 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   let history: StoredMessage[] = [...(opts.history ?? [])];
   let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
 
-  // Append the user message first (if provided)
+  // Append the user message first (if provided). When systemReminders is
+  // enabled (default), prepend a <system-reminder> block ahead of the user
+  // text so the model sees pending todos / date / cwd / etc.
   if (opts.userMessage !== undefined) {
+    let userText = opts.userMessage;
+    if (opts.systemReminders !== false) {
+      try {
+        const block = await buildSystemReminders(
+          {
+            cwd: opts.cwd,
+            sessionDir: opts.session
+              ? `${opts.session.manager.root}/${opts.session.id}`
+              : undefined,
+          },
+          opts.systemReminders ?? {},
+        );
+        if (block) userText = `${block}\n\n${userText}`;
+      } catch {
+        /* reminder failures must not abort the agent */
+      }
+    }
     const userMsg: StoredMessage = {
       role: 'user',
-      content: [{ type: 'text', text: opts.userMessage }],
+      content: [{ type: 'text', text: userText }],
       timestamp: new Date().toISOString(),
     };
     history.push(userMsg);
