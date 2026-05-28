@@ -2,17 +2,22 @@
   "name": "@deepcode/desktop",
   "version": "0.0.0",
   "private": true,
-  "description": "DeepCode Mac desktop client (Electron + React)",
+  "description": "DeepCode Mac desktop client (Electron + React + Tailwind + xterm + monaco)",
   "license": "MIT",
   "type": "module",
   "main": "dist-electron/main.cjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:renderer": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "build:all": "pnpm build:renderer && pnpm build:electron",
+    "dev": "concurrently \"vite\" \"wait-on http://localhost:5173 && tsc -p tsconfig.electron.json --watch & electron .\"",
+    "pack": "pnpm build:all && electron-builder --dir",
+    "dist": "pnpm build:all && electron-builder --mac dmg",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --passWithNoTests",
     "lint": "echo 'lint: configured in M1' && exit 0",
-    "clean": "rm -rf dist dist-electron release *.tsbuildinfo",
-    "// notes": "M6-rest will add: dev (vite + concurrent electron), pack (electron-builder), dist (dmg)"
+    "clean": "rm -rf dist dist-electron release *.tsbuildinfo"
   },
   "dependencies": {
     "@deepcode/core": "workspace:*",
@@ -27,6 +32,7 @@
     "typescript": "^5.7.0",
     "vitest": "^2.1.9"
   },
+  "//notes": "Real build deps (electron, electron-builder, vite, @vitejs/plugin-react, tailwindcss, postcss, autoprefixer, concurrently, wait-on) install separately via `pnpm add -D --filter @deepcode/desktop electron electron-builder vite ...` — they pull ~250 MB and slow CI. Configs above are in place; just install the deps when ready to ship the Mac client.",
   "engines": {
     "node": ">=22"
   }
