@@ -3,7 +3,13 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { deepMerge, loadSettings, settingsPaths, writeSettings } from './loader.js';
+import {
+  appendAllowMatcher,
+  deepMerge,
+  loadSettings,
+  settingsPaths,
+  writeSettings,
+} from './loader.js';
 
 describe('settings loader', () => {
   let home: string;
@@ -88,5 +94,50 @@ describe('settings loader', () => {
     const s = await loadSettings({ cwd, home });
     expect(s.merged.permissions?.allow).toEqual(['Read']);
     expect(s.merged.permissions?.deny).toEqual(['Read(/etc/*)']);
+  });
+
+  describe('appendAllowMatcher', () => {
+    it('creates the file and inserts the matcher when none exist', async () => {
+      const path = join(home, '.deepcode', 'settings.local.json');
+      await appendAllowMatcher(path, 'Bash');
+      const raw = JSON.parse(await fs.readFile(path, 'utf8'));
+      expect(raw.permissions.allow).toEqual(['Bash']);
+    });
+
+    it('preserves existing allow entries', async () => {
+      const path = join(home, '.deepcode', 'settings.local.json');
+      await writeSettings(path, {
+        model: 'deepseek-chat',
+        permissions: { allow: ['Read'] },
+      });
+      await appendAllowMatcher(path, 'Bash');
+      const raw = JSON.parse(await fs.readFile(path, 'utf8'));
+      expect(raw.permissions.allow).toEqual(['Read', 'Bash']);
+      expect(raw.model).toBe('deepseek-chat'); // unrelated fields untouched
+    });
+
+    it('is idempotent — does not duplicate', async () => {
+      const path = join(home, '.deepcode', 'settings.local.json');
+      await appendAllowMatcher(path, 'Bash');
+      await appendAllowMatcher(path, 'Bash');
+      const raw = JSON.parse(await fs.readFile(path, 'utf8'));
+      expect(raw.permissions.allow).toEqual(['Bash']);
+    });
+
+    it('ignores empty / whitespace matchers', async () => {
+      const path = join(home, '.deepcode', 'settings.local.json');
+      await appendAllowMatcher(path, '   ');
+      // file should not even be created
+      await expect(fs.access(path)).rejects.toThrow();
+    });
+
+    it('handles allow being absent on existing file', async () => {
+      const path = join(home, '.deepcode', 'settings.local.json');
+      await writeSettings(path, { permissions: { deny: ['Read'] } });
+      await appendAllowMatcher(path, 'Bash');
+      const raw = JSON.parse(await fs.readFile(path, 'utf8'));
+      expect(raw.permissions.allow).toEqual(['Bash']);
+      expect(raw.permissions.deny).toEqual(['Read']);
+    });
   });
 });

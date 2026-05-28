@@ -64,6 +64,32 @@ export async function getSettingsPath(): Promise<string | null> {
   return (await invoke('get_settings_path')) as string | null;
 }
 
+/** Append a permissions matcher to ~/.deepcode/settings.json. Idempotent. */
+export async function appendAllowMatcher(matcher: string): Promise<void> {
+  await invoke('append_allow_matcher', { matcher });
+}
+
+export interface KeybindingsConfigOnDisk {
+  enabled?: boolean;
+  vim?: boolean;
+  bindings?: Array<{
+    key: string;
+    action: string;
+    when?: 'NORMAL' | 'INSERT' | 'VISUAL';
+    description?: string;
+  }>;
+}
+
+/** Read ~/.deepcode/keybindings.json. Returns {} if absent. */
+export async function loadKeybindings(): Promise<KeybindingsConfigOnDisk> {
+  return (await invoke('load_keybindings')) as KeybindingsConfigOnDisk;
+}
+
+/** Write ~/.deepcode/keybindings.json. */
+export async function saveKeybindings(value: KeybindingsConfigOnDisk): Promise<void> {
+  await invoke('save_keybindings', { value });
+}
+
 export async function listSessions(): Promise<SessionMeta[]> {
   return (await invoke('list_sessions')) as SessionMeta[];
 }

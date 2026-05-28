@@ -72,6 +72,7 @@ export {
   writeSettings,
   settingsPaths,
   deepMerge,
+  appendAllowMatcher,
   evaluatePermission,
   matchRule,
   parseRule,
@@ -154,7 +155,7 @@ export {
 } from './compaction/index.js';
 
 // Agent loop's approval callback type (M3b)
-export type { ApprovalCallback } from './agent.js';
+export type { ApprovalCallback, ApprovalDecision } from './agent.js';
 
 // Skills (M4 — SKILL.md frontmatter loading + system-prompt builder; M5 — Skill tool)
 export {

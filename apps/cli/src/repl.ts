@@ -12,6 +12,7 @@ import {
   ToolRegistry,
   WebFetchTool,
   WriteTool,
+  appendAllowMatcher,
   applyStyle,
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
@@ -24,6 +25,7 @@ import {
   makeSkillTool,
   resolveCredentials,
   runAgent,
+  settingsPaths,
   wirePlugins,
   type DeepCodeSettings,
   type Effort,
@@ -36,6 +38,7 @@ import {
 import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
 import { CommandRegistry, type SessionContext } from './commands.js';
+import { resolveEffort } from './parse-args.js';
 
 export interface ReplOpts {
   input: Readable;
@@ -87,7 +90,14 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
 
   const model = opts.model ?? settings.model ?? 'deepseek-chat';
   const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
-  const effort = opts.effort ?? settings.effortLevel ?? 'medium';
+  // Precedence: --effort flag → DEEPCODE_EFFORT_LEVEL env → settings.effortLevel → default.
+  // Spec: docs/DEVELOPMENT_PLAN.md §3.13c. (/effort runtime switch and skill
+  // frontmatter override happen later in the loop, not at construction time.)
+  const effort = resolveEffort({
+    cliFlag: opts.effort,
+    envVar: process.env.DEEPCODE_EFFORT_LEVEL,
+    settingsLevel: settings.effortLevel,
+  });
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
 
   const sessions = new SessionManager();
@@ -226,6 +236,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
     ],
     initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
+    // M7: /rewind needs access to history + provider.
+    provider,
+    history,
   };
 
   output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
@@ -262,12 +275,18 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     // Slash command?
     const match = commands.match(userInput);
     if (match) {
+      // Refresh ctx.history snapshot before running — /rewind reads it.
+      ctx.history = history;
       const lines = await Promise.resolve(match.cmd.run(match.args, ctx));
       for (const line of lines) output.write(line + '\n');
       output.write('\n');
       if (ctx.clearHistory) {
         history = [];
         ctx.clearHistory = false;
+      }
+      if (ctx.newHistory) {
+        history = ctx.newHistory;
+        ctx.newHistory = undefined;
       }
       if (ctx.exitRequested) break;
       continue;
@@ -294,7 +313,21 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       sandboxConfig: settings.sandbox,
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
-        const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();
+        const answer = (
+          await rl.question('     [y]es / [n]o / [a]lways: ')
+        ).trim().toLowerCase();
+        if (answer === 'a' || answer === 'always') {
+          // Persist a bare-tool matcher to project-local settings so the next
+          // run of this tool from this project skips the prompt.
+          try {
+            const { localPath } = settingsPaths({ cwd: ctx.cwd });
+            await appendAllowMatcher(localPath, toolName);
+            output.write(`     ✓ Added "${toolName}" to ${localPath} permissions.allow\n`);
+          } catch (err) {
+            output.write(`     ⚠ Could not persist always-allow: ${(err as Error).message}\n`);
+          }
+          return 'always';
+        }
         return answer === 'y' || answer === 'yes';
       },
       askUser: async (req) => {

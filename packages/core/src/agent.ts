@@ -23,14 +23,23 @@ import type {
 } from './types.js';
 
 /**
- * Approval callback — return true to allow, false to reject.
+ * Approval callback — return value semantics:
+ *   - `true`     allow this one call
+ *   - `false`    reject this one call
+ *   - `'always'` allow this one call AND persist a matcher to
+ *                `settings.local.json#permissions.allow` so future calls of
+ *                the same tool skip the prompt. The host is responsible for
+ *                the persist step (call `appendAllowMatcher` from
+ *                `@deepcode/core/config`); the agent loop only treats
+ *                `'always'` as allow-for-this-call.
  * Called when dispatcher returns 'ask'.
  */
+export type ApprovalDecision = boolean | 'always';
 export type ApprovalCallback = (
   toolName: string,
   toolInput: Record<string, unknown>,
   verdict: DispatchVerdict,
-) => Promise<boolean> | boolean;
+) => Promise<ApprovalDecision> | ApprovalDecision;
 
 export interface RunAgentOptions {
   provider: Provider;
@@ -254,7 +263,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         });
         let allowed = verdict.decision === 'allow';
         if (verdict.decision === 'ask' && opts.approval) {
-          allowed = await opts.approval(toolUse.name, toolUse.input, verdict);
+          const decision = await opts.approval(toolUse.name, toolUse.input, verdict);
+          // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
+          allowed = decision === true || decision === 'always';
         }
         if (!allowed) {
           toolResults.push({

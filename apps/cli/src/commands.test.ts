@@ -212,4 +212,126 @@ describe('built-in command behavior', () => {
     const out = await reg.match('/todos')!.cmd.run([], ctx);
     expect(out.join('\n')).toMatch(/No active todos/);
   });
+
+  describe('/rewind', () => {
+    it('reports empty when no snapshots exist', async () => {
+      const reg = new CommandRegistry();
+      const sm = new SessionManager({ root: sessRoot });
+      const meta = await sm.create('/foo');
+      const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+      const out = await reg.match('/rewind')!.cmd.run([], ctx);
+      expect(out.join('\n')).toMatch(/No snapshots in this session yet/);
+    });
+
+    it('lists snapshots and explains action menu', async () => {
+      const fs = await import('node:fs/promises');
+      const reg = new CommandRegistry();
+      const sm = new SessionManager({ root: sessRoot });
+      const meta = await sm.create(sessRoot);
+      // Create a real file + capture
+      const file = join(sessRoot, 'a.txt');
+      await fs.writeFile(file, 'v1');
+      await sm.snapshot({
+        sessionId: meta.id,
+        cwd: sessRoot,
+        filePath: file,
+        reason: 'pre-Edit',
+        seq: 1,
+      });
+      const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+      const out = await reg.match('/rewind')!.cmd.run([], ctx);
+      const joined = out.join('\n');
+      expect(joined).toMatch(/Snapshots \(1\)/);
+      expect(joined).toMatch(/pre-Edit/);
+      expect(joined).toMatch(/code/);
+      expect(joined).toMatch(/conversation/);
+      expect(joined).toMatch(/summarize-from/);
+      expect(joined).toMatch(/summarize-up-to/);
+    });
+
+    it('restores file content with `code` action', async () => {
+      const fs = await import('node:fs/promises');
+      const reg = new CommandRegistry();
+      const sm = new SessionManager({ root: sessRoot });
+      const meta = await sm.create(sessRoot);
+      const file = join(sessRoot, 'a.txt');
+      await fs.writeFile(file, 'original');
+      const snap = await sm.snapshot({
+        sessionId: meta.id,
+        cwd: sessRoot,
+        filePath: file,
+        reason: 'pre-Edit',
+        seq: 1,
+      });
+      // Modify the file after snapshot
+      await fs.writeFile(file, 'changed');
+      const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+      const out = await reg.match(`/rewind ${snap!.seq} code`)!.cmd.run(
+        [String(snap!.seq), 'code'],
+        ctx,
+      );
+      expect(out.join('\n')).toMatch(/Restored/);
+      const after = await fs.readFile(file, 'utf8');
+      expect(after).toBe('original');
+    });
+
+    it('trims conversation with `conversation` action by capture timestamp', async () => {
+      const fs = await import('node:fs/promises');
+      const reg = new CommandRegistry();
+      const sm = new SessionManager({ root: sessRoot });
+      const meta = await sm.create(sessRoot);
+      const file = join(sessRoot, 'a.txt');
+      await fs.writeFile(file, 'v1');
+      // history: 1 message BEFORE snapshot, 1 AFTER
+      const before = {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: 'first' }],
+        timestamp: new Date(Date.now() - 60_000).toISOString(),
+      };
+      // capture
+      const snap = await sm.snapshot({
+        sessionId: meta.id,
+        cwd: sessRoot,
+        filePath: file,
+        reason: 'pre-Edit',
+        seq: 1,
+      });
+      const after = {
+        role: 'user' as const,
+        content: [{ type: 'text' as const, text: 'second' }],
+        timestamp: new Date(Date.now() + 60_000).toISOString(),
+      };
+      const ctx = makeContext({
+        sessions: sm,
+        sessionId: meta.id,
+        history: [before, after],
+      });
+      const out = await reg.match(`/rewind ${snap!.seq} conversation`)!.cmd.run(
+        [String(snap!.seq), 'conversation'],
+        ctx,
+      );
+      expect(out.join('\n')).toMatch(/kept 1 of 2 messages/);
+      expect(ctx.newHistory).toEqual([before]);
+    });
+
+    it('rejects bad seq numbers', async () => {
+      const fs = await import('node:fs/promises');
+      const reg = new CommandRegistry();
+      const sm = new SessionManager({ root: sessRoot });
+      const meta = await sm.create(sessRoot);
+      const file = join(sessRoot, 'a.txt');
+      await fs.writeFile(file, 'v1');
+      // Capture at least one snapshot so we move past the early-exit.
+      await sm.snapshot({
+        sessionId: meta.id,
+        cwd: sessRoot,
+        filePath: file,
+        reason: 'pre-Edit',
+        seq: 1,
+      });
+      const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+      const out = await reg.match('/rewind 999 code')!.cmd.run(['999', 'code'], ctx);
+      expect(out.join('\n')).toMatch(/No snapshot with seq #999/);
+    });
+  });
 });

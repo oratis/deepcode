@@ -47,6 +47,73 @@ pub fn get_settings_path() -> Option<PathBuf> {
     settings::user_settings_path()
 }
 
+/// Read ~/.deepcode/keybindings.json — returns {} if absent.
+#[tauri::command]
+pub fn load_keybindings() -> Result<serde_json::Value, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Ok(serde_json::json!({}));
+    };
+    let path = home.join(".deepcode").join("keybindings.json");
+    match std::fs::read_to_string(&path) {
+        Ok(raw) => serde_json::from_str(&raw).map_err(|e| e.to_string()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(serde_json::json!({})),
+        Err(e) => Err(format!("read {}: {}", path.display(), e)),
+    }
+}
+
+/// Write ~/.deepcode/keybindings.json (creates ~/.deepcode/ if needed).
+#[tauri::command]
+pub fn save_keybindings(value: serde_json::Value) -> Result<(), String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let dir = home.join(".deepcode");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
+    let path = dir.join("keybindings.json");
+    let raw = serde_json::to_string_pretty(&value).map_err(|e| e.to_string())?;
+    std::fs::write(&path, raw).map_err(|e| format!("write {}: {}", path.display(), e))
+}
+
+/// Append a matcher string to permissions.allow[] in ~/.deepcode/settings.json,
+/// creating the file (and the permissions object) if needed. Idempotent.
+///
+/// Called from the renderer when the user clicks "Always allow" on an
+/// inline permission prompt. We deliberately target USER-level settings
+/// (not project-local) because the renderer doesn't have a stable cwd
+/// concept — the user can later tighten the rule by editing the file.
+#[tauri::command]
+pub fn append_allow_matcher(matcher: String) -> Result<(), String> {
+    let trimmed = matcher.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+    let mut value = settings::read_user()?;
+    // Ensure `permissions.allow` is an array.
+    if !value.is_object() {
+        value = serde_json::json!({});
+    }
+    let obj = value.as_object_mut().unwrap();
+    let perms = obj
+        .entry("permissions".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !perms.is_object() {
+        *perms = serde_json::json!({});
+    }
+    let perms_obj = perms.as_object_mut().unwrap();
+    let allow = perms_obj
+        .entry("allow".to_string())
+        .or_insert_with(|| serde_json::json!([]));
+    if !allow.is_array() {
+        *allow = serde_json::json!([]);
+    }
+    let arr = allow.as_array_mut().unwrap();
+    let exists = arr.iter().any(|v| v.as_str() == Some(trimmed));
+    if !exists {
+        arr.push(serde_json::Value::String(trimmed.to_string()));
+    }
+    settings::write_user(&value)
+}
+
 /// List session files under ~/.deepcode/sessions/. Returns just metadata.
 #[derive(Serialize)]
 pub struct SessionMeta {
