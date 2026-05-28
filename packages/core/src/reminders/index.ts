@@ -28,6 +28,16 @@ export interface ReminderContext {
    * time of access. Used to detect external modifications between turns.
    */
   knownFiles?: Map<string, number>;
+  /** Current agent mode — surfaced when 'plan'. */
+  mode?: string;
+  /**
+   * Last time the user ran tests in this session (epoch ms). Stale-test
+   * reminder fires when > 10min since last run AND at least one Edit/Write
+   * has happened since then.
+   */
+  lastTestRunAt?: number;
+  /** Whether any Edit/Write tool call has fired since lastTestRunAt. */
+  editsSinceTests?: number;
   /** Override `now()` for tests. */
   now?: () => Date;
 }
@@ -64,6 +74,8 @@ export async function buildSystemReminders(
     { type: 'agents-md-missing', build: () => agentsMdMissingReminder(ctx) },
     { type: 'todos-pending', build: () => todosPendingReminder(ctx) },
     { type: 'external-file-modified', build: () => externalFileModifiedReminder(ctx) },
+    { type: 'plan-mode-active', build: () => Promise.resolve(planModeActiveReminder(ctx)) },
+    { type: 'no-test-yet', build: () => Promise.resolve(noTestYetReminder(ctx)) },
   ];
 
   const parts: string[] = [];
@@ -86,6 +98,8 @@ const ALL_TYPES: ReminderType[] = [
   'agents-md-missing',
   'todos-pending',
   'external-file-modified',
+  'plan-mode-active',
+  'no-test-yet',
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -159,6 +173,26 @@ export async function externalFileModifiedReminder(
   const list = drifted.slice(0, 5).map((d) => `  - ${d.path}`).join('\n');
   const more = drifted.length > 5 ? `\n  ... and ${drifted.length - 5} more` : '';
   return `Files modified externally since you last read them:\n${list}${more}\nRe-read them with the Read tool before editing.`;
+}
+
+export function planModeActiveReminder(ctx: ReminderContext): string | null {
+  if (ctx.mode !== 'plan') return null;
+  return (
+    'You are in PLAN MODE. Write (Write/Edit) and exec (Bash) tools are blocked. ' +
+    'When the plan is ready, call ExitPlanMode to switch to default mode.'
+  );
+}
+
+const STALE_TEST_THRESHOLD_MS = 10 * 60 * 1000;
+
+export function noTestYetReminder(ctx: ReminderContext): string | null {
+  if (!ctx.editsSinceTests || ctx.editsSinceTests === 0) return null;
+  const now = ctx.now ? ctx.now().getTime() : Date.now();
+  if (ctx.lastTestRunAt && now - ctx.lastTestRunAt < STALE_TEST_THRESHOLD_MS) return null;
+  return (
+    `You have made ${ctx.editsSinceTests} edit(s) since the last test run. ` +
+    'Consider running tests before declaring the task complete.'
+  );
 }
 
 /**

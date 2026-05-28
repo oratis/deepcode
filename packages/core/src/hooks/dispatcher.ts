@@ -15,6 +15,24 @@ export interface HookDispatcherOpts {
   defaultTimeoutMs?: number;
   /** http hook URLs allowed (prefix match). Empty array = allow all. */
   allowedHttpHookUrls?: string[];
+  /**
+   * Callback to dispatch an mcp_tool hook. Wired by the CLI bootstrap with
+   * the live MCP client. Receives the handler config + the hook payload;
+   * returns whatever the MCP tool emitted (stringified for stdout).
+   */
+  mcpToolDispatcher?: (
+    handler: { server: string; tool: string; arguments?: Record<string, unknown> },
+    payload: unknown,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  /**
+   * Callback to dispatch a sub-agent hook. Receives the handler's agent name +
+   * payload and returns the sub-agent's stdout. Wired by the CLI bootstrap
+   * once sub-agents are loadable.
+   */
+  agentDispatcher?: (
+    handler: { agent: string; prompt?: string },
+    payload: unknown,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
 }
 
 export class HookDispatcher {
@@ -22,12 +40,16 @@ export class HookDispatcher {
   private readonly disabled: boolean;
   private readonly defaultTimeoutMs: number;
   private readonly allowedHttpHookUrls?: string[];
+  private readonly mcpToolDispatcher?: HookDispatcherOpts['mcpToolDispatcher'];
+  private readonly agentDispatcher?: HookDispatcherOpts['agentDispatcher'];
 
   constructor(opts: HookDispatcherOpts) {
     this.hooks = opts.hooks ?? {};
     this.disabled = !!opts.disableAllHooks;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 60_000;
     this.allowedHttpHookUrls = opts.allowedHttpHookUrls;
+    this.mcpToolDispatcher = opts.mcpToolDispatcher;
+    this.agentDispatcher = opts.agentDispatcher;
   }
 
   /**
@@ -113,19 +135,57 @@ export class HookDispatcher {
           exitCode: 0,
         };
       case 'mcp_tool':
-        // Stub: would call an MCP server tool. Defer to M5 (MCP-as-hook).
-        return {
-          stdout: '',
-          stderr: `mcp_tool hook handler is a stub (M5+); declare as command for now.`,
-          exitCode: 0,
-        };
+        if (!this.mcpToolDispatcher) {
+          return {
+            stdout: '',
+            stderr:
+              'mcp_tool hook: no mcpToolDispatcher wired (host CLI must pass one in to enable).',
+            exitCode: 0,
+          };
+        }
+        if (!handler.server || !handler.tool) {
+          return {
+            stdout: '',
+            stderr: 'mcp_tool hook missing required `server` or `tool` field.',
+            exitCode: 0,
+          };
+        }
+        try {
+          return await this.mcpToolDispatcher(
+            {
+              server: handler.server,
+              tool: handler.tool,
+              arguments: { event: ctx.event, payload: ctx.payload },
+            },
+            ctx.payload,
+          );
+        } catch (err) {
+          return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
+        }
       case 'agent':
-        // Stub: would dispatch a sub-agent. Defer to M4 sub-agents wiring.
-        return {
-          stdout: '',
-          stderr: `agent hook handler is a stub (paired with sub-agent dispatch, M4+).`,
-          exitCode: 0,
-        };
+        if (!this.agentDispatcher) {
+          return {
+            stdout: '',
+            stderr:
+              'agent hook: no agentDispatcher wired (host CLI must pass one in to enable).',
+            exitCode: 0,
+          };
+        }
+        if (!handler.agent) {
+          return {
+            stdout: '',
+            stderr: 'agent hook missing required `agent` field.',
+            exitCode: 0,
+          };
+        }
+        try {
+          return await this.agentDispatcher(
+            { agent: handler.agent, prompt: handler.prompt },
+            ctx.payload,
+          );
+        } catch (err) {
+          return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
+        }
       default:
         return {
           stdout: '',
