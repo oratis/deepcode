@@ -1,8 +1,9 @@
-/* Tailwind / global styles entry — M6 skeleton.
- * Real Tailwind setup (postcss + vite-plugin) lands in M6-rest. The skeleton
- * relies on CSS variables + plain styles so the React tree renders without
- * a build pipeline beyond `tsc`.
- */
+/* Tailwind directives — kicks in once postcss + tailwindcss devDeps are
+ * installed (M6-rest). Until then, the hand-rolled utility classes below
+ * still cover the skeleton's markup. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 :root {
   color-scheme: dark;
