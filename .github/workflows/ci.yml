@@ -12,9 +12,13 @@ concurrency:
 
 jobs:
   check:
-    name: Typecheck + Lint + Test
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Typecheck + Lint + Test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
 
     steps:
       - name: Checkout
@@ -39,7 +43,10 @@ jobs:
 
       - name: Lint
         run: pnpm lint
-        continue-on-error: true # M0: lint 配置随 M1 完善，先不阻塞
+
+      - name: Worktree tests (gated)
+        run: DEEPCODE_WORKTREE_TESTS=1 pnpm -F @deepcode/core test src/worktree/
+        continue-on-error: true # flaky cross-platform; not yet a blocker
 
       - name: Format check
         run: pnpm format:check
