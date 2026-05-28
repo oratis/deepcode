@@ -16,6 +16,7 @@
   "files": [
     "dist/",
     "skills/",
+    "schemas/",
     "README.md"
   ],
   "scripts": {
