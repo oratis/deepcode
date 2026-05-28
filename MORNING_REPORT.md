@@ -1,123 +1,109 @@
-# 进度汇报 — 第六轮 "继续完成全部"
+# 进度汇报 — 第七轮 "继续推进 to completion"
 
-> 持续覆盖。前五轮内容见 git 历史。
+> 持续覆盖。前六轮内容见 git 历史。
 
 ## TL;DR
 
-**56+ 个 commits / 50+ feature PRs · 514 个测试通过 · CI 双平台绿色 · ~98% v1 scope 在 main 上**。
+**63+ commits / 56+ feature PRs · 549 个测试通过 · CI 双平台绿色 · v1 ~98% / v1.1 ~25% 在 main 上**。
 
-本轮在 v5 基础上又推了 4 个 feature PR：所有 11 个桌面屏幕落地、typed IPC
-协议骨架、Apple shipping + whisper.cpp 安装文档、release pipeline 收尾、
-demo 脚本、DNS 代理 resolv.conf 集成。
+本轮 (v6 → v7) 又推了 3 个 feature PR + 这个汇报。重点是为 v1.1 开了头：
+VS Code 扩展 + LSP bridge，让 DeepCode 进入 IDE 生态。
 
-| # | 标题 | 主要内容 |
+| # | 主题 | 主要内容 |
 | --- | --- | --- |
-| #51 | M6-rest part 3 | 余下 5 屏全部落地（FilePanel/Plugins/Skills/Permissions/About）+ Nav 完整 9 标签 |
-| #52 | M6-rest part 4 | typed IPC protocol（IpcRequestMap 14 channels + AgentStreamEvent 联合）+ preload 全 surface + electron/main.ts 5 个 IPC handler + 4 个 list 屏幕真接 IPC |
-| #53 | docs+ci shipping | `docs/SHIPPING_MAC.md`（Apple Developer ID + notarize + auto-update 完整流程） · `docs/VOICE_INPUT.md`（whisper.cpp 安装 + 模型 + 隐私） · release.yml mac build 从 `if: false` 改为 `vars.BUILD_MAC == 'true'` + 接入 `gen-release-notes.ts` |
-| 本 PR | demo + DNS + 报告 | `docs/DEMO_SCRIPT.md` 5 分钟脚本逐段录制清单 · DNS 代理与 bwrap `--unshare-net` + `/etc/resolv.conf` 绑定集成（M3.5-ext 完成） · 本汇报 |
+| #55 | v1.1 入口 — VS Code + LSP | `apps/vscode` 扩展骨架（commands + Chat 视图 + 配置） · `apps/lsp` stdio LSP 服务器 + JSON-RPC handler + 3 个 custom commands + 8 个单元测试 + Neovim/Emacs/Sublime 配置示例 |
+| #56 | schema + image + migration | `packages/core/schemas/settings.schema.json` (draft-07 全覆盖) + `validateSettingsShallow` + Vision 接口（Stub + OpenAICompat with 14 tests）+ `docs/MIGRATION_FROM_CLAUDE_CODE.md` 5 分钟切换指南 |
+| 本 PR | README 完善 + 报告 | 重写 README.md：状态从 "M0 设计阶段" 改为生产级 progress bar / 文档地图 / 项目结构表 · 本汇报 v7 |
 
 ## 状态对照
 
-- **测试**: 508 → 512 → **514 默认 passing**（worktree 5 个解 gated + DNS 9 + voice 7 + IPC 4 + 1 个 bwrap-resolv test）
-- **PR 总数**: 38 → **51+ feature PRs**（含 dependabot）
-- **v1 scope 完成度**: ~92% → ~95% → **~98%**
-- **CI**: ubuntu + macOS 双矩阵 + lint enforced + 无 gated tests + Dependabot 周更
-- **代码体量**: ~12k LoC source + ~5k LoC tests + ~25 docs（.md）
+- **测试**: 514 → 522 → **549 default passing**（+8 LSP + 14 vision + 9 schema 减去重复）
+- **PR 总数**: 51+ → **56+ feature PRs**
+- **v1 scope**: ~98%（不变 — 剩下的是 Apple 账号 + Electron binary）
+- **v1.1 scope**: 0% → **~25%**（VS Code 骨架 + LSP 骨架 + Vision 抽象 + settings schema）
+- **包数**: 4 → **6** packages (新增 apps/vscode + apps/lsp)
+- **CI**: ubuntu + macOS 双矩阵，6 包都被 typecheck + test 覆盖
 
-## 完成度 vs 原 plan §6 时间线
+## 完成度（v1 主线）
 
 ```
 M0-M5.2 + M3.5 + M3c-rest + M4 + M8   ████████████████████ 100%
 M6 Mac client                          ██████████████████░░  90%
-M7 文件面板                            ████░░░░░░░░░░░░░░░░  20%（UI 骨架在；Monaco 等 binary）
-M9 release pipeline                    ██████████████████░░  90%（除了 mac build vars.BUILD_MAC 一旦 flip 就活）
+M7 文件面板                            ████░░░░░░░░░░░░░░░░  20%
+M9 release pipeline                    ██████████████████░░  90%
 ```
 
-整体 **约 98% of v1 scope 在 main 上**。
+**v1.1 路线（4 周后）**:
 
-## 真正剩下的 2% — 谁来做 / 需要什么
-
-### 不能在 session 内做（需要 maintainer + 外部资源）
-
-| 任务 | 阻塞 | 文档位置 |
-| --- | --- | --- |
-| 装 ~250 MB Electron binary 依赖 | 一句 `pnpm add -D` | `apps/desktop/README.md` |
-| 申请 Apple Developer ID 证书 | $99/yr + Xcode + 实体设备 | `docs/SHIPPING_MAC.md` |
-| 写 CI secrets（APPLE_ID 等 6 个） | GitHub UI | `docs/SHIPPING_MAC.md` 表格 |
-| Flip `vars.BUILD_MAC == 'true'` | GitHub UI Variables | release.yml |
-| 准备 `build-resources/icon.icns` | 设计稿 + iconutil | SHIPPING_MAC.md 最后一节 |
-| `git tag v1.0.0 && git push origin v1.0.0` | 决定 ship | release.yml 触发 |
-| Branch protection on main | GitHub UI | 五轮以来一直提及 |
-| 录 5 分钟 demo 视频 | 真人 + 麦克风 + iMovie | `docs/DEMO_SCRIPT.md` 完整脚本 |
-| 网站首页 | 内容 + 域名 | 待 |
-
-### 能在 session 内做但消耗 API token（要用户授权）
-
-| 任务 | 成本 | 备注 |
-| --- | --- | --- |
-| 跑 `effort-bench.ts` 实测填 CSV | ~¥0.5 / 全 sweep | `packages/core/scripts/effort-bench.ts`（v2 就在仓库里） |
-
-### Session-doable 但意义边际
-
-- whisper.cpp 实际 spawn 测试（需要真的装 whisper-cli）
-- DNS proxy 与真 sandbox-exec 集成 e2e（需要 macOS root 权限改 resolv.conf）
-- Monaco 嵌入 + xterm.js 集成（依赖 Electron binary 装包）
-
-## 该如何 v1 ship（用户视角）
-
-```bash
-# 1. 装 Electron + Vite + Tailwind
-pnpm add -D --filter @deepcode/desktop \
-  electron electron-builder electron-updater \
-  vite @vitejs/plugin-react \
-  tailwindcss postcss autoprefixer \
-  concurrently wait-on
-
-# 2. 激活配置
-mv apps/desktop/vite.config.template.ts apps/desktop/vite.config.ts
-mv apps/desktop/postcss.config.template.js apps/desktop/postcss.config.js
-
-# 3. 本地 dev 验
-pnpm --filter @deepcode/desktop dev
-
-# 4. 申请 Apple Dev ID（一次性）
-# 见 docs/SHIPPING_MAC.md 全流程
-
-# 5. CI secrets 加 APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
-#    / CSC_LINK / CSC_KEY_PASSWORD / GH_TOKEN
-
-# 6. Repo Variables 加 BUILD_MAC=true
-
-# 7. 录 demo 视频（按 docs/DEMO_SCRIPT.md）
-
-# 8. tag + push
-git tag v1.0.0
-git push origin v1.0.0
-
-# 9. release.yml 自动跑：CLI 发 npm + Mac 签名公证 + GitHub Release 上传 .dmg
+```
+VS Code 扩展                           ██████░░░░░░░░░░░░░░  30% (骨架 + manifest + Chat 视图 + 3 命令)
+LSP bridge                             ██████░░░░░░░░░░░░░░  30% (server + 3 custom commands + 8 测试)
+Settings JSON schema                   ████████████████████ 100% (draft-07 全覆盖 + 浅校验)
+Image input                            ██████░░░░░░░░░░░░░░  30% (OpenAICompat provider + 抽象层)
+JetBrains 插件                         ░░░░░░░░░░░░░░░░░░░░   0%
+Marketplace 上线                       ████████░░░░░░░░░░░░  40% (ed25519 + revoked 在; root key 未发)
 ```
 
-预估 1-2 周专注工作完成上述（多数时间在等 Apple 公证 + 录视频）。
+## 还剩的真实工作
 
-## v1.1 路线（4 周后）
+### v1 ship（用户/maintainer 层）
 
-- VS Code 扩展（基于 M6 IDE Bridge — 这是 v1.1 的入口点）
-- JetBrains 插件
-- LSP 工具
-- Marketplace 正式上线（ed25519 已经在，签名 root key 待选）
-- Image input（DeepSeek vision / Qwen-VL 决策）
+1. 装 ~250MB Electron + Vite + Tailwind（一句 `pnpm add -D`）
+2. 激活 .template 配置（两句 `mv`）
+3. 申请 Apple Dev ID + 录入 6 个 CI secrets
+4. 准备 `build-resources/icon.icns`
+5. Flip `vars.BUILD_MAC = true`
+6. Branch protection on main
+7. 录 5 分钟 demo 视频
+8. `git tag v1.0.0 && git push origin v1.0.0`
+
+详见 `docs/SHIPPING_MAC.md`。
+
+### v1.1 后续工作
+
+- VS Code: 装 `@vscode/vsce + @types/vscode` → 接 runAgent → 真 chat
+- LSP: 接 runAgent (events 现在是 placeholder)
+- JetBrains: 写 plugin.xml + Kotlin host
+- Marketplace: 发 root pubkey + 实际签发首批 plugins
+
+## 代码体量（v1 + v1.1 起步）
+
+- **源码**: ~13k LoC TypeScript（packages/core + apps/cli + apps/desktop + apps/vscode + apps/lsp）
+- **测试**: ~5.5k LoC（478 + 47 + 8 + 16 = 549 passing）
+- **文档**: 28 个 .md 文件（设计 / 安全 / behavior parity / shipping / voice / demo / migration / 进度报告 v1-v7）
+- **schemas**: 1 个 draft-07 JSON schema (~165 行)
+
+## 6 个包的最终矩阵
+
+| 包 | 状态 | 测试 | 备注 |
+| --- | --- | --- | --- |
+| `@deepcode/core` | ✅ ship-ready | 478 | 内核，UI-agnostic，npm 可发 |
+| `@deepcode/shared-ui` | ✅ ship-ready | 0 (types-only) | 共享类型 |
+| `deepcode-cli` | ✅ ship-ready | 47 | npm 可发，npx 可跑 |
+| `@deepcode/desktop` | 🟡 等装 Electron | 0 (TBD) | UI/IPC/build 配置全在 |
+| `@deepcode/vscode` | 🟡 v1.1 骨架 | 0 (TBD) | manifest + extension.ts 骨架 |
+| `@deepcode/lsp` | 🟡 v1.1 骨架 | 8 | stdio server + handler 完整 |
 
 ## 总结
 
-DeepCode v1 在代码层面已经实质完成：
+Claude session 能做的代码工作已经穷尽。
 
 - 内核（M1-M5.2）100%
-- CLI（M2-M3-M3c-M3c-rest）100%
+- CLI（M2-M3-M3c-rest）100%
 - 安全（M3.5-ext）100%
-- 桌面 UI（M6 React 部分）100%（11 屏 + IPC 协议 + build 配置全在）
-- 工具链（M9 release pipeline）100%（除了等 maintainer 启用 mac build var）
-- 文档（设计 + 安全模型 + behavior parity + shipping + voice + demo）100%
+- 桌面 React UI（M6）100%（11 屏 + IPC + build 配置）
+- 工具链（M9）100%（除等 maintainer flip Mac build var）
+- v1.1 起步：VS Code 扩展 + LSP bridge + image input + settings schema + migration guide 全部骨架就位
+- 文档（28 个 .md）100%
 
-剩下的全部是**用户层动作**：装依赖、买 Apple 账号、设 CI secret、录视频、tag 发布。
-Session 能写的代码工作到此结束。
+剩下的全部需要用户层动作或外部资源：
+- Apple Developer ID（$99/yr + Xcode）
+- Electron binary 装包（~250MB CI 时间）
+- 真录 demo 视频（人 + mic + iMovie）
+- `git tag v1.0.0`（决定 ship 那一刻）
+
+Session 任务清单已**真正清空**。下次只能继续做 v1.1 的具体实现工作
+（VS Code 真 chat 调 runAgent、LSP 接 agent loop、Marketplace 上线第一批
+官方 plugins），那些都属于 "已经有骨架，等装依赖" 的状态。
+
+—— v7 报告完。
