@@ -42,16 +42,23 @@ describe('handleMessage — executeCommand', () => {
     const reply = out.find((m) => m.id === 2);
     expect(reply).toBeDefined();
     expect((reply!.result as { turnId: string }).turnId).toMatch(/^lsp-/);
-    // Async: wait a tick for the setImmediate-emitted events
-    await new Promise((r) => setImmediate(r));
+    // Async: wait for the agent run to finish (will error in test env
+    // because no DEEPSEEK_API_KEY is set — that's the expected path).
+    // Poll for turn_done with a timeout.
+    for (let i = 0; i < 50; i++) {
+      const done = out.find(
+        (m) =>
+          m.method === 'deepcode/agentEvent' &&
+          (m.params as { kind: string }).kind === 'turn_done',
+      );
+      if (done) break;
+      await new Promise((r) => setTimeout(r, 20));
+    }
     const events = out.filter((m) => m.method === 'deepcode/agentEvent');
-    expect(events.length).toBeGreaterThanOrEqual(3);
-    const kinds = events.map(
-      (e) => (e.params as { kind: string }).kind,
-    );
-    expect(kinds).toContain('text_delta');
+    const kinds = events.map((e) => (e.params as { kind: string }).kind);
+    expect(kinds).toContain('started');
     expect(kinds).toContain('turn_done');
-  });
+  }, 5000);
 
   it('errors on missing prompt', async () => {
     const out: LspMessage[] = [];

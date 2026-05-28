@@ -114,39 +114,97 @@ async function handleExecuteCommand(
 }
 
 async function handleRunAgent(
-  args: { prompt?: string },
+  args: { prompt?: string; model?: string },
   send: SendFn,
 ): Promise<{ turnId: string }> {
   if (!args.prompt) throw new Error('prompt is required');
   const turnId = `lsp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   state.activeTurns.add(turnId);
 
-  // Real impl: spawn @deepcode/core's runAgent + stream events back via
-  // notification. v1.1-rest wires it; here we emit a single ack event
-  // so clients can confirm the channel.
+  // Stream events back via JSON-RPC notifications.
+  // Wired to the real agent loop — same code that drives the CLI / Mac client.
   send({
     jsonrpc: '2.0',
     method: 'deepcode/agentEvent',
     params: { turnId, kind: 'started', prompt: args.prompt },
   });
-  // Schedule a fake completion event so the channel is exercised
-  setImmediate(() => {
-    send({
-      jsonrpc: '2.0',
-      method: 'deepcode/agentEvent',
-      params: {
-        turnId,
-        kind: 'text_delta',
-        text: '(LSP-skeleton — wire runAgent in v1.1-rest)',
-      },
-    });
-    send({
-      jsonrpc: '2.0',
-      method: 'deepcode/agentEvent',
-      params: { turnId, kind: 'turn_done', stopReason: 'end_turn' },
-    });
-    state.activeTurns.delete(turnId);
-  });
+
+  // Run async; we return turnId immediately so the LSP client can
+  // call deepcode.abort while it's in-flight.
+  void (async () => {
+    try {
+      const [
+        { runAgent },
+        { DeepSeekProvider },
+        { ToolRegistry, BUILTIN_TOOLS },
+        { resolveCredentials, CredentialsStore },
+      ] = await Promise.all([
+        import('@deepcode/core').then((m) => ({ runAgent: m.runAgent })),
+        import('@deepcode/core').then((m) => ({ DeepSeekProvider: m.DeepSeekProvider })),
+        import('@deepcode/core').then((m) => ({
+          ToolRegistry: m.ToolRegistry,
+          BUILTIN_TOOLS: m.BUILTIN_TOOLS,
+        })),
+        import('@deepcode/core').then((m) => ({
+          resolveCredentials: m.resolveCredentials,
+          CredentialsStore: m.CredentialsStore,
+        })),
+      ]);
+
+      const creds = await resolveCredentials({ store: new CredentialsStore() });
+      if (!creds.apiKey && !creds.authToken) {
+        throw new Error(
+          'No DeepSeek credentials. Run `deepcode` once to onboard, or set DEEPSEEK_API_KEY.',
+        );
+      }
+
+      const provider = new DeepSeekProvider({
+        apiKey: creds.apiKey ?? '',
+        authToken: creds.authToken,
+        baseURL: creds.baseURL,
+      });
+
+      const result = await runAgent({
+        provider,
+        tools: new ToolRegistry(BUILTIN_TOOLS),
+        systemPrompt:
+          'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+        userMessage: args.prompt!,
+        model: args.model ?? 'deepseek-chat',
+        cwd: state.rootUri ? new URL(state.rootUri).pathname : process.cwd(),
+        onEvent: (e) => {
+          send({
+            jsonrpc: '2.0',
+            method: 'deepcode/agentEvent',
+            params: { turnId, kind: e.type, ...e },
+          });
+        },
+      });
+
+      send({
+        jsonrpc: '2.0',
+        method: 'deepcode/agentEvent',
+        params: { turnId, kind: 'turn_done', stopReason: result.stopReason },
+      });
+    } catch (err) {
+      send({
+        jsonrpc: '2.0',
+        method: 'deepcode/agentEvent',
+        params: {
+          turnId,
+          kind: 'error',
+          error: (err as Error).message ?? String(err),
+        },
+      });
+      send({
+        jsonrpc: '2.0',
+        method: 'deepcode/agentEvent',
+        params: { turnId, kind: 'turn_done', stopReason: 'error' },
+      });
+    } finally {
+      state.activeTurns.delete(turnId);
+    }
+  })();
 
   return { turnId };
 }
