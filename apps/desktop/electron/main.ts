@@ -120,8 +120,8 @@ ipcMain.handle('mcp:list', async () => {
 ipcMain.handle('skills:list', async () => {
   const skills = await loadSkills({ cwd: process.cwd(), home: homedir() });
   return skills.map((s) => ({
-    name: s.name,
-    description: s.description,
+    name: s.qualifiedName,
+    description: s.frontmatter.description,
     source: s.source,
     path: s.path,
   }));

@@ -1,0 +1,84 @@
+{
+  "name": "@deepcode/vscode",
+  "displayName": "DeepCode",
+  "description": "DeepSeek-powered coding agent — Claude-Code parity inside VS Code.",
+  "version": "0.0.0",
+  "publisher": "deepcode",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "node": ">=22",
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.cjs",
+  "activationEvents": [
+    "onCommand:deepcode.openPanel",
+    "onCommand:deepcode.run",
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "deepcode.openPanel", "title": "DeepCode: Open Panel" },
+      { "command": "deepcode.run", "title": "DeepCode: Run on selection" },
+      { "command": "deepcode.review", "title": "DeepCode: Review current diff" }
+    ],
+    "configuration": {
+      "title": "DeepCode",
+      "properties": {
+        "deepcode.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "DeepSeek API key. Leave empty to use ~/.deepcode/credentials.json.",
+          "scope": "machine-overridable"
+        },
+        "deepcode.model": {
+          "type": "string",
+          "default": "deepseek-chat",
+          "enum": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"],
+          "description": "DeepSeek model to use."
+        },
+        "deepcode.effort": {
+          "type": "string",
+          "default": "medium",
+          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "description": "Effort tier (affects maxTokens + temperature)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "deepcode", "title": "DeepCode", "icon": "media/icon.svg" }
+      ]
+    },
+    "views": {
+      "deepcode": [
+        { "id": "deepcode.chat", "name": "Chat" }
+      ]
+    },
+    "keybindings": [
+      { "command": "deepcode.openPanel", "key": "ctrl+shift+d", "mac": "cmd+shift+d" }
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "package": "vsce package",
+    "clean": "rm -rf dist *.vsix *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@deepcode/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  },
+  "//notes": "vsce + @types/vscode pull ~30 MB; install when ready to ship via `pnpm add -D --filter @deepcode/vscode @vscode/vsce @types/vscode`"
+}
