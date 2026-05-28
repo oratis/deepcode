@@ -47,3 +47,12 @@ export {
   type PluginSubprocessOpts,
   type SpawnAllOpts,
 } from './runtime/subprocess.js';
+
+export {
+  wirePlugins,
+  hasInstalledPlugins,
+  type WirePluginsOpts,
+  type WiredPlugin,
+  type WireResult,
+  type PluginCapabilityBridge,
+} from './wireup.js';

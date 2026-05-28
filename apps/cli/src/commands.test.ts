@@ -168,4 +168,48 @@ describe('built-in command behavior', () => {
     const out = await reg.match('/resume')!.cmd.run([], ctx);
     expect(out.join('\n')).toMatch(/Recent sessions/);
   });
+
+  it('/plugins shows empty + install hint when none wired', async () => {
+    const reg = new CommandRegistry();
+    const out = await reg.match('/plugins')!.cmd.run([], makeContext());
+    expect(out.join('\n')).toMatch(/No plugins installed/);
+    expect(out.join('\n')).toMatch(/deepcode plugin install/);
+  });
+
+  it('/plugins lists wired plugins + contributed hook events', async () => {
+    const reg = new CommandRegistry();
+    const ctx = makeContext({
+      wiredPlugins: [
+        { name: 'demo', version: '1.0.0', contributedHookEvents: ['PostToolUse'] },
+        { name: 'silent', version: '0.1.0', contributedHookEvents: [] },
+      ],
+    });
+    const out = await reg.match('/plugins')!.cmd.run([], ctx);
+    const joined = out.join('\n');
+    expect(joined).toMatch(/Active plugins \(2\)/);
+    expect(joined).toMatch(/demo@1\.0\.0/);
+    expect(joined).toMatch(/PostToolUse/);
+    expect(joined).toMatch(/silent@0\.1\.0/);
+  });
+
+  it('/plugins surfaces warnings (hash drift / spawn failure)', async () => {
+    const reg = new CommandRegistry();
+    const ctx = makeContext({
+      pluginWarnings: ['drifty: hash drift (was abc, now def)', 'bad: failed to start'],
+    });
+    const out = await reg.match('/plugins')!.cmd.run([], ctx);
+    const joined = out.join('\n');
+    expect(joined).toMatch(/Warnings/);
+    expect(joined).toMatch(/hash drift/);
+    expect(joined).toMatch(/failed to start/);
+  });
+
+  it('/todos returns "No active todos" when none stored', async () => {
+    const reg = new CommandRegistry();
+    const sm = new SessionManager({ root: sessRoot });
+    const meta = await sm.create('/foo');
+    const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+    const out = await reg.match('/todos')!.cmd.run([], ctx);
+    expect(out.join('\n')).toMatch(/No active todos/);
+  });
 });

@@ -27,6 +27,14 @@ export interface SessionContext {
   mcpServers?: McpClientHandle[];
   /** MCP servers that failed to connect on startup (M3c). */
   mcpErrors?: Array<{ serverName: string; error: string }>;
+  /** Plugins that successfully wired up (M5.2). */
+  wiredPlugins?: Array<{
+    name: string;
+    version: string;
+    contributedHookEvents: string[];
+  }>;
+  /** Plugin discover/wire warnings (hash drift, spawn failure). */
+  pluginWarnings?: string[];
 }
 
 export interface SlashCommand {
@@ -257,9 +265,57 @@ export const McpCommand: SlashCommand = {
 
 export const TodosCommand: SlashCommand = {
   name: '/todos',
-  description: 'Show active TODO list (M3 wires TodoWrite tool).',
-  run() {
-    return ['No active todos — TodoWrite tool ships in M3.'];
+  description: 'Show active TODO list (TodoWrite tool — M3c-rest).',
+  async run(_args, ctx) {
+    try {
+      const { readTodos } = await import('@deepcode/core');
+      const path = await import('node:path');
+      const dir = path.join(ctx.sessions.root, ctx.sessionId);
+      const todos = await readTodos(dir);
+      if (todos.length === 0) return ['No active todos.'];
+      const lines = [`Todos (${todos.length}):`];
+      for (const t of todos) {
+        const marker =
+          t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '●' : '○';
+        const text = t.status === 'in_progress' ? t.activeForm : t.content;
+        lines.push(`  ${marker} ${text}`);
+      }
+      return lines;
+    } catch (err) {
+      return [`(Error reading todos: ${(err as Error).message})`];
+    }
+  },
+};
+
+export const PluginsCommand: SlashCommand = {
+  name: '/plugins',
+  description: 'List wired plugins and what they contribute.',
+  run(_args, ctx) {
+    const plugins = ctx.wiredPlugins ?? [];
+    const warnings = ctx.pluginWarnings ?? [];
+    const lines: string[] = [];
+    if (plugins.length === 0 && warnings.length === 0) {
+      lines.push('No plugins installed.');
+      lines.push('');
+      lines.push('Install with:  deepcode plugin install <path>');
+      lines.push('(M5 = manifest + hash pin; M5.1 = subprocess + RPC; M5.2 = live wire-up.)');
+      return lines;
+    }
+    if (plugins.length > 0) {
+      lines.push(`Active plugins (${plugins.length}):`);
+      for (const p of plugins) {
+        const events = p.contributedHookEvents.length
+          ? `  hooks: ${p.contributedHookEvents.join(', ')}`
+          : '';
+        lines.push(`  ● ${p.name}@${p.version}${events}`);
+      }
+    }
+    if (warnings.length > 0) {
+      if (lines.length > 0) lines.push('');
+      lines.push(`Warnings:`);
+      for (const w of warnings) lines.push(`  ⚠ ${w}`);
+    }
+    return lines;
   },
 };
 
@@ -279,6 +335,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   InitCommand,
   McpCommand,
   TodosCommand,
+  PluginsCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
