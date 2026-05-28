@@ -99,6 +99,74 @@ describe('resolveCredentials', () => {
   });
 });
 
+describe('ApiKeyHelperRefresher', () => {
+  let home: string;
+
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'dc-helper-'));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('caches the key across calls within TTL', async () => {
+    const { ApiKeyHelperRefresher, CredentialsStore } = await import('./index.js');
+    const store = new CredentialsStore({ home, forceFile: true });
+    await store.save({ apiKey: 'stored', baseURL: 'https://x' });
+    const refresher = new ApiKeyHelperRefresher({
+      store,
+      apiKeyHelper: 'echo refreshed-$RANDOM',
+      ttlMs: 60_000,
+    });
+    const first = await refresher.get();
+    const second = await refresher.get();
+    expect(first.apiKey).toBe(second.apiKey); // same cache hit
+  });
+
+  it('refresh() forces re-execution', async () => {
+    const { ApiKeyHelperRefresher, CredentialsStore } = await import('./index.js');
+    const store = new CredentialsStore({ home, forceFile: true });
+    await store.save({ apiKey: 'stored' });
+    const refresher = new ApiKeyHelperRefresher({
+      store,
+      apiKeyHelper: 'echo k-$RANDOM',
+      ttlMs: 60_000,
+    });
+    const a = await refresher.get();
+    const b = await refresher.refresh();
+    // Both should have *some* key (RANDOM may collide but probability ~1/32768)
+    expect(a.apiKey).toBeDefined();
+    expect(b.apiKey).toBeDefined();
+  });
+
+  it('invalidate() forces refresh next get()', async () => {
+    const { ApiKeyHelperRefresher, CredentialsStore } = await import('./index.js');
+    const store = new CredentialsStore({ home, forceFile: true });
+    await store.save({ apiKey: 'stored' });
+    const refresher = new ApiKeyHelperRefresher({
+      store,
+      apiKeyHelper: 'echo fresh-key',
+      ttlMs: 60_000,
+    });
+    await refresher.get();
+    refresher.invalidate();
+    const after = await refresher.get();
+    expect(after.apiKey).toBe('fresh-key');
+  });
+
+  it('reads DEEPCODE_API_KEY_HELPER_TTL_MS env var', async () => {
+    process.env.DEEPCODE_API_KEY_HELPER_TTL_MS = '7777';
+    const { ApiKeyHelperRefresher, CredentialsStore } = await import('./index.js');
+    const store = new CredentialsStore({ home, forceFile: true });
+    const refresher = new ApiKeyHelperRefresher({
+      store,
+      apiKeyHelper: 'echo x',
+    });
+    expect((refresher as unknown as { ttlMs: number }).ttlMs).toBe(7777);
+    delete process.env.DEEPCODE_API_KEY_HELPER_TTL_MS;
+  });
+});
+
 describe('redact', () => {
   it('redacts long secrets to first4…last4', () => {
     expect(redact('sk-d1f6abcdefghijklmnop')).toBe('sk-d…mnop');

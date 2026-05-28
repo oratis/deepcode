@@ -79,13 +79,15 @@ export {
   type AutoModeConfig,
 } from './config/index.js';
 
-// Credentials (M2)
+// Credentials (M2; M3c adds ApiKeyHelperRefresher)
 export {
   CredentialsStore,
   resolveCredentials,
+  ApiKeyHelperRefresher,
   redact,
   type Credentials,
   type CredentialsStoreOpts,
+  type ApiKeyHelperOpts,
 } from './credentials/index.js';
 
 // Mode policy (M3)
