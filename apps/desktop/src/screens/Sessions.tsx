@@ -1,17 +1,9 @@
-// Sessions list screen — resume / inspect past conversations.
-// Spec: docs/VISUAL_DESIGN.html screen #5
-// Milestone: M6-rest
+// Sessions list — design-aligned. Browse + filter + resume past
+// conversations. Per spec screen #5.
 
 import { useEffect, useState } from 'react';
-
-interface SessionMeta {
-  id: string;
-  title?: string;
-  cwd: string;
-  createdAt: string;
-  updatedAt: string;
-  model?: string;
-}
+import { Card, Screen } from '../components/Screen.js';
+import { listSessions, type SessionMeta } from '../lib/tauri-api.js';
 
 interface SessionsProps {
   onPick: (sessionId: string) => void;
@@ -23,71 +15,132 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
-    // IPC call; fall back to empty list when main hasn't implemented yet.
-    if (window.deepcode?.sessions?.list) {
-      void window.deepcode.sessions
-        .list()
-        .then((rows) => setSessions(rows as SessionMeta[]))
-        .catch(() => setSessions([]));
-    } else {
-      setSessions([]);
-    }
+    void listSessions()
+      .then(setSessions)
+      .catch(() => setSessions([]));
   }, []);
 
   if (sessions === null) {
-    return <div className="p-8 text-muted">Loading sessions…</div>;
+    return (
+      <Screen title="Sessions">
+        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+      </Screen>
+    );
   }
 
-  const visible = sessions.filter(
-    (s) =>
-      !filter ||
-      (s.title ?? '').toLowerCase().includes(filter.toLowerCase()) ||
-      s.cwd.toLowerCase().includes(filter.toLowerCase()),
+  const filtered = sessions.filter((s) =>
+    !filter || s.id.toLowerCase().includes(filter.toLowerCase()),
   );
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border p-3">
+    <Screen
+      title="Sessions"
+      subtitle={`${sessions.length} total`}
+      actions={
+        <button type="button" className="btn btn-primary" onClick={onNew}>
+          + New
+        </button>
+      }
+    >
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
         <input
           type="search"
-          placeholder="Filter sessions…"
+          className="input"
+          placeholder="Filter by id…"
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="flex-1 rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent"
+          style={{ marginBottom: 14, fontFamily: 'inherit' }}
         />
-        <button
-          onClick={onNew}
-          className="ml-2 rounded bg-accent px-4 py-2 font-medium text-bg"
+
+        <Card flush padding={0}>
+          {filtered.length === 0 ? (
+            <div
+              style={{
+                padding: 32,
+                textAlign: 'center',
+                color: 'var(--text-3)',
+                fontSize: 13,
+              }}
+            >
+              {sessions.length === 0
+                ? 'No sessions yet — your conversations are saved automatically.'
+                : 'No matches for that filter.'}
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {filtered.map((s, i) => (
+                <li
+                  key={s.id}
+                  onClick={() => onPick(s.id)}
+                  style={{
+                    padding: '12px 16px',
+                    borderBottom:
+                      i === filtered.length - 1
+                        ? 'none'
+                        : '1px solid var(--line-soft)',
+                    cursor: 'pointer',
+                    display: 'grid',
+                    gridTemplateColumns: '1fr auto',
+                    gap: 12,
+                    alignItems: 'baseline',
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.background = 'var(--bg-3)')
+                  }
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.background = 'transparent')
+                  }
+                >
+                  <div>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: 'var(--text-0)',
+                        fontWeight: 500,
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      {s.id}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: 'var(--text-3)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {(s.size_bytes / 1024).toFixed(1)} KB
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
+                    {relativeTime(s.updated_at_secs)}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <p
+          style={{
+            fontSize: 11,
+            color: 'var(--text-3)',
+            textAlign: 'center',
+            marginTop: 16,
+          }}
         >
-          + New session
-        </button>
+          Sessions are stored as JSONL under ~/.deepcode/sessions/. Resume to
+          continue any previous conversation.
+        </p>
       </div>
-      <div className="flex-1 overflow-y-auto p-3">
-        {visible.length === 0 ? (
-          <div className="p-8 text-center text-muted">
-            <p>No previous sessions yet.</p>
-            <p className="mt-2 text-xs">Start one with the New session button above.</p>
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {visible.map((s) => (
-              <li
-                key={s.id}
-                onClick={() => onPick(s.id)}
-                className="cursor-pointer rounded border border-border p-3 hover:border-accent"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{s.title ?? s.id.slice(0, 8)}</span>
-                  <span className="text-xs text-muted">
-                    {new Date(s.updatedAt).toLocaleString()}
-                  </span>
-                </div>
-                <div className="mt-1 text-xs text-muted">{s.cwd}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </div>
+    </Screen>
   );
+}
+
+function relativeTime(secs: number): string {
+  const diff = Math.floor(Date.now() / 1000) - secs;
+  if (diff < 60) return `${diff}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return `${Math.floor(diff / 86400)}d ago`;
 }
