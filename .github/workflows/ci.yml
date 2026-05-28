@@ -28,7 +28,7 @@ jobs:
         uses: pnpm/action-setup@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           # Need Node 22+ for fs.promises.glob (used by GlobTool).
           # @deepcode/core's `package.json` engines field requires >=22 too.
