@@ -1,5 +1,4 @@
 import { generateKeyPairSync, sign } from 'node:crypto';
-import { promises as fs } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { AddressInfo } from 'node:net';
 import { mkdtemp, rm } from 'node:fs/promises';
