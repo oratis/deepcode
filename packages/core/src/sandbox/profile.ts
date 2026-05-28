@@ -39,17 +39,26 @@ export function buildMacOsProfile(config: SandboxConfig, _cwd: string): string {
     '; allow basic process operations',
     '(allow process-fork)',
     '(allow process-exec)',
+    '(allow process-info*)',
     '(allow signal (target self))',
     '(allow sysctl-read)',
     '(allow mach-lookup)',
     '(allow iokit-open)',
     '(allow ipc-posix-shm)',
     '; allow read of system libraries + caches',
+    // Literal entries for root + /private so path traversal (getcwd, stat of
+    // ancestor dirs) doesn't get denied. `subpath` matches contents under but
+    // NOT the directory entry itself.
+    '(allow file-read* (literal "/"))',
+    '(allow file-read* (literal "/private"))',
+    '(allow file-read* (literal "/private/var"))',
+    '(allow file-read* (literal "/Users"))',
     '(allow file-read* (subpath "/usr"))',
     '(allow file-read* (subpath "/System"))',
     '(allow file-read* (subpath "/Library"))',
     '(allow file-read* (subpath "/private/etc"))',
     '(allow file-read* (subpath "/private/var/db"))',
+    '(allow file-read* (subpath "/private/var/folders"))', // dyld closure cache
     '(allow file-read* (subpath "/dev"))',
     '(allow file-read* (subpath "/bin"))',
     '(allow file-read* (subpath "/sbin"))',
