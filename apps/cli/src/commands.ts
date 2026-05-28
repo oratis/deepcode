@@ -287,6 +287,54 @@ export const TodosCommand: SlashCommand = {
   },
 };
 
+export const KeybindingsCommand: SlashCommand = {
+  name: '/keybindings',
+  description: 'List configured key bindings.',
+  async run() {
+    const { loadKeybindings, DEFAULT_KEYBINDINGS } = await import('@deepcode/core');
+    try {
+      const { config, bindings } = await loadKeybindings();
+      const lines = [
+        `Keybindings — enabled: ${config.enabled ? 'yes' : 'no'} · vim: ${config.vim ? 'on' : 'off'}`,
+        '',
+        `Defaults (${DEFAULT_KEYBINDINGS.length}):`,
+      ];
+      for (const b of bindings.slice(0, 20)) {
+        const when = b.when ? ` [${b.when}]` : '';
+        const desc = b.description ? ` — ${b.description}` : '';
+        lines.push(`  ${b.key.padEnd(14)} ${b.action}${when}${desc}`);
+      }
+      if (bindings.length > 20) lines.push(`  ... and ${bindings.length - 20} more`);
+      lines.push('');
+      lines.push('Edit ~/.deepcode/keybindings.json to add custom bindings.');
+      return lines;
+    } catch (err) {
+      return [`(Error loading keybindings: ${(err as Error).message})`];
+    }
+  },
+};
+
+export const VimCommand: SlashCommand = {
+  name: '/vim',
+  description: 'Toggle Vim mode on/off (persisted to ~/.deepcode/keybindings.json).',
+  async run() {
+    const { loadKeybindings, saveKeybindings } = await import('@deepcode/core');
+    try {
+      const { config } = await loadKeybindings();
+      const next = !config.vim;
+      await saveKeybindings({ ...config, vim: next });
+      return [
+        `Vim mode is now ${next ? 'ON' : 'OFF'}.`,
+        next
+          ? 'Press Esc to enter NORMAL mode; press i / a / v to navigate.'
+          : 'Emacs-style bindings are active. Run /vim again to re-enable.',
+      ];
+    } catch (err) {
+      return [`(Error toggling vim: ${(err as Error).message})`];
+    }
+  },
+};
+
 export const PluginsCommand: SlashCommand = {
   name: '/plugins',
   description: 'List wired plugins and what they contribute.',
@@ -336,6 +384,8 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   McpCommand,
   TodosCommand,
   PluginsCommand,
+  KeybindingsCommand,
+  VimCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
