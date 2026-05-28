@@ -4,7 +4,7 @@
 
 import type { AgentEvent, Mode } from '@deepcode/core/dist/types.js';
 import type { DeepCodeAPI } from '../types/global.js';
-import { abortAgentTurn, startAgentTurn } from './mac-agent.js';
+import { abortAgentTurn, clearHistory, startAgentTurn } from './mac-agent.js';
 import {
   appendAllowMatcher,
   getAppInfo,
@@ -102,7 +102,7 @@ export function installTauriShim(): void {
       },
     },
     agent: {
-      async start({ userMessage, model, mode, effort }) {
+      async start({ userMessage, model, mode, effort, cwd }) {
         // Pre-allocate turn ID so onEvent callbacks can reference it
         // without waiting for the promise to resolve.
         let pendingTurnId = `pending-${Date.now()}`;
@@ -110,6 +110,7 @@ export function installTauriShim(): void {
           userMessage,
           model,
           mode: mode as Mode | undefined,
+          cwd,
           effort: effort as
             | 'low'
             | 'medium'

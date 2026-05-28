@@ -24,8 +24,10 @@ import {
   type KeyBinding,
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
+import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
 import { ToolCard } from '../components/ToolCard.js';
+import { projectName } from '../lib/project.js';
 import {
   appendAllowMatcher,
   loadKeybindings,
@@ -33,17 +35,64 @@ import {
   saveSettingsFile,
 } from '../lib/tauri-api.js';
 
+interface ReplScreenProps {
+  projectPath: string;
+  /** Called after each turn ends so the parent can refresh the sidebar. */
+  onTurnComplete?: () => void;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-const EFFORT_LABELS: Record<Effort, string> = {
-  low: 'Standard',
-  medium: 'Standard+',
-  high: 'High',
-  xhigh: 'Extra High',
-  max: 'Max',
-};
+
+const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
+  { value: 'low', label: 'Low', meta: '4k', description: 'Cheap & quick — short answers, simple edits.' },
+  { value: 'medium', label: 'Medium', meta: '8k', description: 'Balanced default. Good for most coding tasks.' },
+  { value: 'high', label: 'High', meta: '16k', description: 'Longer context — multi-file refactors.' },
+  { value: 'xhigh', label: 'Extra High', meta: '24k', description: 'Deep reasoning for architecture changes.' },
+  { value: 'max', label: 'Max', meta: '32k', description: 'Max tokens. Slow & expensive — use sparingly.' },
+];
+
+const MODEL_OPTIONS: DropdownOption<'deepseek-chat' | 'deepseek-reasoner'>[] = [
+  { value: 'deepseek-chat', label: 'DeepSeek-Chat', meta: '128k', description: 'Faster, cheaper. Best default.' },
+  {
+    value: 'deepseek-reasoner',
+    label: 'DeepSeek-Reasoner (R1)',
+    meta: '128k',
+    description: 'Chain-of-thought reasoning for hard problems.',
+  },
+];
+
+const MODE_OPTIONS: DropdownOption<
+  'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
+>[] = [
+  { value: 'default', label: 'Default', meta: '●', description: 'Ask before every tool call that needs approval.' },
+  {
+    value: 'acceptEdits',
+    label: 'Accept edits',
+    meta: '✎',
+    description: 'Auto-approve Edit/Write; still ask for Bash and dangerous tools.',
+  },
+  {
+    value: 'plan',
+    label: 'Plan mode',
+    meta: '◐',
+    description: 'Read-only — write tools blocked. Use for exploring.',
+  },
+  {
+    value: 'dontAsk',
+    label: "Don't ask",
+    meta: '↯',
+    description: 'Auto-approve everything safe (no destructive operations).',
+  },
+  {
+    value: 'bypassPermissions',
+    label: 'Bypass',
+    meta: '⚡',
+    description: 'YOLO. Run anything, no approvals. Use only in scratch dirs.',
+  },
+];
 
 interface ToolInvocation {
   toolId: string;
@@ -102,13 +151,14 @@ interface PendingApproval {
 
 // ─── Component ────────────────────────────────────────────────────────
 
-export function ReplScreen(): JSX.Element {
+export function ReplScreen({
+  projectPath,
+  onTurnComplete,
+}: ReplScreenProps): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'system',
-      text:
-        'DeepCode is ready. Ask anything about your codebase — I can ' +
-        'Read / Write / Edit / Bash / Grep / Glob your files.',
+      text: `DeepCode is ready in ${projectPath}. Ask anything about your codebase — I can Read / Write / Edit / Bash / Grep / Glob your files.`,
     },
   ]);
   const [input, setInput] = useState('');
@@ -117,9 +167,9 @@ export function ReplScreen(): JSX.Element {
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [effort, setEffort] = useState<Effort>('medium');
   const [model, setModel] = useState<string>('deepseek-chat');
-  const [mode, setMode] = useState<'default' | 'plan' | 'bypassPermissions'>(
-    'default',
-  );
+  const [mode, setMode] = useState<
+    'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
+  >('default');
   const [usage, setUsage] = useState<{ inputTokens: number; outputTokens: number }>({
     inputTokens: 0,
     outputTokens: 0,
@@ -169,6 +219,7 @@ export function ReplScreen(): JSX.Element {
         setBusy(false);
         setActiveTurnId(null);
         setMessages((m) => finalizeStreaming(m));
+        onTurnComplete?.();
         return;
       }
       switch (e.type) {
@@ -371,6 +422,7 @@ export function ReplScreen(): JSX.Element {
         effort,
         model,
         mode,
+        cwd: projectPath,
       });
       setActiveTurnId(r.turnId);
     } catch (err) {
@@ -390,6 +442,11 @@ export function ReplScreen(): JSX.Element {
     if (!activeTurnId) return;
     await window.deepcode.agent.abort({ turnId: activeTurnId });
   }
+
+  // Lock all the toolbar controls (mode / model / effort) once a turn
+  // is in flight or pending approval — changing them mid-turn would
+  // contradict the system prompt already sent.
+  const controlsLocked = busy || pendingApproval !== null;
 
   // ── Context bar fill ──
   const contextWindow = 128_000;
@@ -418,8 +475,11 @@ export function ReplScreen(): JSX.Element {
     <>
       <div className="chat-header">
         <span className="crumb">
-          <b>DeepCode</b>
-          {' · '}REPL
+          <b>{projectName(projectPath)}</b>
+          {' · '}
+          <span title={projectPath} className="muted">
+            {abbreviatePath(projectPath)}
+          </span>
         </span>
         <div className="right">{headerPills}</div>
       </div>
@@ -467,8 +527,12 @@ export function ReplScreen(): JSX.Element {
               >
                 +
               </button>
-              <span
-                className={
+
+              <Dropdown<typeof mode>
+                value={mode}
+                onChange={setMode}
+                disabled={controlsLocked}
+                triggerClass={
                   'mode-badge ' +
                   (mode === 'bypassPermissions'
                     ? 'bypass'
@@ -476,24 +540,12 @@ export function ReplScreen(): JSX.Element {
                       ? 'plan'
                       : 'default')
                 }
-                onClick={() =>
-                  setMode((cur) =>
-                    cur === 'default'
-                      ? 'plan'
-                      : cur === 'plan'
-                        ? 'bypassPermissions'
-                        : 'default',
-                  )
-                }
-                title="Click to cycle: default → plan → bypassPermissions"
-                style={{ cursor: 'pointer' }}
-              >
-                {mode === 'bypassPermissions'
-                  ? '⚡ Bypass'
-                  : mode === 'plan'
-                    ? '◐ Plan mode'
-                    : '● Default'}
-              </span>
+                renderTrigger={(opt) => <span>{opt.meta} {opt.label}</span>}
+                title="Mode controls how tool calls are approved"
+                panelWidth={300}
+                options={MODE_OPTIONS}
+              />
+
               {vimEnabled && (
                 <span
                   className={
@@ -510,39 +562,38 @@ export function ReplScreen(): JSX.Element {
                 </span>
               )}
               <span className="spacer" />
-              <div
-                className="model-picker"
-                onClick={() =>
-                  setModel((m) =>
-                    m === 'deepseek-chat' ? 'deepseek-reasoner' : 'deepseek-chat',
-                  )
-                }
-                title="Click to toggle model"
-              >
-                <span className="dot" />
-                <span>{model}</span>
-                <span className="meta">128k · {effort}</span>
-              </div>
-              <select
+
+              <Dropdown<typeof model>
+                value={model}
+                onChange={setModel}
+                disabled={controlsLocked}
+                dot
+                title="DeepSeek model"
+                panelWidth={280}
+                options={MODEL_OPTIONS}
+                renderTrigger={(opt) => (
+                  <>
+                    <span>{opt.label}</span>
+                    <span className="meta">{opt.meta}</span>
+                  </>
+                )}
+              />
+
+              <Dropdown<Effort>
                 value={effort}
-                onChange={(e) => void handleEffortChange(e.target.value as Effort)}
-                disabled={busy}
-                title="Effort tier — maxTokens + temperature"
-                style={{
-                  background: 'var(--bg-2)',
-                  border: '1px solid var(--line-soft)',
-                  borderRadius: 'var(--radius-sm)',
-                  color: 'var(--text-1)',
-                  padding: '5px 8px',
-                  fontSize: 12,
-                }}
-              >
-                {EFFORTS.map((t) => (
-                  <option key={t} value={t}>
-                    {t} — {EFFORT_LABELS[t]}
-                  </option>
-                ))}
-              </select>
+                onChange={(v) => void handleEffortChange(v)}
+                disabled={controlsLocked}
+                title="Effort — maxTokens + temperature"
+                panelWidth={280}
+                options={EFFORT_OPTIONS}
+                renderTrigger={(opt) => (
+                  <>
+                    <span>{opt.label}</span>
+                    <span className="meta">{opt.meta}</span>
+                  </>
+                )}
+              />
+
               {busy ? (
                 <button
                   type="button"
@@ -683,6 +734,14 @@ function renderMessage(
 }
 
 // ─── Mutators ────────────────────────────────────────────────────────
+
+/** Abbreviate a long path by replacing $HOME prefix with "~". */
+function abbreviatePath(p: string): string {
+  // Best-effort home detection — works for /Users/<n>/... on macOS
+  const m = p.match(/^\/Users\/[^/]+/);
+  if (m) return '~' + p.slice(m[0].length);
+  return p;
+}
 
 function pickTarget(input: Record<string, unknown>): string | undefined {
   for (const k of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {

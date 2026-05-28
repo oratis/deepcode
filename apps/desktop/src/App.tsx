@@ -1,14 +1,16 @@
 // Top-level React component for desktop client.
 // Spec: docs/VISUAL_DESIGN.html
-// Milestone: 0.1.1 — design-aligned 3-column shell
+// Milestone: 0.1.2 — adds project-folder flow + inspector wiring + session refresh.
 
 import { useEffect, useState } from 'react';
 import { InspectorRail } from './components/InspectorRail.js';
+import { ProjectPickerOverlay } from './components/ProjectPickerOverlay.js';
 import { Sidebar } from './components/Sidebar.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
+import { clearHistory as clearAgentHistory } from './lib/mac-agent.js';
+import { loadProjectPath, saveProjectPath } from './lib/project.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
 import { AboutScreen } from './screens/About.js';
-import { ChatScreen } from './screens/Chat.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
 import { OnboardingScreen } from './screens/Onboarding.js';
 import { PermissionsScreen } from './screens/Permissions.js';
@@ -22,12 +24,15 @@ import type { UpdateInfo } from './types/global.js';
 
 export function App(): JSX.Element {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
+  const [projectPath, setProjectPath] = useState<string | null | undefined>(undefined);
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [screen, setScreen] = useState<ScreenName>('repl');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [sessionEpoch, setSessionEpoch] = useState(0);
 
   useEffect(() => {
     void window.deepcode.creds.load().then((c) => setHasKey(c.hasKey));
+    void loadProjectPath().then((p) => setProjectPath(p ?? null));
     const offShim = window.deepcode.onUpdateDownloaded((info) => setUpdate(info));
     const offReal = onUpdateDownloaded((info) => setUpdate(info));
     startUpdaterPolling();
@@ -37,7 +42,13 @@ export function App(): JSX.Element {
     };
   }, []);
 
-  if (hasKey === null) {
+  async function handlePickProject(path: string): Promise<void> {
+    await saveProjectPath(path);
+    setProjectPath(path);
+  }
+
+  // Loading state
+  if (hasKey === null || projectPath === undefined) {
     return (
       <div
         style={{
@@ -59,22 +70,40 @@ export function App(): JSX.Element {
     return <OnboardingScreen onComplete={() => setHasKey(true)} />;
   }
 
+  // No project picked yet → folder picker overlay
+  if (!projectPath) {
+    return <ProjectPickerOverlay onPicked={handlePickProject} />;
+  }
+
   // Main shell: 3-column grid.
   return (
     <div className="app-shell">
       {update && <UpdateBanner info={update} />}
       <Sidebar
+        key={`sb-${sessionEpoch}`}
+        projectPath={projectPath}
         activeSessionId={activeSessionId}
         onPickSession={(id) => {
           setActiveSessionId(id);
           setScreen('repl');
         }}
         onNewSession={() => {
+          clearAgentHistory();
           setActiveSessionId(null);
           setScreen('repl');
+          // Force ReplScreen to remount with a clean message history
+          setSessionEpoch((k) => k + 1);
+        }}
+        onSwitchProject={async () => {
+          // Force-show the picker again by clearing state.
+          setProjectPath(null);
         }}
       />
-      <main className="chat-main">{renderScreen(screen, setScreen)}</main>
+      <main className="chat-main" key={`main-${sessionEpoch}`}>
+        {renderScreen(screen, setScreen, projectPath, () =>
+          setSessionEpoch((k) => k + 1),
+        )}
+      </main>
       <InspectorRail
         activeScreen={screen}
         onChange={(s) => setScreen(s)}
@@ -87,10 +116,13 @@ export function App(): JSX.Element {
 function renderScreen(
   screen: ScreenName,
   setScreen: (s: ScreenName) => void,
+  projectPath: string,
+  onTurnComplete: () => void,
 ): JSX.Element {
   switch (screen) {
     case 'chat':
-      return <ChatScreen />;
+      // 'chat' folded into 'repl' — the new shell has only the REPL surface.
+      return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
     case 'sessions':
       return (
         <div className="legacy-screen">
@@ -138,6 +170,6 @@ function renderScreen(
       );
     case 'repl':
     default:
-      return <ReplScreen />;
+      return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
   }
 }

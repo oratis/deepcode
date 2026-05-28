@@ -23,7 +23,7 @@ import type {
   ToolHandler,
 } from '@deepcode/core/dist/types.js';
 import { MAC_TOOLS } from './mac-tools.js';
-import { readCredentials } from './tauri-api.js';
+import { readCredentials, sessionAppend, sessionCreate } from './tauri-api.js';
 
 // Local minimal ToolRegistry — same shape as @deepcode/core's, without
 // the BUILTIN_TOOLS top-level import that drags in fs.
@@ -46,9 +46,16 @@ class LocalToolRegistry {
   }
 }
 
-const SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. \
-Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). \
-Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
+function buildSystemPrompt(cwd?: string): string {
+  return `You are DeepCode, an AI coding assistant powered by DeepSeek.
+Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob).
+Be concise and accurate. When you modify files, briefly explain what you changed and why.
+
+${cwd ? `Working directory: ${cwd}\nAll relative paths resolve against this directory.` : 'NO project folder has been picked yet. Tell the user to pick one before asking for file edits.'}
+
+Tool input schemas use snake_case field names (e.g. file_path, old_string).
+ALWAYS pass absolute paths or paths relative to the working directory above.`;
+}
 
 /** A single in-flight turn. */
 interface ActiveTurn {
@@ -59,6 +66,13 @@ interface ActiveTurn {
 const turns = new Map<string, ActiveTurn>();
 let history: import('@deepcode/core/dist/types.js').StoredMessage[] = [];
 let provider: DeepSeekProvider | null = null;
+// One active session id per app run — created lazily on first turn.
+let currentSessionId: string | null = null;
+
+export function clearSession(): void {
+  currentSessionId = null;
+  history = [];
+}
 
 async function ensureProvider(): Promise<DeepSeekProvider> {
   if (provider) return provider;
@@ -82,6 +96,9 @@ export interface StartTurnArgs {
   mode?: Mode;
   /** Effort tier — controls maxTokens + temperature. Default 'medium'. */
   effort?: Effort;
+  /** Project folder absolute path. Tools resolve relative paths against this.
+   *  When undefined, tools error because the agent can't safely guess. */
+  cwd?: string;
   onEvent: (e: AgentEvent) => void;
   onDone: (reason: 'end_turn' | 'max_turns' | 'aborted' | 'error') => void;
   /** Called when the agent needs user approval for a tool call. Resolves to:
@@ -104,6 +121,29 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
   const abort = new AbortController();
   turns.set(turnId, { turnId, abortController: abort });
 
+  // Lazily create a session JSONL on first turn, so the sidebar can
+  // surface it. Failures here are non-fatal — we just don't persist.
+  if (!currentSessionId) {
+    try {
+      currentSessionId = await sessionCreate(args.cwd ?? '/');
+    } catch (err) {
+      console.warn('session_create failed (continuing without persistence):', err);
+    }
+  }
+  // Append the user message right away so the file shows non-zero activity.
+  if (currentSessionId) {
+    try {
+      await sessionAppend(currentSessionId, {
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'text', text: args.userMessage }],
+        timestamp: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.warn('session_append (user) failed:', err);
+    }
+  }
+
   const prov = await ensureProvider();
   // Cast: nominal-typing on the private `tools` field makes TS reject the
   // structural match. Runtime shape is identical.
@@ -118,13 +158,13 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
       const result = await runAgent({
         provider: prov,
         tools,
-        systemPrompt: SYSTEM_PROMPT,
+        systemPrompt: buildSystemPrompt(args.cwd),
         userMessage: args.userMessage,
         history,
         model: args.model ?? 'deepseek-chat',
         maxTokens: effortParams.maxTokens,
         temperature: effortParams.temperature,
-        cwd: '/', // Renderer doesn't know real cwd; tools accept absolute paths
+        cwd: args.cwd ?? '/',
         signal: abort.signal,
         mode: args.mode,
         // Disable system reminders in the renderer — they require node:fs
@@ -143,6 +183,22 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
         // No hook dispatcher, no sessions persistence, no autoCompact in v1 Mac MVP.
       });
       history = result.history;
+      // Append the new assistant message(s) for persistence.
+      if (currentSessionId && history.length > 0) {
+        const newestAssistant = [...history]
+          .reverse()
+          .find((m) => m.role === 'assistant');
+        if (newestAssistant) {
+          try {
+            await sessionAppend(currentSessionId, {
+              type: 'message',
+              ...newestAssistant,
+            });
+          } catch (err) {
+            console.warn('session_append (assistant) failed:', err);
+          }
+        }
+      }
       args.onDone(result.stopReason);
     } catch (err) {
       args.onEvent({ type: 'error', error: (err as Error).message ?? String(err) });
@@ -164,6 +220,7 @@ export function abortAgentTurn(turnId: string): boolean {
 
 export function clearHistory(): void {
   history = [];
+  currentSessionId = null;
 }
 
 export function getHistoryLength(): number {

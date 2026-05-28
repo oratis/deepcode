@@ -1,19 +1,23 @@
 // Left-column sessions sidebar — design spec screen #3.
 //
-// Sections: "Today / Yesterday / Earlier" bucketed by updatedAt; each
-// row shows a dot + label + relative-time meta. Active row gets the
-// brand-tinted background + 1 px brand-line border (no flat color block
-// per the spec note ①).
+// Above the session list: a "project" chip showing the currently active
+// folder + a small switch-folder button. Below: sessions bucketed by
+// Today/Yesterday/Earlier per the spec note ①.
 
 import { useEffect, useState } from 'react';
+import { projectName } from '../lib/project.js';
 import { listSessions, type SessionMeta } from '../lib/tauri-api.js';
 import { BrandMark } from './BrandMark.js';
 
 interface SidebarProps {
+  /** Absolute path of the active project folder. */
+  projectPath: string;
   /** Currently active session id; null when on transient/global screens. */
   activeSessionId: string | null;
   onPickSession: (id: string) => void;
   onNewSession: () => void;
+  /** Triggers a re-show of the folder picker so the user can switch projects. */
+  onSwitchProject: () => void;
 }
 
 type Bucket = 'Today' | 'Yesterday' | 'Earlier';
@@ -34,9 +38,11 @@ function relTime(updatedAtSecs: number, nowSecs: number): string {
 }
 
 export function Sidebar({
+  projectPath,
   activeSessionId,
   onPickSession,
   onNewSession,
+  onSwitchProject,
 }: SidebarProps): JSX.Element {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
@@ -49,7 +55,6 @@ export function Sidebar({
     return () => clearInterval(t);
   }, []);
 
-  // Group sessions by bucket, preserving order
   const grouped: Record<Bucket, SessionMeta[]> = {
     Today: [],
     Yesterday: [],
@@ -64,6 +69,70 @@ export function Sidebar({
       <div className="brand-row">
         <BrandMark />
         <span className="name">DeepCode</span>
+      </div>
+
+      {/* Active project chip */}
+      <div
+        style={{
+          margin: '4px 4px 12px',
+          padding: '8px 10px',
+          background: 'var(--bg-1)',
+          border: '1px solid var(--line)',
+          borderRadius: 'var(--radius-sm)',
+          fontSize: 11,
+          color: 'var(--text-2)',
+        }}
+        title={projectPath}
+      >
+        <div
+          style={{
+            fontSize: 9,
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+            color: 'var(--text-3)',
+            marginBottom: 3,
+          }}
+        >
+          Project
+        </div>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            color: 'var(--text-0)',
+            fontSize: 12,
+            fontWeight: 500,
+          }}
+        >
+          <span>📁</span>
+          <span
+            style={{
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              flex: 1,
+              minWidth: 0,
+            }}
+          >
+            {projectName(projectPath)}
+          </span>
+          <button
+            type="button"
+            onClick={onSwitchProject}
+            title="Switch to another folder"
+            style={{
+              background: 'transparent',
+              border: 0,
+              color: 'var(--text-3)',
+              cursor: 'pointer',
+              fontSize: 11,
+              padding: 2,
+            }}
+          >
+            ⇄
+          </button>
+        </div>
       </div>
 
       <button type="button" className="new-btn" onClick={onNewSession}>
@@ -96,21 +165,23 @@ export function Sidebar({
       {sessions.length === 0 && (
         <div
           style={{
-            marginTop: 16,
-            padding: '12px 8px',
+            marginTop: 12,
+            padding: '8px 8px',
             color: 'var(--text-3)',
-            fontSize: 12,
+            fontSize: 11,
             textAlign: 'center',
+            lineHeight: 1.5,
           }}
         >
-          No sessions yet — talk to DeepCode to start one.
+          No sessions yet — your conversations will appear here once you
+          start one.
         </div>
       )}
     </aside>
   );
 }
 
-/** Session ids are `2026-05-28-abc123` — strip the date for display. */
+/** Session ids look like `2026-05-28-abc123` — strip the date for display. */
 function shortTitle(id: string): string {
   const m = id.match(/^\d{4}-\d{2}-\d{2}-(.+)$/);
   return m ? m[1]! : id;
