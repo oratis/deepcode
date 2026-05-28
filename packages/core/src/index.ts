@@ -174,7 +174,7 @@ export {
   type ConnectAllResult,
 } from './mcp/index.js';
 
-// Plugins (M5 — manifest + hash pinning + local install + discovery)
+// Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge)
 export {
   installLocal,
   discoverPlugins,
@@ -184,12 +184,20 @@ export {
   saveTrustState,
   pluginsDir,
   trustFilePath,
+  PluginSubprocess,
+  spawnAllPlugins,
+  shutdownAllPlugins,
+  generatePluginToken,
   type PluginManifest,
   type InstalledPlugin,
   type PluginTrust,
   type TrustState,
   type InstallOptions,
   type DiscoverOptions,
+  type RpcRequest,
+  type RpcResponse,
+  type PluginSubprocessOpts,
+  type SpawnAllOpts,
 } from './plugins/index.js';
 
 // Sub-agents (M4 — .deepcode/agents/*.md)
