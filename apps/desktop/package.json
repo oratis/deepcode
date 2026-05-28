@@ -5,12 +5,14 @@
   "description": "DeepCode Mac desktop client (Electron + React)",
   "license": "MIT",
   "type": "module",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "echo 'desktop tests in M6' && exit 0",
+    "test": "vitest run --passWithNoTests",
     "lint": "echo 'lint: configured in M1' && exit 0",
-    "clean": "rm -rf dist dist-electron release *.tsbuildinfo"
+    "clean": "rm -rf dist dist-electron release *.tsbuildinfo",
+    "// notes": "M6-rest will add: dev (vite + concurrent electron), pack (electron-builder), dist (dmg)"
   },
   "dependencies": {
     "@deepcode/core": "workspace:*",
@@ -18,7 +20,12 @@
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
-    "typescript": "^5.7.0"
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
   },
   "engines": {
     "node": ">=22"

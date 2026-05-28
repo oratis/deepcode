@@ -2,16 +2,17 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "rootDir": "./",
+    "rootDir": "./src",
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "lib": ["ES2022", "DOM"],
     "types": ["node"],
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "allowJs": false,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "noEmit": true
   },
-  "include": ["electron/**/*", "src/**/*"],
-  "exclude": ["node_modules", "dist", "dist-electron", "release"],
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "dist-electron", "release", "electron/**/*"],
   "references": [{ "path": "../../packages/core" }, { "path": "../../packages/shared-ui" }]
 }
