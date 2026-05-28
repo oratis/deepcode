@@ -653,23 +653,25 @@ function renderMessage(
     );
   }
   if (m.role === 'system') {
+    // System messages are a thin inline hint — no avatar, no author label.
     return (
-      <div className="msg system" key={i}>
-        <div className="avatar">i</div>
-        <div className="body">
-          <div className="author">System</div>
-          <div
-            className="content"
-            style={{
-              color:
-                m.level === 'error' ? 'var(--error)' : 'var(--text-2)',
-              fontSize: 12,
-              fontFamily: m.level === 'error' ? 'JetBrains Mono, monospace' : undefined,
-            }}
-          >
-            {m.text}
-          </div>
-        </div>
+      <div
+        key={i}
+        style={{
+          fontSize: 11.5,
+          color: m.level === 'error' ? 'var(--error)' : 'var(--text-3)',
+          textAlign: 'center',
+          padding: '6px 12px',
+          fontFamily: m.level === 'error' ? 'JetBrains Mono, monospace' : 'inherit',
+          background:
+            m.level === 'error'
+              ? 'rgba(255, 84, 112, 0.06)'
+              : 'transparent',
+          borderRadius: 'var(--radius-sm)',
+          lineHeight: 1.5,
+        }}
+      >
+        {m.text}
       </div>
     );
   }
