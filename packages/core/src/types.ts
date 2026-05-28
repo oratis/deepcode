@@ -114,6 +114,8 @@ export interface ToolContext {
   sessionDir?: string;
   /** Abort signal propagated from the agent loop. */
   signal?: AbortSignal;
+  /** Optional platform sandbox config — passed through to Bash tool (M3.5). */
+  sandboxConfig?: import('./config/types.js').SandboxConfig;
 }
 
 export interface ToolResult {

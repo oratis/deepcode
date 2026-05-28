@@ -52,6 +52,8 @@ export interface RunAgentOptions {
   permissions?: PermissionRules;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
+  /** M3.5: passed through to Bash tool ctx for sandbox wrapping. */
+  sandboxConfig?: import('./config/types.js').SandboxConfig;
   /** M3c: auto-compact when cumulative tokens approach contextWindow * threshold.
    *  When triggered, runs the summarizer call and replaces history mid-loop. */
   autoCompact?: {
@@ -96,7 +98,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (opts.session) await opts.session.manager.append(opts.session.id, userMsg);
   }
 
-  const toolCtx: ToolContext = { cwd: opts.cwd, signal: opts.signal };
+  const toolCtx: ToolContext = {
+    cwd: opts.cwd,
+    signal: opts.signal,
+    sandboxConfig: opts.sandboxConfig,
+  };
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;
 

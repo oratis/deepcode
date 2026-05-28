@@ -256,6 +256,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       permissions: settings.permissions,
       hooks,
       autoCompact: { contextWindow: 128_000, threshold: 0.8 },
+      sandboxConfig: settings.sandbox,
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
         const answer = (await rl.question('     [y]es / [n]o: ')).trim().toLowerCase();
