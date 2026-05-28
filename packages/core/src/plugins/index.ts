@@ -56,3 +56,28 @@ export {
   type WireResult,
   type PluginCapabilityBridge,
 } from './wireup.js';
+
+export {
+  installFromGithub,
+  installFromNpm,
+  installFromSpec,
+  uninstallPlugin,
+  type RemoteInstallOpts,
+} from './install.js';
+
+export {
+  verifyEntrySignature,
+  isRevoked,
+  fetchIndex,
+  fetchRevoked,
+  resolveEntry,
+  loadMarketplaceConfig,
+  saveMarketplaceConfig,
+  addMarketplace,
+  marketplacesPath,
+  type MarketplaceEntry,
+  type MarketplaceIndex,
+  type RevokedEntry,
+  type RevokedList,
+  type MarketplaceConfig,
+} from './marketplace.js';
