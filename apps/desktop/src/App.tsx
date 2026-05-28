@@ -1,16 +1,20 @@
 // Top-level React component for desktop client.
 // Spec: docs/VISUAL_DESIGN.html
-// Milestone: M6-rest — Onboarding gate + Nav + 5 screens
+// Milestone: M6-rest — Onboarding gate + Nav + 9 screens
 
 import { useEffect, useState } from 'react';
 import { Nav, type ScreenName } from './components/Nav.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
+import { AboutScreen } from './screens/About.js';
 import { ChatScreen } from './screens/Chat.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
 import { OnboardingScreen } from './screens/Onboarding.js';
+import { PermissionsScreen } from './screens/Permissions.js';
+import { PluginsScreen } from './screens/Plugins.js';
 import { ReplScreen } from './screens/Repl.js';
 import { SessionsScreen } from './screens/Sessions.js';
 import { SettingsScreen } from './screens/Settings.js';
+import { SkillsScreen } from './screens/Skills.js';
 import type { UpdateInfo } from './types/global.js';
 
 export function App(): JSX.Element {
@@ -45,21 +49,39 @@ export function App(): JSX.Element {
       <main className="flex-1 overflow-hidden">
         {!hasKey ? (
           <OnboardingScreen onComplete={() => setHasKey(true)} />
-        ) : screen === 'chat' ? (
-          <ChatScreen />
-        ) : screen === 'sessions' ? (
-          <SessionsScreen
-            onPick={() => setScreen('repl')}
-            onNew={() => setScreen('repl')}
-          />
-        ) : screen === 'settings' ? (
-          <SettingsScreen />
-        ) : screen === 'mcp' ? (
-          <MCPManagerScreen />
         ) : (
-          <ReplScreen />
+          renderScreen(screen, setScreen)
         )}
       </main>
     </div>
   );
+}
+
+function renderScreen(
+  screen: ScreenName,
+  setScreen: (s: ScreenName) => void,
+): JSX.Element {
+  switch (screen) {
+    case 'chat':
+      return <ChatScreen />;
+    case 'sessions':
+      return (
+        <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />
+      );
+    case 'plugins':
+      return <PluginsScreen />;
+    case 'skills':
+      return <SkillsScreen />;
+    case 'permissions':
+      return <PermissionsScreen />;
+    case 'mcp':
+      return <MCPManagerScreen />;
+    case 'settings':
+      return <SettingsScreen />;
+    case 'about':
+      return <AboutScreen />;
+    case 'repl':
+    default:
+      return <ReplScreen />;
+  }
 }

@@ -2,7 +2,16 @@
 // Spec: docs/VISUAL_DESIGN.html screen #1 header
 // Milestone: M6-rest
 
-export type ScreenName = 'repl' | 'chat' | 'sessions' | 'settings' | 'mcp';
+export type ScreenName =
+  | 'repl'
+  | 'chat'
+  | 'sessions'
+  | 'plugins'
+  | 'skills'
+  | 'permissions'
+  | 'mcp'
+  | 'settings'
+  | 'about';
 
 interface NavProps {
   active: ScreenName;
@@ -13,8 +22,12 @@ const ITEMS: Array<{ name: ScreenName; label: string }> = [
   { name: 'repl', label: 'REPL' },
   { name: 'chat', label: 'Chat' },
   { name: 'sessions', label: 'Sessions' },
+  { name: 'plugins', label: 'Plugins' },
+  { name: 'skills', label: 'Skills' },
+  { name: 'permissions', label: 'Permissions' },
   { name: 'mcp', label: 'MCP' },
   { name: 'settings', label: 'Settings' },
+  { name: 'about', label: 'About' },
 ];
 
 export function Nav({ active, onChange }: NavProps): JSX.Element {
