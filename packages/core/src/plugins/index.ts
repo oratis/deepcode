@@ -36,3 +36,14 @@ export {
   type InstallOptions,
   type DiscoverOptions,
 } from './manifest.js';
+
+export {
+  PluginSubprocess,
+  spawnAllPlugins,
+  shutdownAllPlugins,
+  generatePluginToken,
+  type RpcRequest,
+  type RpcResponse,
+  type PluginSubprocessOpts,
+  type SpawnAllOpts,
+} from './runtime/subprocess.js';
