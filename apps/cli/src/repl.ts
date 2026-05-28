@@ -115,9 +115,12 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     home: opts.home,
     maxBytes: (settings.memoryLoadCapKB ?? 100) * 1024,
   });
+  // Locate built-in skills dir (packaged with @deepcode/core)
+  const builtinSkillsDir = await resolveBuiltinSkillsDir();
   const skills = await loadSkills({
     cwd,
     home: opts.home,
+    builtinDir: builtinSkillsDir,
     overrides: settings.skillOverrides,
   });
   const styles = await loadOutputStyles({ cwd, home: opts.home });
@@ -316,4 +319,30 @@ function formatToolInput(input: Record<string, unknown>): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+/**
+ * Find the bundled built-in skills directory.
+ * In dev: <repo>/packages/core/skills/.
+ * In published package: packaged inside @deepcode/core/skills/.
+ * Returns undefined if not found.
+ */
+async function resolveBuiltinSkillsDir(): Promise<string | undefined> {
+  const { createRequire } = await import('node:module');
+  const require_ = createRequire(import.meta.url);
+  try {
+    // Resolve any file inside the package, then walk up to find skills/
+    const corePkg = require_.resolve('@deepcode/core/package.json');
+    const path = await import('node:path');
+    const fs = await import('node:fs/promises');
+    const skillsDir = path.join(path.dirname(corePkg), 'skills');
+    try {
+      await fs.access(skillsDir);
+      return skillsDir;
+    } catch {
+      return undefined;
+    }
+  } catch {
+    return undefined;
+  }
 }

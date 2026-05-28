@@ -1,0 +1,174 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # for GitHub Releases
+  id-token: write # for npm provenance (if enabled)
+
+jobs:
+  # ----------------------------------------------------------------------
+  # Validate
+  # ----------------------------------------------------------------------
+  validate:
+    name: Validate before release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      channel: ${{ steps.version.outputs.channel }}
+      is_mandatory: ${{ steps.version.outputs.is_mandatory }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      - id: version
+        name: Parse version + channel from tag
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          CHANNEL="stable"
+          IS_MANDATORY="false"
+          if [[ "$VERSION" == *-nightly.* ]]; then CHANNEL="nightly"; fi
+          if [[ "$VERSION" == *-beta.* ]]; then CHANNEL="beta"; fi
+          if [[ "$VERSION" == *+security.* ]]; then IS_MANDATORY="true"; fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "channel=$CHANNEL" >> $GITHUB_OUTPUT
+          echo "is_mandatory=$IS_MANDATORY" >> $GITHUB_OUTPUT
+          echo "Released as version=$VERSION channel=$CHANNEL mandatory=$IS_MANDATORY"
+
+  # ----------------------------------------------------------------------
+  # Publish CLI to npm
+  # ----------------------------------------------------------------------
+  publish-cli:
+    name: Publish deepcode-cli to npm
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+
+      - name: Set CLI version from tag
+        run: |
+          cd apps/cli
+          npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+
+      - name: Publish
+        run: |
+          cd apps/cli
+          # On beta/nightly, publish with --tag <channel> so default `latest`
+          # stays on stable.
+          if [ "${{ needs.validate.outputs.channel }}" = "stable" ]; then
+            pnpm publish --no-git-checks --access public
+          else
+            pnpm publish --no-git-checks --access public --tag ${{ needs.validate.outputs.channel }}
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ----------------------------------------------------------------------
+  # Build + sign Mac client (.dmg)
+  # ----------------------------------------------------------------------
+  build-mac:
+    name: Build + sign + notarize Mac client
+    needs: validate
+    runs-on: macos-14
+    if: false # Disabled until apps/desktop has actual Electron code (M6)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+      - run: pnpm install --frozen-lockfile
+
+      - name: Set version
+        run: |
+          cd apps/desktop
+          npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+
+      - name: Build (electron-builder)
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          cd apps/desktop
+          pnpm electron-builder --mac --arm64 --x64 --publish never
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-release
+          path: |
+            apps/desktop/release/*.dmg
+            apps/desktop/release/latest-mac.yml
+
+  # ----------------------------------------------------------------------
+  # GitHub Release
+  # ----------------------------------------------------------------------
+  github-release:
+    name: Publish GitHub Release
+    needs: [validate, publish-cli]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mark mandatory in latest-mac.yml if applicable
+        if: needs.validate.outputs.is_mandatory == 'true'
+        run: |
+          echo "Note: this release tag has +security.X suffix — Mac client auto-update will be marked mandatory."
+
+      - name: Generate release notes from PR labels
+        id: notes
+        run: |
+          # Lightweight: extract section between last tag and HEAD; group by label.
+          # Real implementation lands in scripts/gen-release-notes.ts (M9-ext).
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -n "$PREV_TAG" ]; then
+            RANGE="$PREV_TAG..HEAD"
+          else
+            RANGE="HEAD"
+          fi
+          {
+            echo "## Changes"
+            git log --pretty=format:'- %s' $RANGE
+          } > release-notes.md
+          cat release-notes.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ needs.validate.outputs.version }}
+          body_path: release-notes.md
+          prerelease: ${{ needs.validate.outputs.channel != 'stable' }}
+          generate_release_notes: false
+          # files: omitted until M6 mac artifacts exist
