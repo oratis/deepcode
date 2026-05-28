@@ -17,7 +17,7 @@
   "scripts": {
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty",
-    "test": "pnpm -r test",
+    "test": "pnpm -r test && vitest run --config vitest.scripts.config.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",

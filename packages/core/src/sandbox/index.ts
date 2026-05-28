@@ -19,6 +19,14 @@ export {
 
 export { splitClauses, allClausesExcluded, type Clause } from './pipeline.js';
 
+export {
+  startDnsProxy,
+  parseQName,
+  buildNxDomain,
+  type DnsProxyOpts,
+  type DnsProxyHandle,
+} from './dns-proxy.js';
+
 export interface SandboxedCommand {
   /** Command + args to spawn (the actual sandbox wrapper invocation). */
   command: string;

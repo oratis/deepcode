@@ -139,16 +139,50 @@ export const ModeCommand: SlashCommand = {
   },
 };
 
+// Effort tier UI metadata — surfaced by `/effort` with no args.
+const EFFORT_TIERS: Array<{
+  name: string;
+  maxTokens: number;
+  temperature: number;
+  use: string;
+}> = [
+  { name: 'low', maxTokens: 1024, temperature: 0.0, use: 'Quick targeted fixes. Cheap.' },
+  { name: 'medium', maxTokens: 4096, temperature: 0.3, use: 'Default. Most tasks.' },
+  { name: 'high', maxTokens: 8192, temperature: 0.5, use: 'Multi-step refactors.' },
+  { name: 'xhigh', maxTokens: 16384, temperature: 0.6, use: 'Plans, architecture decisions.' },
+  { name: 'max', maxTokens: 32768, temperature: 0.7, use: 'Open-ended exploration. Burns tokens.' },
+];
+
 export const EffortCommand: SlashCommand = {
   name: '/effort',
-  description: 'Set effort tier: /effort low|medium|high|xhigh|max',
+  description: 'Set effort tier (interactive picker if no arg): /effort [low|medium|high|xhigh|max]',
   run(args, ctx) {
-    const valid = ['low', 'medium', 'high', 'xhigh', 'max'];
-    if (args.length === 0) return [`Current effort: ${ctx.effort}`];
+    if (args.length === 0) {
+      // Selector UI — show the table; user picks via `/effort <name>` next turn.
+      const lines = [`Current effort: ${ctx.effort}`, ''];
+      lines.push('Available tiers:');
+      lines.push('  Tier      maxTokens  temperature  Use case');
+      for (const t of EFFORT_TIERS) {
+        const marker = t.name === ctx.effort ? '●' : ' ';
+        lines.push(
+          `  ${marker} ${t.name.padEnd(7)} ${String(t.maxTokens).padStart(7)}  ${t.temperature.toFixed(1).padStart(11)}  ${t.use}`,
+        );
+      }
+      lines.push('');
+      lines.push('Switch with: /effort <tier>');
+      return lines;
+    }
     const next = args[0]!;
-    if (!valid.includes(next)) return [`Unknown effort "${next}". Valid: ${valid.join(' | ')}`];
+    const tier = EFFORT_TIERS.find((t) => t.name === next);
+    if (!tier) {
+      return [
+        `Unknown effort "${next}". Valid: ${EFFORT_TIERS.map((t) => t.name).join(' | ')}`,
+      ];
+    }
     ctx.effort = next;
-    return [`Effort switched to ${next}.`];
+    return [
+      `Effort switched to ${next}. (maxTokens=${tier.maxTokens}, temperature=${tier.temperature}, ${tier.use})`,
+    ];
   },
 };
 
