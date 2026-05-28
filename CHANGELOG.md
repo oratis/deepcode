@@ -5,6 +5,19 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.4] — 2026-05-28
+
+### Robustness + polish
+- **React error boundary** wraps the entire app. Uncaught render errors
+  now show a recoverable error panel ("DeepCode crashed") with the
+  stack trace + reload button, instead of leaving the user with a
+  blank dark window.
+- **Unhandled promise rejection** logger added at app entry so devtools
+  surfaces async errors that would otherwise vanish.
+- **System messages** redesigned — thin centered hint instead of a row
+  with avatar + author label. Looks much less like an interruption.
+- Bundles `release.yml` Tauri rewrite + `docs/RELEASING.md` from 0.1.3.
+
 ## [0.1.3] — 2026-05-28
 
 ### Visual redesign — phase 2
