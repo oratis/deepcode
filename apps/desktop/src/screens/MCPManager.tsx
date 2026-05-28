@@ -1,8 +1,9 @@
-// MCP server manager screen — list / connect / test MCP servers.
-// Spec: docs/VISUAL_DESIGN.html screen #7
-// Milestone: M6-rest
+// MCP server manager — design-aligned per spec screen #15.
+// List / show status of MCP servers wired in settings.json#mcpServers.
 
 import { useEffect, useState } from 'react';
+import { Badge, type BadgeKind } from '../components/Badge.js';
+import { Card, Screen, SectionTitle } from '../components/Screen.js';
 
 interface McpServerStatus {
   name: string;
@@ -10,6 +11,24 @@ interface McpServerStatus {
   toolCount?: number;
   error?: string;
 }
+
+const STATUS_BADGE: Record<
+  McpServerStatus['status'],
+  { kind: BadgeKind; label: string }
+> = {
+  connected: { kind: 'ok', label: '● connected' },
+  failed: { kind: 'err', label: '✕ failed' },
+  disabled: { kind: 'warn', label: '○ disabled' },
+};
+
+const EXAMPLE_JSON = `{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["@modelcontextprotocol/server-filesystem", "/tmp"]
+    }
+  }
+}`;
 
 export function MCPManagerScreen(): JSX.Element {
   const [servers, setServers] = useState<McpServerStatus[] | null>(null);
@@ -26,67 +45,130 @@ export function MCPManagerScreen(): JSX.Element {
   }, []);
 
   if (servers === null) {
-    return <div className="p-8 text-muted">Loading MCP servers…</div>;
+    return (
+      <Screen title="MCP servers">
+        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+      </Screen>
+    );
   }
 
+  const connected = servers.filter((s) => s.status === 'connected').length;
+
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-border p-3">
-        <h2 className="font-semibold">MCP Servers</h2>
-        <p className="mt-1 text-xs text-muted">
-          Connected via settings.json &gt; <code>mcpServers</code>.{' '}
-          {servers.length === 0
-            ? 'None configured.'
-            : `${servers.filter((s) => s.status === 'connected').length} of ${servers.length} connected.`}
-        </p>
-      </header>
-      <div className="flex-1 overflow-y-auto p-3">
-        {servers.length === 0 ? (
-          <div className="p-8 text-center text-muted">
-            <p>No MCP servers configured.</p>
-            <pre className="mx-auto mt-4 max-w-xl rounded bg-bg-elevated p-3 text-left text-xs">
-              {`{
-  "mcpServers": {
-    "filesystem": {
-      "command": "npx",
-      "args": ["@modelcontextprotocol/server-filesystem", "/tmp"]
-    }
-  }
-}`}
-            </pre>
-            <p className="mt-3 text-xs">
-              Add the snippet above to your settings.json then relaunch.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {servers.map((s) => (
-              <li key={s.name} className="rounded border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{s.name}</span>
-                  <span
-                    className={
-                      s.status === 'connected'
-                        ? 'text-accent'
-                        : s.status === 'failed'
-                          ? 'text-error'
-                          : 'text-muted'
-                    }
+    <Screen
+      title="MCP servers"
+      subtitle={
+        servers.length === 0
+          ? 'none configured'
+          : `${connected} of ${servers.length} connected`
+      }
+    >
+      <div style={{ maxWidth: 820, margin: '0 auto' }}>
+        <Card title={`Connected (${servers.length})`} flush padding={0}>
+          {servers.length === 0 ? (
+            <div
+              style={{
+                padding: 32,
+                textAlign: 'center',
+                color: 'var(--text-3)',
+                fontSize: 13,
+              }}
+            >
+              No MCP servers configured.
+              <div style={{ marginTop: 10, fontSize: 11 }}>
+                Add the snippet below to <code>~/.deepcode/settings.json</code>{' '}
+                and relaunch DeepCode.
+              </div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {servers.map((s, i) => {
+                const badge = STATUS_BADGE[s.status];
+                return (
+                  <li
+                    key={s.name}
+                    style={{
+                      padding: '14px 16px',
+                      borderBottom:
+                        i === servers.length - 1
+                          ? 'none'
+                          : '1px solid var(--line-soft)',
+                    }}
                   >
-                    {s.status}
-                    {s.toolCount !== undefined && s.status === 'connected'
-                      ? ` · ${s.toolCount} tools`
-                      : ''}
-                  </span>
-                </div>
-                {s.error && (
-                  <div className="mt-1 text-xs text-error">{s.error}</div>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color: 'var(--text-0)',
+                          fontSize: 13,
+                        }}
+                      >
+                        {s.name}
+                      </span>
+                      <Badge kind={badge.kind}>{badge.label}</Badge>
+                      {s.toolCount !== undefined && s.status === 'connected' && (
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: 'var(--text-2)',
+                            marginLeft: 'auto',
+                          }}
+                        >
+                          {s.toolCount} tools
+                        </span>
+                      )}
+                    </div>
+                    {s.error && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 11,
+                          color: 'var(--error)',
+                          fontFamily: 'JetBrains Mono, monospace',
+                        }}
+                      >
+                        {s.error}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Example settings snippet">
+          <pre
+            style={{
+              background: 'var(--bg-0)',
+              color: 'var(--text-1)',
+              border: '1px solid var(--line-soft)',
+              padding: '12px 14px',
+              borderRadius: 'var(--radius-sm)',
+              fontSize: 11.5,
+              fontFamily: 'JetBrains Mono, monospace',
+              margin: 0,
+              overflowX: 'auto',
+            }}
+          >
+            {EXAMPLE_JSON}
+          </pre>
+        </Card>
+
+        <SectionTitle>About MCP</SectionTitle>
+        <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
+          Model Context Protocol servers expose tools, resources, and prompts
+          that DeepCode can route into via JSON-RPC. Failures show their
+          stderr inline — most issues are a missing binary on $PATH or an
+          arg typo.
+        </div>
       </div>
-    </div>
+    </Screen>
   );
 }

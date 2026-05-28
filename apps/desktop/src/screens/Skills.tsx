@@ -1,9 +1,10 @@
-// Skills screen — list available skills (built-in + user + project + plugin)
-// + open the SKILL.md body for inspection.
-// Spec: docs/VISUAL_DESIGN.html (skills tab)
-// Milestone: M6-rest
+// Skills screen — design-aligned.
+// List available skills (built-in + user + project + plugin) + show the
+// SKILL.md body for inspection. Per spec screen #11.
 
 import { useEffect, useState } from 'react';
+import { Badge, type BadgeKind } from '../components/Badge.js';
+import { Card, Screen } from '../components/Screen.js';
 
 interface SkillRow {
   name: string;
@@ -12,6 +13,13 @@ interface SkillRow {
   path: string;
   body?: string;
 }
+
+const SOURCE_BADGE: Record<SkillRow['source'], { kind: BadgeKind; label: string }> = {
+  builtin: { kind: 'info', label: 'built-in' },
+  user: { kind: 'warn', label: 'user' },
+  project: { kind: 'ok', label: 'project' },
+  plugin: { kind: 'info', label: 'plugin' },
+};
 
 export function SkillsScreen(): JSX.Element {
   const [skills, setSkills] = useState<SkillRow[] | null>(null);
@@ -30,10 +38,14 @@ export function SkillsScreen(): JSX.Element {
   }, []);
 
   if (skills === null) {
-    return <div className="p-8 text-muted">Loading skills…</div>;
+    return (
+      <Screen title="Skills">
+        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+      </Screen>
+    );
   }
 
-  const visible = skills.filter(
+  const filtered = skills.filter(
     (s) =>
       !filter ||
       s.name.toLowerCase().includes(filter.toLowerCase()) ||
@@ -42,55 +54,144 @@ export function SkillsScreen(): JSX.Element {
   const current = skills.find((s) => s.name === active);
 
   return (
-    <div className="flex h-full">
-      <aside className="w-1/3 border-r border-border">
-        <div className="border-b border-border p-3">
+    <Screen title="Skills" subtitle={`${skills.length} total`}>
+      <div
+        style={{
+          maxWidth: 1100,
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: 'minmax(280px, 1fr) 2fr',
+          gap: 14,
+          alignItems: 'start',
+        }}
+      >
+        {/* Left: filter + list */}
+        <div>
           <input
             type="search"
+            className="input"
             placeholder="Filter skills…"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            className="w-full rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent"
+            style={{ marginBottom: 12, fontFamily: 'inherit' }}
           />
-        </div>
-        <ul className="flex-1 overflow-y-auto p-2">
-          {visible.length === 0 ? (
-            <li className="p-4 text-center text-muted">No skills.</li>
-          ) : (
-            visible.map((s) => (
-              <li
-                key={s.name}
-                onClick={() => setActive(s.name)}
-                className={
-                  'cursor-pointer rounded px-3 py-2 ' +
-                  (active === s.name ? 'bg-bg-elevated' : 'hover:bg-bg-elevated')
-                }
+
+          <Card flush padding={0}>
+            {filtered.length === 0 ? (
+              <div
+                style={{
+                  padding: 24,
+                  textAlign: 'center',
+                  color: 'var(--text-3)',
+                  fontSize: 13,
+                }}
               >
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">{s.name}</span>
-                  <span className="text-xs text-muted">{s.source}</span>
-                </div>
-                <div className="mt-1 text-xs text-muted">{s.description}</div>
-              </li>
-            ))
+                {skills.length === 0 ? 'No skills available.' : 'No matches.'}
+              </div>
+            ) : (
+              <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                {filtered.map((s, i) => {
+                  const badge = SOURCE_BADGE[s.source];
+                  return (
+                    <li
+                      key={s.name}
+                      onClick={() => setActive(s.name)}
+                      style={{
+                        padding: '10px 14px',
+                        borderBottom:
+                          i === filtered.length - 1
+                            ? 'none'
+                            : '1px solid var(--line-soft)',
+                        cursor: 'pointer',
+                        background:
+                          s.name === active ? 'var(--brand-tint)' : 'transparent',
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 6,
+                          marginBottom: 2,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 500,
+                            color: s.name === active ? '#b4c2ff' : 'var(--text-0)',
+                          }}
+                        >
+                          {s.name}
+                        </span>
+                        <Badge kind={badge.kind}>{badge.label}</Badge>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
+                        {s.description}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Card>
+        </div>
+
+        {/* Right: detail */}
+        <div>
+          {current ? (
+            <Card
+              title={current.name}
+              actions={
+                <Badge kind={SOURCE_BADGE[current.source].kind}>
+                  {SOURCE_BADGE[current.source].label}
+                </Badge>
+              }
+            >
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-3)',
+                  marginBottom: 10,
+                  fontFamily: 'JetBrains Mono, monospace',
+                }}
+              >
+                {current.path}
+              </div>
+              <pre
+                style={{
+                  background: 'var(--bg-0)',
+                  color: 'var(--text-1)',
+                  border: '1px solid var(--line-soft)',
+                  padding: '14px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: 12,
+                  whiteSpace: 'pre-wrap',
+                  margin: 0,
+                  maxHeight: 480,
+                  overflowY: 'auto',
+                  lineHeight: 1.5,
+                }}
+              >
+                {current.body ?? '(SKILL.md body not loaded — the desktop IPC for fetching skill body lands in v0.2.)'}
+              </pre>
+            </Card>
+          ) : (
+            <Card>
+              <div
+                style={{
+                  padding: '40px 20px',
+                  textAlign: 'center',
+                  color: 'var(--text-2)',
+                  fontSize: 13,
+                }}
+              >
+                Pick a skill from the list to view its SKILL.md.
+              </div>
+            </Card>
           )}
-        </ul>
-      </aside>
-      <main className="flex-1 overflow-y-auto p-4">
-        {current ? (
-          <div>
-            <h2 className="font-semibold">{current.name}</h2>
-            <div className="mt-1 text-xs text-muted">
-              {current.source} · <code>{current.path}</code>
-            </div>
-            <pre className="mt-4 whitespace-pre-wrap rounded bg-bg-elevated p-3 font-mono text-xs">
-              {current.body ?? '(SKILL.md body not loaded — wire IPC fetch in M6-rest.)'}
-            </pre>
-          </div>
-        ) : (
-          <div className="text-center text-muted">Select a skill to view its SKILL.md.</div>
-        )}
-      </main>
-    </div>
+        </div>
+      </div>
+    </Screen>
   );
 }

@@ -1,75 +1,165 @@
-// About screen — version + diagnostics + links.
-// Spec: docs/VISUAL_DESIGN.html (about / doctor)
-// Milestone: M6-rest
+// About screen — design-aligned per docs/VISUAL_DESIGN.html.
+// Brand mark + version + diagnostics + docs links.
 
 import { useEffect, useState } from 'react';
+import { BrandMark } from '../components/BrandMark.js';
+import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
+import { loadProjectPath } from '../lib/project.js';
+import { openUrl } from '../lib/tauri-api.js';
 
 interface Diag {
   version: string;
   hasCreds: boolean;
   baseURL?: string;
+  projectPath?: string;
 }
 
 export function AboutScreen(): JSX.Element {
   const [diag, setDiag] = useState<Diag | null>(null);
 
   useEffect(() => {
-    void Promise.all([window.deepcode.version(), window.deepcode.creds.load()]).then(
-      ([version, c]) => setDiag({ version, hasCreds: c.hasKey, baseURL: c.baseURL }),
-    );
+    void (async () => {
+      const [version, creds, projectPath] = await Promise.all([
+        window.deepcode.version(),
+        window.deepcode.creds.load(),
+        loadProjectPath(),
+      ]);
+      setDiag({
+        version,
+        hasCreds: creds.hasKey,
+        baseURL: creds.baseURL,
+        projectPath,
+      });
+    })();
   }, []);
 
-  if (diag === null) return <div className="p-8 text-muted">Loading…</div>;
+  if (diag === null) {
+    return (
+      <Screen title="About">
+        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+      </Screen>
+    );
+  }
 
   return (
-    <div className="flex h-full items-center justify-center">
-      <div className="w-full max-w-md rounded-lg border border-border bg-bg-elevated p-6">
-        <div className="text-center">
-          <h1 className="text-xl font-semibold">DeepCode</h1>
-          <p className="mt-1 text-sm text-muted">
+    <Screen title="About">
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        {/* Brand block */}
+        <div
+          style={{
+            textAlign: 'center',
+            padding: '32px 0 24px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
+            <BrandMark size="lg" />
+          </div>
+          <h1
+            style={{
+              fontSize: 32,
+              fontWeight: 800,
+              letterSpacing: -1,
+              margin: '0 0 8px',
+              background: 'linear-gradient(180deg, var(--text-0) 0%, var(--brand) 140%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text',
+              color: 'transparent',
+            }}
+          >
+            DeepCode
+          </h1>
+          <p style={{ color: 'var(--text-2)', fontSize: 14, margin: 0 }}>
             DeepSeek-powered AI coding agent · Claude Code parity
+          </p>
+          <p style={{ color: 'var(--text-3)', fontSize: 12, marginTop: 6 }}>
+            v{diag.version}
           </p>
         </div>
 
-        <dl className="mt-6 space-y-2 text-sm">
-          <Row label="Version" value={`v${diag.version}`} />
-          <Row label="DeepSeek API" value={diag.hasCreds ? '✓ configured' : '✗ not configured'} />
-          <Row label="Base URL" value={diag.baseURL ?? 'https://api.deepseek.com/v1'} />
-          <Row label="Credentials" value="~/.deepcode/credentials.json (chmod 600)" />
-          <Row label="Settings" value="~/.deepcode/settings.json" />
-          <Row label="Sessions" value="~/.deepcode/sessions/" />
-        </dl>
+        {/* Diagnostics */}
+        <Card title="Diagnostics">
+          <SectionTitle>Status</SectionTitle>
+          <Row label="DeepSeek API">
+            {diag.hasCreds ? (
+              <span style={{ color: 'var(--accent)' }}>✓ configured</span>
+            ) : (
+              <span style={{ color: 'var(--error)' }}>✗ not configured</span>
+            )}
+          </Row>
+          <Row label="Project folder">
+            {diag.projectPath ? (
+              <code style={{ background: 'transparent' }}>{diag.projectPath}</code>
+            ) : (
+              <span style={{ color: 'var(--warn)' }}>none picked</span>
+            )}
+          </Row>
+          <Row label="Base URL">
+            <code style={{ background: 'transparent' }}>
+              {diag.baseURL ?? 'https://api.deepseek.com/v1'}
+            </code>
+          </Row>
 
-        <div className="mt-6 space-y-2 text-center text-xs">
-          <a
-            className="block text-accent hover:underline"
-            href="https://github.com/oratis/deepcode"
-          >
-            github.com/oratis/deepcode
-          </a>
-          <a
-            className="block text-accent hover:underline"
-            href="https://github.com/oratis/deepcode/blob/main/docs/security-model.md"
-          >
-            Security model
-          </a>
-          <a
-            className="block text-accent hover:underline"
-            href="https://github.com/oratis/deepcode/blob/main/docs/BEHAVIOR_PARITY.md"
-          >
-            Behavior parity vs Claude Code
-          </a>
-        </div>
+          <SectionTitle>Paths</SectionTitle>
+          <Row label="Credentials" hint="0600 perms — never readable by other users">
+            <code style={{ background: 'transparent' }}>
+              ~/.deepcode/credentials.json
+            </code>
+          </Row>
+          <Row label="Settings">
+            <code style={{ background: 'transparent' }}>
+              ~/.deepcode/settings.json
+            </code>
+          </Row>
+          <Row label="Sessions">
+            <code style={{ background: 'transparent' }}>
+              ~/.deepcode/sessions/
+            </code>
+          </Row>
+          <Row label="Keybindings">
+            <code style={{ background: 'transparent' }}>
+              ~/.deepcode/keybindings.json
+            </code>
+          </Row>
+        </Card>
+
+        {/* Links */}
+        <Card title="Documentation & community">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {[
+              ['github.com/oratis/deepcode', 'https://github.com/oratis/deepcode'],
+              [
+                'Security model',
+                'https://github.com/oratis/deepcode/blob/main/docs/security-model.md',
+              ],
+              [
+                'Behavior parity vs Claude Code',
+                'https://github.com/oratis/deepcode/blob/main/docs/BEHAVIOR_PARITY.md',
+              ],
+              [
+                'CHANGELOG',
+                'https://github.com/oratis/deepcode/blob/main/CHANGELOG.md',
+              ],
+            ].map(([label, href]) => (
+              <a
+                key={href}
+                href="#"
+                onClick={(e) => {
+                  e.preventDefault();
+                  void openUrl(href!);
+                }}
+                style={{
+                  color: '#b4c2ff',
+                  fontSize: 13,
+                  padding: '6px 0',
+                }}
+              >
+                {label} →
+              </a>
+            ))}
+          </div>
+        </Card>
       </div>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }): JSX.Element {
-  return (
-    <div className="flex items-baseline justify-between">
-      <dt className="text-muted">{label}</dt>
-      <dd className="font-mono text-xs">{value}</dd>
-    </div>
+    </Screen>
   );
 }

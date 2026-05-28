@@ -1,9 +1,11 @@
-// Plugins screen — list installed plugins, view trust state + contributed
-// hooks, enable/disable, install new ones.
-// Spec: docs/VISUAL_DESIGN.html screen #9
-// Milestone: M6-rest
+// Plugins screen — design-aligned. Per spec screen #12.
+// List installed plugins, their trust state + contributed hooks,
+// enable/disable, install new ones. Install IPC still stubbed (P3
+// will wire installFromSpec).
 
 import { useEffect, useState } from 'react';
+import { Badge, type BadgeKind } from '../components/Badge.js';
+import { Card, Screen } from '../components/Screen.js';
 
 interface PluginRow {
   name: string;
@@ -15,10 +17,17 @@ interface PluginRow {
   warning?: string;
 }
 
+const TRUST_BADGE: Record<PluginRow['trustedBy'], { kind: BadgeKind; label: string }> = {
+  official: { kind: 'ok', label: 'official' },
+  marketplace: { kind: 'info', label: 'marketplace' },
+  user: { kind: 'warn', label: 'user-installed' },
+};
+
 export function PluginsScreen(): JSX.Element {
   const [plugins, setPlugins] = useState<PluginRow[] | null>(null);
   const [installSpec, setInstallSpec] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (window.deepcode?.plugins?.list) {
@@ -34,102 +43,219 @@ export function PluginsScreen(): JSX.Element {
   async function handleInstall(): Promise<void> {
     if (!installSpec.trim()) return;
     setInstalling(true);
+    setFeedback(null);
     try {
-      // window.deepcode.plugins.install(installSpec) — TODO wire in IPC PR
-      // For now no-op.
+      // Plugin install via Tauri is still not wired — surface that clearly.
       await new Promise((r) => setTimeout(r, 400));
+      setFeedback(
+        'Plugin install from the desktop UI is coming in v0.2. For now, install via the CLI: `deepcode plugin install ' +
+          installSpec.trim() +
+          '`',
+      );
     } finally {
       setInstalling(false);
-      setInstallSpec('');
     }
   }
 
   if (plugins === null) {
-    return <div className="p-8 text-muted">Loading plugins…</div>;
+    return (
+      <Screen title="Plugins">
+        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+      </Screen>
+    );
   }
 
+  const enabled = plugins.filter((p) => p.enabled).length;
+
   return (
-    <div className="flex h-full flex-col">
-      <header className="border-b border-border p-3">
-        <h2 className="font-semibold">Plugins</h2>
-        <p className="mt-1 text-xs text-muted">
-          {plugins.length} installed ·{' '}
-          {plugins.filter((p) => p.enabled).length} enabled ·{' '}
-          ~/.deepcode/plugins/
-        </p>
-      </header>
-
-      <div className="border-b border-border p-3">
-        <div className="flex gap-2">
-          <input
-            value={installSpec}
-            onChange={(e) => setInstallSpec(e.target.value)}
-            placeholder="gh:user/repo · <pkg>@npm · /local/path"
-            className="flex-1 rounded border border-border bg-bg px-3 py-2 text-fg outline-none focus:border-accent"
-          />
-          <button
-            onClick={handleInstall}
-            disabled={installing || !installSpec.trim()}
-            className="rounded bg-accent px-4 py-2 font-medium text-bg disabled:opacity-50"
-          >
-            {installing ? 'Installing…' : 'Install'}
-          </button>
-        </div>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-3">
-        {plugins.length === 0 ? (
-          <div className="p-8 text-center text-muted">
-            <p>No plugins installed.</p>
-            <p className="mt-2 text-xs">
-              Try <code>gh:owner/repo</code> in the box above.
-            </p>
+    <Screen
+      title="Plugins"
+      subtitle={`${plugins.length} installed · ${enabled} enabled`}
+    >
+      <div style={{ maxWidth: 820, margin: '0 auto' }}>
+        <Card title="Install new plugin">
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input
+              value={installSpec}
+              onChange={(e) => setInstallSpec(e.target.value)}
+              placeholder="gh:user/repo · <pkg>@npm · /local/path"
+              className="input"
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={handleInstall}
+              disabled={installing || !installSpec.trim()}
+              className="btn btn-primary"
+            >
+              {installing && <span className="spinner" />}
+              {installing ? 'Installing…' : 'Install'}
+            </button>
           </div>
-        ) : (
-          <ul className="space-y-2">
-            {plugins.map((p) => (
-              <li key={p.name} className="rounded border border-border p-3">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="font-medium">{p.name}</span>
-                    <span className="ml-2 text-xs text-muted">v{p.version}</span>
-                    <span
-                      className={
-                        'ml-2 rounded px-1 text-xs ' +
-                        (p.trustedBy === 'official'
-                          ? 'text-accent'
-                          : p.trustedBy === 'marketplace'
-                            ? 'text-fg'
-                            : 'text-muted')
-                      }
-                    >
-                      {p.trustedBy}
-                    </span>
-                  </div>
-                  <div>
-                    <input
-                      type="checkbox"
-                      checked={p.enabled}
-                      onChange={() => {
-                        /* wire to window.deepcode.plugins.setEnabled */
+          {feedback && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '8px 12px',
+                background: 'rgba(255, 176, 32, 0.12)',
+                border: '1px solid rgba(255, 176, 32, 0.3)',
+                color: 'var(--warn)',
+                borderRadius: 'var(--radius-sm)',
+                fontSize: 12,
+                lineHeight: 1.5,
+              }}
+            >
+              {feedback}
+            </div>
+          )}
+        </Card>
+
+        <Card title={`Installed (${plugins.length})`} flush padding={0}>
+          {plugins.length === 0 ? (
+            <div
+              style={{
+                padding: 32,
+                textAlign: 'center',
+                color: 'var(--text-3)',
+                fontSize: 13,
+              }}
+            >
+              No plugins installed yet.
+              <div style={{ marginTop: 6, fontSize: 11 }}>
+                Try <code>gh:owner/repo</code> in the box above (or via CLI).
+              </div>
+            </div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+              {plugins.map((p, i) => {
+                const trust = TRUST_BADGE[p.trustedBy];
+                return (
+                  <li
+                    key={p.name}
+                    style={{
+                      padding: '14px 16px',
+                      borderBottom:
+                        i === plugins.length - 1
+                          ? 'none'
+                          : '1px solid var(--line-soft)',
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        marginBottom: 6,
                       }}
-                    />
-                  </div>
-                </div>
-                {p.contributedHookEvents.length > 0 && (
-                  <div className="mt-1 text-xs text-muted">
-                    Hooks: {p.contributedHookEvents.join(', ')}
-                  </div>
-                )}
-                <div className="mt-1 text-xs text-muted font-mono">
-                  hash: {p.sourceHash.slice(0, 12)}
-                </div>
-                {p.warning && <div className="mt-1 text-xs text-error">⚠ {p.warning}</div>}
-              </li>
-            ))}
-          </ul>
-        )}
+                    >
+                      <span
+                        style={{
+                          fontWeight: 600,
+                          color: 'var(--text-0)',
+                          fontSize: 13,
+                        }}
+                      >
+                        {p.name}
+                      </span>
+                      <span
+                        style={{
+                          color: 'var(--text-3)',
+                          fontSize: 11,
+                          fontFamily: 'JetBrains Mono, monospace',
+                        }}
+                      >
+                        v{p.version}
+                      </span>
+                      <Badge kind={trust.kind}>{trust.label}</Badge>
+                      <span style={{ marginLeft: 'auto' }}>
+                        <Toggle
+                          checked={p.enabled}
+                          onChange={() => {
+                            /* TODO setEnabled via core */
+                          }}
+                        />
+                      </span>
+                    </div>
+                    {p.contributedHookEvents.length > 0 && (
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: 'var(--text-2)',
+                          marginBottom: 2,
+                        }}
+                      >
+                        Hooks:{' '}
+                        <span style={{ color: '#b4c2ff' }}>
+                          {p.contributedHookEvents.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                    <div
+                      style={{
+                        fontSize: 10.5,
+                        color: 'var(--text-3)',
+                        fontFamily: 'JetBrains Mono, monospace',
+                      }}
+                    >
+                      hash {p.sourceHash.slice(0, 12)}
+                    </div>
+                    {p.warning && (
+                      <div
+                        style={{
+                          marginTop: 6,
+                          fontSize: 11,
+                          color: 'var(--error)',
+                        }}
+                      >
+                        ⚠ {p.warning}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
       </div>
-    </div>
+    </Screen>
+  );
+}
+
+interface ToggleProps {
+  checked: boolean;
+  onChange: () => void;
+}
+
+function Toggle({ checked, onChange }: ToggleProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      role="switch"
+      aria-checked={checked}
+      style={{
+        width: 32,
+        height: 18,
+        borderRadius: 999,
+        background: checked ? 'var(--brand)' : 'var(--bg-3)',
+        border: 'none',
+        position: 'relative',
+        cursor: 'pointer',
+        transition: 'background 0.15s',
+      }}
+    >
+      <span
+        style={{
+          position: 'absolute',
+          top: 2,
+          left: checked ? 16 : 2,
+          width: 14,
+          height: 14,
+          borderRadius: '50%',
+          background: '#fff',
+          transition: 'left 0.15s',
+        }}
+      />
+    </button>
   );
 }

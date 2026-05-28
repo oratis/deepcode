@@ -125,49 +125,23 @@ function renderScreen(
       return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
     case 'sessions':
       return (
-        <div className="legacy-screen">
-          <SessionsScreen
-            onPick={() => setScreen('repl')}
-            onNew={() => setScreen('repl')}
-          />
-        </div>
+        <SessionsScreen
+          onPick={() => setScreen('repl')}
+          onNew={() => setScreen('repl')}
+        />
       );
     case 'plugins':
-      return (
-        <div className="legacy-screen">
-          <PluginsScreen />
-        </div>
-      );
+      return <PluginsScreen />;
     case 'skills':
-      return (
-        <div className="legacy-screen">
-          <SkillsScreen />
-        </div>
-      );
+      return <SkillsScreen />;
     case 'permissions':
-      return (
-        <div className="legacy-screen">
-          <PermissionsScreen />
-        </div>
-      );
+      return <PermissionsScreen />;
     case 'mcp':
-      return (
-        <div className="legacy-screen">
-          <MCPManagerScreen />
-        </div>
-      );
+      return <MCPManagerScreen />;
     case 'settings':
-      return (
-        <div className="legacy-screen">
-          <SettingsScreen />
-        </div>
-      );
+      return <SettingsScreen />;
     case 'about':
-      return (
-        <div className="legacy-screen">
-          <AboutScreen />
-        </div>
-      );
+      return <AboutScreen />;
     case 'repl':
     default:
       return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
