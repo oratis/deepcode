@@ -5,6 +5,28 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.6] — 2026-05-28
+
+### 🐛 Critical fix — Bash tool calls were always reporting "error"
+The Rust output structs (`ReadOk`, `EditOk`, `BashOk`) returned fields
+in snake_case (`exit_code`, `lines_total`, `diff_preview`) while the
+TS wrappers read them in camelCase. Result: `r.exitCode` was always
+`undefined`, so `undefined !== 0` made every Bash tool result render
+with a red `✕ error` badge — even when the underlying command had
+exit code 0. Read + Edit silently dropped diff previews + line totals
+for the same reason.
+
+Fixed by adding `#[serde(rename_all = "camelCase")]` on the three
+output structs. Glob and Grep were already single-word fields, no
+change needed.
+
+### Polish carry-over
+- **Keyboard shortcuts**: ⌘N starts a new session, ⌘, opens Settings,
+  ⌘/ opens About. New `src/lib/keyboard.ts` helper.
+- **Switching project now clears chat history** so the next message
+  runs against the fresh cwd (was: old conversation lingered with
+  new project context).
+
 ## [0.1.5] — 2026-05-28
 
 ### Polish + dead-code removal

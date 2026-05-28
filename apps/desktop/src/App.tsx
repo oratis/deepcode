@@ -7,6 +7,7 @@ import { InspectorRail } from './components/InspectorRail.js';
 import { ProjectPickerOverlay } from './components/ProjectPickerOverlay.js';
 import { Sidebar } from './components/Sidebar.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
+import { registerShortcut } from './lib/keyboard.js';
 import { clearHistory as clearAgentHistory } from './lib/mac-agent.js';
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
@@ -36,9 +37,23 @@ export function App(): JSX.Element {
     const offShim = window.deepcode.onUpdateDownloaded((info) => setUpdate(info));
     const offReal = onUpdateDownloaded((info) => setUpdate(info));
     startUpdaterPolling();
+
+    // Global keyboard shortcuts that mirror the sidebar hints.
+    const offN = registerShortcut('meta+n', () => {
+      clearAgentHistory();
+      setActiveSessionId(null);
+      setScreen('repl');
+      setSessionEpoch((k) => k + 1);
+    });
+    const offComma = registerShortcut('meta+,', () => setScreen('settings'));
+    const offSlash = registerShortcut('meta+/', () => setScreen('about'));
+
     return () => {
       offShim();
       offReal();
+      offN();
+      offComma();
+      offSlash();
     };
   }, []);
 
@@ -95,8 +110,13 @@ export function App(): JSX.Element {
           setSessionEpoch((k) => k + 1);
         }}
         onSwitchProject={async () => {
-          // Force-show the picker again by clearing state.
+          // Force-show the picker again by clearing state. Also clear
+          // the in-memory conversation so the next session starts
+          // fresh in the new project's cwd.
+          clearAgentHistory();
           setProjectPath(null);
+          setActiveSessionId(null);
+          setSessionEpoch((k) => k + 1);
         }}
       />
       <main className="chat-main" key={`main-${sessionEpoch}`}>
