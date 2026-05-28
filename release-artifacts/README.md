@@ -4,9 +4,32 @@
 
 | File | Size | What |
 | --- | --- | --- |
-| `DeepCode-0.1.0-arm64-unsigned.dmg` | 4.7 MB | macOS Apple Silicon installer (Tauri-based). **Currently unsigned** — see Apple Signing below. |
+| **`DeepCode-0.1.0-arm64.dmg`** | **4.7 MB** | macOS Apple Silicon installer (Tauri-based) · **Signed + Apple-notarized** ✓ |
 | `deepcode-cli-0.1.0-bundle.tgz` | 4.4 MB | Self-contained CLI bundle (includes node_modules) |
-| `install-cli.sh` | — | One-line installer for the CLI |
+| `install-cli.sh` | 1.3 KB | One-line installer for the CLI |
+| `SIGNING_LOG.md` | — | Record of how the DMG was signed + notarized |
+
+---
+
+## Install the Mac client (signed + notarized)
+
+```bash
+open release-artifacts/DeepCode-0.1.0-arm64.dmg
+```
+
+- Drag **DeepCode.app** → **Applications** folder
+- Eject the DMG, open Applications → DeepCode
+- **No Gatekeeper warning** — the .app is signed by Bihao Wang (Team `9LH9NBX7P4`) and notarized by Apple
+
+To verify yourself:
+
+```bash
+codesign --verify --deep --strict /Applications/DeepCode.app
+spctl --assess --type exec --verbose /Applications/DeepCode.app
+# Expected: accepted, source=Notarized Developer ID
+xcrun stapler validate /Applications/DeepCode.app
+# Expected: The validate action worked!
+```
 
 ---
 
@@ -19,7 +42,7 @@ bash install-cli.sh
 ```
 
 This extracts the bundle to `~/.local/share/deepcode/` and symlinks
-`deepcode` into `~/.local/bin/` (or `/usr/local/bin/` if writeable).
+`deepcode` into `~/.local/bin/` (or `/usr/local/bin/` if writable).
 
 ### Option 2 — Manual
 
@@ -48,80 +71,29 @@ Requirements: **Node.js 22+** on PATH.
 
 ---
 
-## Install the Mac client
+## Architecture
 
-### What you get
-
-A `.app` bundle (6.8 MB extracted) + `.dmg` installer (4.7 MB).
-Architecture: **Apple Silicon** (`arm64`). Intel build is a separate
-artifact — see "Universal build" below.
-
-### Install
-
-1. Double-click `DeepCode-0.1.0-arm64-unsigned.dmg`
-2. Drag **DeepCode.app** into the **Applications** folder shortcut
-3. Eject the DMG, open Applications → DeepCode
-
-### Gatekeeper warning on first launch
-
-The DMG is **currently unsigned** — Apple Developer ID signing pipeline
-is in `scripts/sign-and-notarize.sh` but requires the maintainer's
-Apple credentials to run.
-
-When you first launch DeepCode.app, macOS will say "DeepCode cannot
-be opened because Apple cannot check it for malicious software."
-
-To open it:
-- **Method A** (one-time): Right-click the .app → **Open** → confirm
-  the "Open" button in the dialog.
-- **Method B**: System Settings → Privacy & Security → scroll down →
-  "DeepCode was blocked..." → **Open Anyway**.
-- **Method C** (terminal): `xattr -d com.apple.quarantine /Applications/DeepCode.app`
-
-After the first successful launch, macOS remembers your decision —
-subsequent launches work normally.
-
----
-
-## Apple Signing (for the maintainer)
-
-To produce a signed + notarized DMG (no Gatekeeper warning):
-
-1. Enroll in Apple Developer Program ($99/yr): https://developer.apple.com/programs/
-2. Generate "Developer ID Application" cert + import into login keychain
-3. Get `TEAM_ID` from https://developer.apple.com/account → Membership
-4. Generate app-specific password at https://appleid.apple.com → "App-Specific Passwords"
-5. Store credentials in keychain (one-time):
-   ```bash
-   xcrun notarytool store-credentials "DEEPCODE_NOTARY" \
-     --apple-id "<you>@example.com" \
-     --team-id "<TEAM_ID>" \
-     --password "<app-specific-password>"
-   ```
-6. Run the sign + notarize script:
-   ```bash
-   bash scripts/sign-and-notarize.sh
-   ```
-
-End-to-end takes ~10-15 min (Apple's notarization servers usually return
-in 2-5 minutes during off-peak hours).
-
-The script writes the signed DMG back to:
-`apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/DeepCode_0.1.0_aarch64.dmg`
+- **Mac client**: Tauri 2 (Rust main process + native WebKit webview)
+  - Bundle: 4.7 MB DMG · 6.8 MB .app · ~80 MB RSS idle
+  - vs Electron alternative: would have been ~150 MB / ~250 MB RSS
+- **CLI**: Node.js 22+ via `@deepcode/core` ESM modules
+- **Agent loop**: `@deepcode/core` — same code drives CLI + desktop +
+  VS Code extension + LSP bridge
 
 ---
 
 ## Universal build (Intel + Apple Silicon)
 
+The shipped DMG is `aarch64` (Apple Silicon) only. For a universal binary:
+
 ```bash
 . "$HOME/.cargo/env"
 rustup target add x86_64-apple-darwin aarch64-apple-darwin
 pnpm --filter @deepcode/desktop tauri build --target universal-apple-darwin
+# Then rerun scripts/sign-and-notarize.sh with DEEPCODE_TARGET=universal-apple-darwin
 ```
 
-Output: `apps/desktop/src-tauri/target/universal-apple-darwin/release/bundle/dmg/`
-
-Universal builds are ~2× the size of single-arch.
+Universal builds are ~2× the size.
 
 ---
 
@@ -130,8 +102,10 @@ Universal builds are ~2× the size of single-arch.
 - **DeepCode CLI**: 0.1.0
 - **DeepCode Mac**: 0.1.0
 - **Built**: 2026-05-28
-- **Tauri runtime**: 2.x (native WebKit)
+- **Tauri runtime**: 2.11.2 (native WebKit)
 - **Node engine (CLI)**: ≥22
+- **Signing**: Developer ID Application: Bihao Wang (`9LH9NBX7P4`)
+- **Apple notarization**: ticket stapled to both `.app` and `.dmg`
 
 ---
 

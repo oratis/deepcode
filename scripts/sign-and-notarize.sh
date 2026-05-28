@@ -81,8 +81,26 @@ xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$PROFILE" --wait
 echo "==> Stapling notarization ticket to $APP_PATH ..."
 xcrun stapler staple "$APP_PATH"
 
-# ----- 7. Notarize + staple the .dmg (if present) -----
+# ----- 7. Rebuild the .dmg with the NOW-signed-and-stapled .app -----
+# IMPORTANT: Tauri's bundle_dmg.sh ran in step 1 and baked the UNSIGNED .app
+# into the DMG. Just signing the DMG container doesn't fix that — Apple
+# notarization unpacks the DMG and re-verifies the .app inside. So we
+# rebuild the DMG from scratch with the now-signed .app.
 if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
+  echo "==> Rebuilding DMG with signed+stapled .app ..."
+  STAGING="$(mktemp -d)/staging"
+  mkdir -p "$STAGING"
+  cp -R "$APP_PATH" "$STAGING/DeepCode.app"
+  ln -s /Applications "$STAGING/Applications"
+  rm -f "$DMG_PATH"
+  hdiutil create \
+    -volname "DeepCode" \
+    -srcfolder "$STAGING" \
+    -ov \
+    -format UDZO \
+    -fs HFS+ \
+    "$DMG_PATH" >/dev/null
+
   echo "==> Signing $DMG_PATH ..."
   codesign --force --sign "$SIGNING_ID" --timestamp "$DMG_PATH"
 
