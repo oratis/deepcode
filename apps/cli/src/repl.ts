@@ -196,6 +196,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       disabled: settings.disabledPlugins,
       hooks,
       capabilities: buildPluginCapabilities(cwd),
+      sandbox: settings.sandbox,
       log: (s) => output.write(s + '\n'),
     });
   } catch (err) {

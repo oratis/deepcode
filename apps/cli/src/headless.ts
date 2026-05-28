@@ -184,6 +184,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       disabled: settings.disabledPlugins,
       hooks,
       capabilities: buildPluginCapabilitiesHeadless(cwd),
+      sandbox: settings.sandbox,
       log: (s) => errOutput.write(s + '\n'),
     });
   } catch (err) {

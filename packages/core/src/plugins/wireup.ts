@@ -48,6 +48,11 @@ export interface WirePluginsOpts {
   /** Capability bridge — required for the subprocess to call back into host. */
   capabilities: PluginCapabilityBridge;
   /**
+   * Optional OS sandbox config — applied to each plugin's node subprocess.
+   * When unset (or .enabled === false), plugins run unsandboxed.
+   */
+  sandbox?: import('../config/types.js').SandboxConfig;
+  /**
    * Optional logger; defaults to writing to stderr. Avoids cluttering stdout
    * in headless mode where stdout is reserved for JSON output.
    */
@@ -93,6 +98,7 @@ export async function wirePlugins(opts: WirePluginsOpts): Promise<WireResult> {
   const subprocesses = await spawnAllPlugins({
     plugins: discovered.filter((p) => p.enabled),
     host: opts.capabilities,
+    sandbox: opts.sandbox,
   });
 
   // spawnAllPlugins returns successfully-started subprocesses, each exposing

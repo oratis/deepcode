@@ -7,6 +7,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SandboxConfig } from '../config/types.js';
+import { allClausesExcluded } from './pipeline.js';
 import { buildLinuxBwrapArgs, buildMacOsProfile, detectPlatform } from './profile.js';
 
 export {
@@ -15,6 +16,8 @@ export {
   detectPlatform,
   type SandboxPlatform,
 } from './profile.js';
+
+export { splitClauses, allClausesExcluded, type Clause } from './pipeline.js';
 
 export interface SandboxedCommand {
   /** Command + args to spawn (the actual sandbox wrapper invocation). */
@@ -42,11 +45,12 @@ export async function wrapBashCommand(args: {
     return { command: '/bin/sh', args: ['-c', args.userCommand] };
   }
 
-  // Excluded commands: if userCommand starts with one of these, skip sandbox
-  for (const excluded of config.excludedCommands ?? []) {
-    if (args.userCommand.startsWith(excluded + ' ') || args.userCommand === excluded) {
-      return { command: '/bin/sh', args: ['-c', args.userCommand] };
-    }
+  // Excluded commands: skip sandbox ONLY if EVERY clause in the pipeline is
+  // an excluded command. `git status && rm -rf /` does not bypass because
+  // `rm` isn't excluded.
+  const excluded = config.excludedCommands ?? [];
+  if (excluded.length > 0 && allClausesExcluded(args.userCommand, excluded)) {
+    return { command: '/bin/sh', args: ['-c', args.userCommand] };
   }
 
   const platform = detectPlatform();
