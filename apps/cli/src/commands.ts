@@ -4,8 +4,10 @@
 import type {
   DeepCodeSettings,
   McpClientHandle,
+  Provider,
   SessionManager,
   SessionMeta,
+  StoredMessage,
 } from '@deepcode/core';
 import { redact, type Credentials } from '@deepcode/core';
 
@@ -41,6 +43,12 @@ export interface SessionContext {
    * approve → write). Returns the path written, or null if user cancelled.
    */
   initFlow?: () => Promise<string | null>;
+  /** Current conversation history — REPL refreshes this before each command call. */
+  history?: StoredMessage[];
+  /** Provider for commands that need to call the LLM (e.g. /rewind summarize). */
+  provider?: Provider;
+  /** Set by /rewind to request history replacement. REPL applies after run. */
+  newHistory?: StoredMessage[];
 }
 
 export interface SlashCommand {
@@ -412,6 +420,137 @@ export const PluginsCommand: SlashCommand = {
   },
 };
 
+export const RewindCommand: SlashCommand = {
+  name: '/rewind',
+  description:
+    'List file snapshots and roll back (5 ops): /rewind [<seq> code|conversation|both|summarize-from|summarize-up-to]',
+  async run(args, ctx) {
+    const { listSnapshots, restoreSnapshot, compact } = await import('@deepcode/core');
+    const sessionsRoot = ctx.sessions.root;
+    const snaps = await listSnapshots({ sessionsRoot, sessionId: ctx.sessionId });
+
+    if (snaps.length === 0) {
+      return [
+        'No snapshots in this session yet.',
+        'Snapshots are captured automatically before Edit / Write tool calls.',
+      ];
+    }
+
+    // No args → list snapshots in reverse chrono so the latest is at top.
+    if (args.length === 0) {
+      const lines = [`Snapshots (${snaps.length}):`, ''];
+      const top = [...snaps].reverse().slice(0, 20);
+      for (const s of top) {
+        const when = s.capturedAt.slice(11, 19); // HH:MM:SS
+        const file = trimMiddle(s.filePath, 50);
+        lines.push(`  #${String(s.seq).padStart(3)}  ${when}  ${s.reason.padEnd(10)} ${file}`);
+      }
+      if (snaps.length > 20) lines.push(`  ... and ${snaps.length - 20} older`);
+      lines.push('');
+      lines.push('Rewind: /rewind <seq> <action>');
+      lines.push('Actions:');
+      lines.push('  code             — restore the file from this snapshot');
+      lines.push('  conversation     — trim history to before this snapshot');
+      lines.push('  both             — code + conversation');
+      lines.push('  summarize-from   — keep history up to here; summarize the rest');
+      lines.push('  summarize-up-to  — summarize history up to here; keep the rest');
+      return lines;
+    }
+
+    const seqArg = Number.parseInt(args[0] ?? '', 10);
+    if (!Number.isFinite(seqArg)) {
+      return [`Bad seq "${args[0]}". Run /rewind to list snapshots.`];
+    }
+    const target = snaps.find((s) => s.seq === seqArg);
+    if (!target) {
+      return [`No snapshot with seq #${seqArg}. Valid: ${snaps.map((s) => s.seq).join(', ')}`];
+    }
+
+    const action = (args[1] ?? 'code').toLowerCase();
+    const cutoffMs = Date.parse(target.capturedAt);
+    const currentHistory = ctx.history ?? [];
+
+    switch (action) {
+      case 'code': {
+        await restoreSnapshot(target);
+        return [`✓ Restored ${target.filePath} from snapshot #${target.seq}`];
+      }
+      case 'conversation': {
+        const kept = trimHistoryBefore(currentHistory, cutoffMs);
+        ctx.newHistory = kept;
+        return [
+          `✓ Rewound conversation to snapshot #${target.seq} (kept ${kept.length} of ${currentHistory.length} messages).`,
+        ];
+      }
+      case 'both': {
+        await restoreSnapshot(target);
+        const kept = trimHistoryBefore(currentHistory, cutoffMs);
+        ctx.newHistory = kept;
+        return [
+          `✓ Restored ${target.filePath} from snapshot #${target.seq}`,
+          `✓ Rewound conversation (kept ${kept.length} of ${currentHistory.length} messages).`,
+        ];
+      }
+      case 'summarize-from': {
+        if (!ctx.provider) return ['(/rewind summarize-from requires a provider — none configured.)'];
+        const kept = trimHistoryBefore(currentHistory, cutoffMs);
+        const tail = currentHistory.slice(kept.length);
+        if (tail.length === 0) {
+          return [`Nothing after snapshot #${target.seq} to summarize.`];
+        }
+        const result = await compact(tail, { provider: ctx.provider });
+        // New history: head (verbatim) + the compacted tail
+        ctx.newHistory = [...kept, ...result.history];
+        return [
+          `✓ Summarized ${tail.length} messages after snapshot #${target.seq} → ${result.history.length} kept.`,
+        ];
+      }
+      case 'summarize-up-to': {
+        if (!ctx.provider) return ['(/rewind summarize-up-to requires a provider — none configured.)'];
+        const head = trimHistoryBefore(currentHistory, cutoffMs);
+        const tail = currentHistory.slice(head.length);
+        if (head.length === 0) {
+          return [`Nothing before snapshot #${target.seq} to summarize.`];
+        }
+        const result = await compact(head, { provider: ctx.provider });
+        // New history: compacted head + tail (verbatim)
+        ctx.newHistory = [...result.history, ...tail];
+        return [
+          `✓ Summarized ${head.length} messages up to snapshot #${target.seq} → ${result.history.length} kept.`,
+        ];
+      }
+      default:
+        return [
+          `Unknown action "${action}".`,
+          'Valid: code | conversation | both | summarize-from | summarize-up-to',
+        ];
+    }
+  },
+};
+
+/** Keep messages with timestamp < cutoffMs. Falls back to a simple length-based
+ *  heuristic if messages don't carry timestamps. */
+function trimHistoryBefore(history: StoredMessage[], cutoffMs: number): StoredMessage[] {
+  const out: StoredMessage[] = [];
+  for (const msg of history) {
+    const ts = msg.timestamp ? Date.parse(msg.timestamp) : NaN;
+    if (Number.isFinite(ts) && ts < cutoffMs) {
+      out.push(msg);
+    } else if (!Number.isFinite(ts)) {
+      // No timestamp: include — better to over-keep than to drop a turn the
+      // user didn't intend to lose. The conversation can be re-trimmed.
+      out.push(msg);
+    }
+  }
+  return out;
+}
+
+function trimMiddle(s: string, maxLen: number): string {
+  if (s.length <= maxLen) return s;
+  const keep = Math.floor((maxLen - 1) / 2);
+  return s.slice(0, keep) + '…' + s.slice(s.length - keep);
+}
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -431,6 +570,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   PluginsCommand,
   KeybindingsCommand,
   VimCommand,
+  RewindCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────

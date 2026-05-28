@@ -228,6 +228,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
     ],
     initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
+    // M7: /rewind needs access to history + provider.
+    provider,
+    history,
   };
 
   output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
@@ -264,12 +267,18 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     // Slash command?
     const match = commands.match(userInput);
     if (match) {
+      // Refresh ctx.history snapshot before running — /rewind reads it.
+      ctx.history = history;
       const lines = await Promise.resolve(match.cmd.run(match.args, ctx));
       for (const line of lines) output.write(line + '\n');
       output.write('\n');
       if (ctx.clearHistory) {
         history = [];
         ctx.clearHistory = false;
+      }
+      if (ctx.newHistory) {
+        history = ctx.newHistory;
+        ctx.newHistory = undefined;
       }
       if (ctx.exitRequested) break;
       continue;
