@@ -120,8 +120,29 @@ function expandTilde(p: string, home: string): string {
  * Linux bwrap arguments. M3.5 ships a skeleton — many invocation knobs.
  * Default: ro bind /, rw bind cwd, --unshare-net unless allowedDomains is set,
  * --unshare-pid, no /home/* leak.
+ *
+ * When `dnsProxyPort` is provided AND allowedDomains is non-empty, we:
+ *   1. KEEP --unshare-net so the sandbox has its own network namespace.
+ *   2. Bind a `resolv.conf` file pointing at 127.0.0.1:<port> so DNS lookups
+ *      hit the host's DNS proxy (started separately via startDnsProxy).
+ *   3. Allow lo (loopback) so the sandboxed process can reach the proxy.
+ *
+ * Note: this still requires the host to bridge UDP traffic to the netns
+ * (`bwrap` doesn't do that natively). M3.5-ext-rest will spawn a slirp4netns
+ * helper. For now this returns the args; the helper isn't wired.
  */
-export function buildLinuxBwrapArgs(config: SandboxConfig, cwd: string): string[] {
+export interface BwrapArgsOpts {
+  /** Port of the started DNS proxy on 127.0.0.1. */
+  dnsProxyPort?: number;
+  /** Path to a generated resolv.conf to bind into the sandbox. */
+  resolvConfPath?: string;
+}
+
+export function buildLinuxBwrapArgs(
+  config: SandboxConfig,
+  cwd: string,
+  opts: BwrapArgsOpts = {},
+): string[] {
   if (!config.enabled) return [];
   const fs = config.filesystem ?? {};
   const net = config.network ?? {};
@@ -147,11 +168,23 @@ export function buildLinuxBwrapArgs(config: SandboxConfig, cwd: string): string[
   // cwd is rw by default
   args.push('--bind', cwd, cwd);
 
-  // Network
-  if ((net.allowedDomains ?? []).length === 0 && (net.allowedDomains ?? null) !== null) {
+  // Network — three modes:
+  //  1. allowedDomains: [] → no network at all
+  //  2. allowedDomains: ['a.com', ...] + dnsProxyPort → unshare-net + bind a
+  //     resolv.conf that points at the DNS proxy on the host's loopback
+  //  3. allowedDomains: undefined → full network access (default)
+  const explicitEmpty =
+    (net.allowedDomains ?? []).length === 0 && (net.allowedDomains ?? null) !== null;
+  const whitelisted =
+    (net.allowedDomains ?? []).length > 0 && opts.dnsProxyPort !== undefined;
+  if (explicitEmpty) {
     args.push('--unshare-net');
+  } else if (whitelisted) {
+    args.push('--unshare-net');
+    if (opts.resolvConfPath) {
+      args.push('--ro-bind', opts.resolvConfPath, '/etc/resolv.conf');
+    }
   }
-  // Domain whitelist enforcement requires a userspace DNS proxy (M3.5-ext)
 
   // Default: unshare pid + ipc + uts
   args.push('--unshare-pid', '--unshare-ipc', '--unshare-uts');

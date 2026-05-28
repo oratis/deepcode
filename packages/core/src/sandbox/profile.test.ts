@@ -109,4 +109,31 @@ describe('buildLinuxBwrapArgs', () => {
     const args = buildLinuxBwrapArgs({ enabled: true }, '/x');
     expect(args).not.toContain('--unshare-net');
   });
+
+  it('unshares net + binds resolv.conf when allowedDomains non-empty + dnsProxyPort given', () => {
+    const args = buildLinuxBwrapArgs(
+      { enabled: true, network: { allowedDomains: ['github.com'] } },
+      '/proj',
+      { dnsProxyPort: 53053, resolvConfPath: '/tmp/dc-resolv.conf' },
+    );
+    expect(args).toContain('--unshare-net');
+    expect(args).toContain('--ro-bind');
+    const idx = args.indexOf('--ro-bind');
+    // Walk forward through args looking for the resolv.conf binding
+    const has = args.some(
+      (a, i) => a === '--ro-bind' && args[i + 1] === '/tmp/dc-resolv.conf' && args[i + 2] === '/etc/resolv.conf',
+    );
+    expect(has).toBe(true);
+    void idx;
+  });
+
+  it('does NOT bind resolv.conf when dnsProxyPort is omitted (even if allowedDomains non-empty)', () => {
+    const args = buildLinuxBwrapArgs(
+      { enabled: true, network: { allowedDomains: ['github.com'] } },
+      '/proj',
+    );
+    // Without a proxy we fall back to default-allow (no unshare-net) — the
+    // domain whitelist can't be enforced without the proxy.
+    expect(args).not.toContain('--unshare-net');
+  });
 });
