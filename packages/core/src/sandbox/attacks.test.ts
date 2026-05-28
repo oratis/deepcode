@@ -171,13 +171,24 @@ describe('wrapBashCommand: excluded-command spoofing', () => {
     expect(r.command).toBe('/bin/sh');
   });
 
-  it('shell-pipeline starting with excluded command STILL bypasses (documented behavior)', async () => {
-    // M3.5 limitation: excluded-command matching is on the leading token, so
-    // `git ... && rm -rf /` would bypass. This test pins that behavior so
-    // future hardening doesn't silently change it. M5.2+ will add per-clause
-    // analysis.
+  it('shell-pipeline NO LONGER bypasses when any clause is not excluded (M3.5-ext)', async () => {
+    // Hardened in M3.5-ext: every clause leader must be excluded for the
+    // bypass to trigger. `git status && rm -rf /` no longer bypasses.
     const r = await wrapBashCommand({
-      userCommand: 'git status && echo done',
+      userCommand: 'git status && rm -rf /tmp/x',
+      cwd: '/tmp',
+      config: { enabled: true, excludedCommands: ['git'] },
+    });
+    // On macOS/Linux this MUST be a sandbox wrap, not /bin/sh
+    if (process.platform === 'darwin') expect(r.command).toBe('sandbox-exec');
+    else if (process.platform === 'linux') expect(r.command).toBe('bwrap');
+    else expect(r.command).toBe('/bin/sh');
+  });
+
+  it('shell-pipeline of ONLY excluded commands still bypasses', async () => {
+    // `git status && git log` is all-git, so bypass is fine.
+    const r = await wrapBashCommand({
+      userCommand: 'git status && git log',
       cwd: '/tmp',
       config: { enabled: true, excludedCommands: ['git'] },
     });

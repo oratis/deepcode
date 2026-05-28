@@ -17,7 +17,11 @@
 //   · We rely on hash-pin (M5) to detect tampering.
 
 import { spawn, type ChildProcess } from 'node:child_process';
-import { resolve } from 'node:path';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import type { SandboxConfig } from '../../config/types.js';
+import { buildLinuxBwrapArgs, buildMacOsProfile, detectPlatform } from '../../sandbox/profile.js';
 import type { InstalledPlugin } from '../manifest.js';
 import type { ToolHandler, ToolResult } from '../../types.js';
 
@@ -44,6 +48,9 @@ export interface PluginSubprocessOpts {
     bash: (cmd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
     fetch: (url: string, opts?: { method?: string; body?: string }) => Promise<string>;
   };
+  /** Optional OS-level sandbox config — wraps the node subprocess under
+   *  sandbox-exec (macOS) or bwrap (Linux). M5.1-ext. */
+  sandbox?: SandboxConfig;
 }
 
 /**
@@ -79,22 +86,26 @@ export class PluginSubprocess {
   }
 
   async start(): Promise<void> {
-    const entry = resolve(
-      this.opts.plugin.path,
-      this.opts.plugin.manifest.contributes ? 'index.js' : 'index.js',
-    );
-    // For M5.1, we use a simple node spawn — no sandbox-exec/bwrap wrap yet
-    // (that's M5.2 once we have hardened SBPL/bwrap rules for arbitrary JS).
-    this.child = spawn('node', [entry], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-      env: {
-        ...process.env,
-        DEEPCODE_PLUGIN_TOKEN: this.opts.token,
-        // Strip auth env vars so plugin can't read DEEPSEEK keys
-        DEEPSEEK_API_KEY: '',
-        DEEPSEEK_AUTH_TOKEN: '',
-      },
-    });
+    const entry = resolve(this.opts.plugin.path, 'index.js');
+    const env = {
+      ...process.env,
+      DEEPCODE_PLUGIN_TOKEN: this.opts.token,
+      // Strip auth env vars so plugin can't read DEEPSEEK keys
+      DEEPSEEK_API_KEY: '',
+      DEEPSEEK_AUTH_TOKEN: '',
+    };
+
+    // M5.1-ext: wrap under OS sandbox if requested. The plugin's cwd is its
+    // own install dir; we allow read-only access to it + node's runtime needs.
+    let command = 'node';
+    let args = [entry];
+    if (this.opts.sandbox?.enabled) {
+      const wrapped = await wrapNodeSpawn(entry, this.opts.plugin.path, this.opts.sandbox);
+      command = wrapped.command;
+      args = wrapped.args;
+    }
+
+    this.child = spawn(command, args, { stdio: ['pipe', 'pipe', 'pipe'], env });
     this.alive = true;
 
     this.child.stdout!.on('data', (chunk: Buffer) => {
@@ -245,6 +256,41 @@ export class PluginSubprocess {
 }
 
 /**
+ * Wrap `node <entry>` under macOS sandbox-exec or Linux bwrap.
+ * Returns { command, args } ready for child_process.spawn.
+ * The plugin gets read access to its own dir; everything else is denied
+ * unless extended via SandboxConfig.filesystem.
+ */
+async function wrapNodeSpawn(
+  entry: string,
+  pluginDir: string,
+  sandbox: SandboxConfig,
+): Promise<{ command: string; args: string[] }> {
+  const platform = detectPlatform();
+  // Always include the plugin's install dir as readable
+  const merged: SandboxConfig = {
+    ...sandbox,
+    enabled: true,
+    filesystem: {
+      ...sandbox.filesystem,
+      allowRead: [...(sandbox.filesystem?.allowRead ?? []), pluginDir],
+    },
+  };
+  if (platform === 'macos') {
+    const profile = buildMacOsProfile(merged, pluginDir);
+    const profilePath = join(tmpdir(), `deepcode-plug-sb-${process.pid}-${Date.now().toString(36)}.sb`);
+    await fs.writeFile(profilePath, profile, 'utf8');
+    return { command: 'sandbox-exec', args: ['-f', profilePath, 'node', entry] };
+  }
+  if (platform === 'linux') {
+    const args = buildLinuxBwrapArgs(merged, pluginDir);
+    return { command: 'bwrap', args: [...args, 'node', entry] };
+  }
+  // Unsupported — fall back to bare node
+  return { command: 'node', args: [entry] };
+}
+
+/**
  * Trivial unguessable token for host↔plugin RPC validation.
  */
 export function generatePluginToken(): string {
@@ -263,6 +309,7 @@ export function generatePluginToken(): string {
 export interface SpawnAllOpts {
   plugins: InstalledPlugin[];
   host: PluginSubprocessOpts['host'];
+  sandbox?: SandboxConfig;
 }
 
 export async function spawnAllPlugins(opts: SpawnAllOpts): Promise<PluginSubprocess[]> {
@@ -270,7 +317,12 @@ export async function spawnAllPlugins(opts: SpawnAllOpts): Promise<PluginSubproc
   for (const plugin of opts.plugins) {
     if (!plugin.enabled) continue;
     const token = generatePluginToken();
-    const sub = new PluginSubprocess({ plugin, token, host: opts.host });
+    const sub = new PluginSubprocess({
+      plugin,
+      token,
+      host: opts.host,
+      sandbox: opts.sandbox,
+    });
     try {
       await sub.start();
       out.push(sub);
