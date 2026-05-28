@@ -44,10 +44,6 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      - name: Worktree tests (gated)
-        run: DEEPCODE_WORKTREE_TESTS=1 pnpm -F @deepcode/core test src/worktree/
-        continue-on-error: true # flaky cross-platform; not yet a blocker
-
       - name: Format check
         run: pnpm format:check
 

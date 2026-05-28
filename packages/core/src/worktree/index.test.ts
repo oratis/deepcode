@@ -1,35 +1,64 @@
 import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createWorktree, removeWorktree } from './index.js';
 
+/**
+ * On macOS `mkdtemp(tmpdir())` returns a path under `/var/folders/...` which
+ * is a symlink to `/private/var/folders/...`. git mixes the two
+ * representations across operations (config vs index vs worktree registry)
+ * and ends up confused — `git worktree add` from the symlinked source path
+ * fails with `.git/index: index file open failed: Not a directory`.
+ * Calling `realpath` here forces every path we hand to git to be canonical.
+ */
+async function canonicalMkdtemp(prefix: string): Promise<string> {
+  const raw = await mkdtemp(join(tmpdir(), prefix));
+  return await realpath(raw);
+}
+
+/**
+ * Strip git env vars that the parent process (e.g. a `git commit` driving a
+ * husky pre-commit hook) may have set. Without this, `GIT_DIR` / `GIT_WORK_TREE`
+ * / `GIT_INDEX_FILE` from the outer commit leak into child `git` invocations
+ * and they try to operate on the outer repo's index — failing with
+ * `.git/index: index file open failed: Not a directory`.
+ */
+function cleanGitEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  for (const k of Object.keys(env)) {
+    if (k.startsWith('GIT_')) delete env[k];
+  }
+  return env;
+}
+
+function runOrFail(cmd: string, args: string[], cwd: string): void {
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: cleanGitEnv() });
+  if (r.status !== 0) {
+    throw new Error(`${cmd} ${args.join(' ')} failed (exit ${r.status}): ${r.stderr || r.stdout}`);
+  }
+}
+
 async function makeRepo(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'dc-wt-src-'));
-  spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
-  spawnSync('git', ['config', 'user.email', 't@t'], { cwd: dir });
-  spawnSync('git', ['config', 'user.name', 't'], { cwd: dir });
+  const dir = await canonicalMkdtemp('dc-wt-src-');
+  runOrFail('git', ['init', '-q', '-b', 'main'], dir);
+  runOrFail('git', ['config', 'user.email', 't@t'], dir);
+  runOrFail('git', ['config', 'user.name', 't'], dir);
   await fs.writeFile(join(dir, 'a.txt'), 'A');
-  spawnSync('git', ['add', '.'], { cwd: dir });
-  spawnSync('git', ['commit', '-q', '-m', 'init'], { cwd: dir });
+  runOrFail('git', ['add', '.'], dir);
+  runOrFail('git', ['commit', '-q', '-m', 'init'], dir);
   return dir;
 }
 
-// TODO(M8-followup): these tests pass in isolation (`vitest run src/worktree/`)
-// but flake when run together with the full suite — git worktree add hits
-// `.git/index: index file open failed: Not a directory`. Suspected cause is
-// fork-pool resource contention with other tests that touch tmpdir. Running
-// only when DEEPCODE_WORKTREE_TESTS=1 is set; CI gate enables it explicitly.
-const runWorktreeTests = process.env['DEEPCODE_WORKTREE_TESTS'] === '1';
-describe.runIf(runWorktreeTests)('createWorktree / removeWorktree', () => {
+describe('createWorktree / removeWorktree', () => {
   let src: string;
   let parent: string;
 
   beforeEach(async () => {
     src = await makeRepo();
-    parent = await mkdtemp(join(tmpdir(), 'dc-wt-parent-'));
+    parent = await canonicalMkdtemp('dc-wt-parent-');
   });
   afterEach(async () => {
     await rm(src, { recursive: true, force: true });
@@ -48,10 +77,10 @@ describe.runIf(runWorktreeTests)('createWorktree / removeWorktree', () => {
 
   it('honors baseRef from config', async () => {
     // Make a second commit, then branch from the FIRST.
-    spawnSync('git', ['-C', src, 'tag', 'v0']);
+    runOrFail('git', ['tag', 'v0'], src);
     await fs.writeFile(join(src, 'b.txt'), 'B');
-    spawnSync('git', ['-C', src, 'add', '.'], {});
-    spawnSync('git', ['-C', src, 'commit', '-q', '-m', 'second'], {});
+    runOrFail('git', ['add', '.'], src);
+    runOrFail('git', ['commit', '-q', '-m', 'second'], src);
     const h = await createWorktree({
       source: src,
       parentDir: parent,
@@ -82,7 +111,7 @@ describe.runIf(runWorktreeTests)('createWorktree / removeWorktree', () => {
   });
 
   it('errors when source is not a git repo', async () => {
-    const notARepo = await mkdtemp(join(tmpdir(), 'dc-not-repo-'));
+    const notARepo = await canonicalMkdtemp('dc-not-repo-');
     try {
       await expect(
         createWorktree({ source: notARepo, parentDir: parent }),
