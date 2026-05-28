@@ -146,9 +146,9 @@ Specific deviations:
 | TaskCreate / Monitor / TaskList / TaskGet / TaskOutput / TaskStop / TaskUpdate | ✓           | 🔄       | M8 (background tasks)                       |
 | CronCreate / CronList / CronDelete                                             | ✓           | 🔄       | M8 (cron daemon)                            |
 | ScheduleWakeup                                                                 | ✓           | 🔄       | M8                                          |
-| WebFetch                                                                       | ✓           | 🔄       | M3c+                                        |
-| WebSearch                                                                      | ✓           | 🔄       | M3c+                                        |
-| TodoWrite                                                                      | ✓           | 🔄       | M3c+                                        |
+| WebFetch                                                                       | ✓           | ✅       | shipped M3c-rest — 5 MiB cap + abort        |
+| WebSearch                                                                      | ✓           | ✅       | shipped M3c-rest — DDG default + SearXNG    |
+| TodoWrite                                                                      | ✓           | ✅       | shipped M3c-rest — persists in sessionDir   |
 
 ## CLI flags
 
