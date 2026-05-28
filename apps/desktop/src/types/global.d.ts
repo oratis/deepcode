@@ -5,6 +5,37 @@ export interface UpdateInfo {
   releaseNotes?: string;
 }
 
+export interface SessionListEntry {
+  id: string;
+  title?: string;
+  cwd: string;
+  updatedAt: string;
+  model?: string;
+}
+
+export interface PluginRow {
+  name: string;
+  version: string;
+  enabled: boolean;
+  sourceHash: string;
+  trustedBy: 'user' | 'marketplace' | 'official';
+  contributedHookEvents: string[];
+}
+
+export interface McpServerRow {
+  name: string;
+  status: 'connected' | 'failed' | 'disabled';
+  toolCount?: number;
+  error?: string;
+}
+
+export interface SkillRow {
+  name: string;
+  description: string;
+  source: 'builtin' | 'user' | 'project' | 'plugin';
+  path: string;
+}
+
 export interface DeepCodeAPI {
   version: () => Promise<string>;
   creds: {
@@ -13,6 +44,35 @@ export interface DeepCodeAPI {
   };
   settings: {
     load: () => Promise<Record<string, unknown>>;
+  };
+  sessions: {
+    list: (args?: { limit?: number }) => Promise<SessionListEntry[]>;
+    resume: (args: { id: string }) => Promise<{ history: unknown[]; sessionId: string }>;
+  };
+  plugins: {
+    list: () => Promise<PluginRow[]>;
+    install: (args: { spec: string }) => Promise<{ name: string; version: string }>;
+    setEnabled: (args: { name: string; enabled: boolean }) => Promise<boolean>;
+  };
+  mcp: {
+    list: () => Promise<McpServerRow[]>;
+  };
+  skills: {
+    list: () => Promise<SkillRow[]>;
+    body: (args: { path: string }) => Promise<string>;
+  };
+  agent: {
+    start: (args: {
+      sessionId: string;
+      userMessage: string;
+      mode?: string;
+      model?: string;
+      allowedTools?: string[];
+    }) => Promise<{ turnId: string }>;
+    abort: (args: { turnId: string }) => Promise<boolean>;
+    approve: (args: { turnId: string; toolCallId: string; allow: boolean }) => Promise<void>;
+    answer: (args: { turnId: string; questionId: string; answer: string }) => Promise<void>;
+    onEvent: (cb: (e: unknown) => void) => () => void;
   };
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => () => void;
 }

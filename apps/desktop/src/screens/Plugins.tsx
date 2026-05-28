@@ -21,8 +21,14 @@ export function PluginsScreen(): JSX.Element {
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
-    // Real impl: window.deepcode.plugins.list() — wired in IPC PR.
-    setPlugins([]);
+    if (window.deepcode?.plugins?.list) {
+      void window.deepcode.plugins
+        .list()
+        .then((rows) => setPlugins(rows as PluginRow[]))
+        .catch(() => setPlugins([]));
+    } else {
+      setPlugins([]);
+    }
   }, []);
 
   async function handleInstall(): Promise<void> {

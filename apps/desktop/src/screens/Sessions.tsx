@@ -23,9 +23,15 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
-    // Real impl wires through window.deepcode.sessions.list — added in
-    // M6-rest IPC PR. For now, render an empty state.
-    setSessions([]);
+    // IPC call; fall back to empty list when main hasn't implemented yet.
+    if (window.deepcode?.sessions?.list) {
+      void window.deepcode.sessions
+        .list()
+        .then((rows) => setSessions(rows as SessionMeta[]))
+        .catch(() => setSessions([]));
+    } else {
+      setSessions([]);
+    }
   }, []);
 
   if (sessions === null) {

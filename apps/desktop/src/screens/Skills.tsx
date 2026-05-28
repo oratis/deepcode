@@ -19,8 +19,14 @@ export function SkillsScreen(): JSX.Element {
   const [filter, setFilter] = useState('');
 
   useEffect(() => {
-    // Real impl: window.deepcode.skills.list() — wired in IPC PR.
-    setSkills([]);
+    if (window.deepcode?.skills?.list) {
+      void window.deepcode.skills
+        .list()
+        .then((rows) => setSkills(rows as SkillRow[]))
+        .catch(() => setSkills([]));
+    } else {
+      setSkills([]);
+    }
   }, []);
 
   if (skills === null) {
