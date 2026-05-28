@@ -57,6 +57,14 @@ export class DeepSeekProvider implements Provider {
       baseURL: this.baseURL,
       fetch: opts.fetch,
       // If authToken is set, the OpenAI SDK uses Bearer (correct for our dual-header design).
+      //
+      // The OpenAI SDK refuses to start in a "browser-like" environment by default to
+      // avoid users shipping API keys in pages served to untrusted clients. DeepCode is
+      // never that case: it's a CLI / VS Code extension / Tauri desktop app, all of which
+      // run on the user's own machine with the key in storage they control. In Node this
+      // flag is a no-op (the guard's `typeof window` check never trips); in the Tauri
+      // webview it disables the false-positive guard so the renderer-side provider works.
+      dangerouslyAllowBrowser: true,
     });
   }
 
