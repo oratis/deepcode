@@ -5,6 +5,27 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.5] — 2026-05-28
+
+### Polish + dead-code removal
+- **Composer `+` menu wired**. Click `+` → popover with three actions:
+  Attach file (opens native file picker, inserts `@<absolute-path>`
+  into the textarea), Slash command (prepends `/`), Memory note
+  (prepends `#`). Replaces the previously-disabled `+` button.
+- **Plugins toggle works.** Click the switch on any plugin → writes
+  to `settings.disabledPlugins[]` so the change survives restart
+  and the agent picks it up on the next turn. Optimistic UI with
+  rollback on failure.
+- **Dead code removed.** Deleted unused screens (FilePanel.tsx —
+  Monaco file panel not surfaced in new shell; legacy Chat.tsx stub;
+  Nav.tsx — only the type was needed, moved to `src/types/screens.ts`;
+  Terminal.tsx — xterm side-pane wasn't wired in). Trimmed deps:
+  removed `@monaco-editor/react`, `monaco-editor`, `@xterm/*`,
+  `tailwindcss`, `postcss`, `autoprefixer` — none referenced any
+  more.
+- ScreenName type moved to `src/types/screens.ts` (single source of
+  truth for App.tsx + InspectorRail).
+
 ## [0.1.4] — 2026-05-28
 
 ### Robustness + polish

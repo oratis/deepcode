@@ -105,6 +105,22 @@ export async function pickFolder(): Promise<string | null> {
   return null;
 }
 
+/** Show native file-picker dialog (single file). Returns absolute path or null on cancel. */
+export async function pickFile(opts: { defaultPath?: string } = {}): Promise<string | null> {
+  const { open } = await import('@tauri-apps/plugin-dialog');
+  const result: unknown = await open({
+    multiple: false,
+    directory: false,
+    title: 'Attach a file',
+    defaultPath: opts.defaultPath,
+  });
+  if (typeof result === 'string') return result;
+  if (Array.isArray(result) && result.length > 0 && typeof result[0] === 'string') {
+    return result[0];
+  }
+  return null;
+}
+
 export async function listSessions(): Promise<SessionMeta[]> {
   return (await invoke('list_sessions')) as SessionMeta[];
 }

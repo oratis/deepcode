@@ -26,12 +26,14 @@ import {
 } from '@deepcode/core/dist/keybindings/vim.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
+import { PlusMenu, type PlusMenuItem } from '../components/PlusMenu.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { projectName } from '../lib/project.js';
 import {
   appendAllowMatcher,
   loadKeybindings,
   loadSettingsFile,
+  pickFile,
   saveSettingsFile,
 } from '../lib/tauri-api.js';
 
@@ -519,14 +521,52 @@ export function ReplScreen({
               rows={Math.min(6, Math.max(1, input.split('\n').length))}
             />
             <div className="toolbar">
-              <button
-                type="button"
-                className="icon-btn"
-                title="附件 / 命令 / 插件 — 待 P2"
-                disabled
-              >
-                +
-              </button>
+              <PlusMenu
+                disabled={controlsLocked}
+                items={[
+                  {
+                    icon: '📎',
+                    label: 'Attach file',
+                    description: 'Insert @<path> for the agent to read',
+                    onClick: async () => {
+                      const filePath = await pickFile({ defaultPath: projectPath });
+                      if (!filePath) return;
+                      const ta = composerRef.current;
+                      if (!ta) return;
+                      const ref = `@${filePath}`;
+                      const cursor = ta.selectionStart;
+                      const before = ta.value.slice(0, cursor);
+                      const after = ta.value.slice(cursor);
+                      const prefix = before.length === 0 || before.endsWith(' ') ? '' : ' ';
+                      const suffix = after.startsWith(' ') || after.length === 0 ? ' ' : ' ';
+                      setInput(before + prefix + ref + suffix + after);
+                      ta.focus();
+                    },
+                  },
+                  {
+                    icon: '/',
+                    label: 'Slash command',
+                    description: 'Type / in the box (palette lands in v0.2)',
+                    onClick: () => {
+                      const ta = composerRef.current;
+                      if (!ta) return;
+                      if (!input.startsWith('/')) setInput('/' + input);
+                      ta.focus();
+                    },
+                  },
+                  {
+                    icon: '#',
+                    label: 'Memory note',
+                    description: 'Type # to remember (writes DEEPCODE.md in v0.2)',
+                    onClick: () => {
+                      const ta = composerRef.current;
+                      if (!ta) return;
+                      if (!input.startsWith('#')) setInput('# ' + input);
+                      ta.focus();
+                    },
+                  },
+                ]}
+              />
 
               <Dropdown<typeof mode>
                 value={mode}
