@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Screen } from '../components/Screen.js';
+import { loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';
 
 interface PluginRow {
   name: string;
@@ -29,16 +30,63 @@ export function PluginsScreen(): JSX.Element {
   const [installing, setInstalling] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
 
+  // Initial load — merge live list with settings.disabledPlugins[].
   useEffect(() => {
-    if (window.deepcode?.plugins?.list) {
-      void window.deepcode.plugins
-        .list()
-        .then((rows) => setPlugins(rows as PluginRow[]))
-        .catch(() => setPlugins([]));
-    } else {
-      setPlugins([]);
-    }
+    void (async () => {
+      try {
+        const [rows, settings] = await Promise.all([
+          window.deepcode?.plugins?.list?.() ?? Promise.resolve([]),
+          loadSettingsFile().catch(() => ({}) as Record<string, unknown>),
+        ]);
+        const disabled = new Set(
+          Array.isArray(settings.disabledPlugins)
+            ? (settings.disabledPlugins as string[])
+            : [],
+        );
+        const merged = (rows as PluginRow[]).map((p) => ({
+          ...p,
+          enabled: !disabled.has(p.name),
+        }));
+        setPlugins(merged);
+      } catch {
+        setPlugins([]);
+      }
+    })();
   }, []);
+
+  async function handleToggle(name: string, nextEnabled: boolean): Promise<void> {
+    // Optimistic UI
+    setPlugins((ps) =>
+      ps ? ps.map((p) => (p.name === name ? { ...p, enabled: nextEnabled } : p)) : ps,
+    );
+    try {
+      const current = (await loadSettingsFile()) as Record<string, unknown>;
+      const disabled = new Set(
+        Array.isArray(current.disabledPlugins)
+          ? (current.disabledPlugins as string[])
+          : [],
+      );
+      if (nextEnabled) disabled.delete(name);
+      else disabled.add(name);
+      await saveSettingsFile({
+        ...current,
+        disabledPlugins: [...disabled],
+      });
+      setFeedback(
+        `✓ ${nextEnabled ? 'Enabled' : 'Disabled'} "${name}". Takes effect on next agent turn.`,
+      );
+    } catch (err) {
+      // Revert
+      setPlugins((ps) =>
+        ps
+          ? ps.map((p) =>
+              p.name === name ? { ...p, enabled: !nextEnabled } : p,
+            )
+          : ps,
+      );
+      setFeedback(`✕ Toggle failed: ${(err as Error).message}`);
+    }
+  }
 
   async function handleInstall(): Promise<void> {
     if (!installSpec.trim()) return;
@@ -170,9 +218,7 @@ export function PluginsScreen(): JSX.Element {
                       <span style={{ marginLeft: 'auto' }}>
                         <Toggle
                           checked={p.enabled}
-                          onChange={() => {
-                            /* TODO setEnabled via core */
-                          }}
+                          onChange={() => void handleToggle(p.name, !p.enabled)}
                         />
                       </span>
                     </div>

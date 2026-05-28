@@ -19,7 +19,7 @@ import { ReplScreen } from './screens/Repl.js';
 import { SessionsScreen } from './screens/Sessions.js';
 import { SettingsScreen } from './screens/Settings.js';
 import { SkillsScreen } from './screens/Skills.js';
-import type { ScreenName } from './components/Nav.js';
+import type { ScreenName } from './types/screens.js';
 import type { UpdateInfo } from './types/global.js';
 
 export function App(): JSX.Element {

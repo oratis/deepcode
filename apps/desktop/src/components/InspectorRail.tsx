@@ -6,7 +6,7 @@
 // chevron is still deferred (the full-width inspector panel lands in
 // the next phase) — we leave it disabled with a tooltip.
 
-import type { ScreenName } from './Nav.js';
+import type { ScreenName } from '../types/screens.js';
 
 interface InspectorRailProps {
   /** Plan items pending — shown as a badge on ▤. */
