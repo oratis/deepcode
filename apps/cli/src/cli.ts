@@ -6,6 +6,7 @@
 import { CredentialsStore, VERSION, redact } from '@deepcode/core';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import { runHeadless } from './headless.js';
 import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
@@ -38,12 +39,24 @@ async function main(): Promise<number> {
     return 0;
   }
 
-  // Headless one-shot
+  // Headless one-shot (-p / --print)
   if (args.prompt !== undefined) {
-    process.stderr.write(
-      'Headless mode (-p) is wired in M8. Use interactive `deepcode` for now.\n',
-    );
-    return 2;
+    return runHeadless({
+      output: process.stdout,
+      errOutput: process.stderr,
+      cwd: process.cwd(),
+      prompt: args.prompt,
+      outputFormat: args.outputFormat,
+      mode: args.mode,
+      model: args.model,
+      effort: args.effort,
+      systemPromptOverride: args.systemPrompt,
+      appendSystemPrompt: args.appendSystemPrompt,
+      appendSystemPromptFile: args.appendSystemPromptFile,
+      allowedTools: args.allowedTools,
+      disallowedTools: args.disallowedTools,
+      maxTurns: args.maxTurns,
+    });
   }
 
   // Onboarding if no creds
