@@ -38,8 +38,22 @@ export default defineConfig({
     },
   },
   resolve: {
-    alias: {
-      '@deepcode/core': resolve(__dirname, '..', '..', 'packages', 'core', 'src', 'index.ts'),
-    },
+    alias: [
+      // Subpath imports — load directly from compiled dist/. The renderer
+      // can't bundle some core modules (node:fs deps), so we cherry-pick
+      // (only agent.js / providers/deepseek.js / types.js are referenced
+      // from the renderer code).
+      {
+        find: /^@deepcode\/core\/dist\/(.+)$/,
+        replacement: resolve(__dirname, '..', '..', 'packages', 'core', 'dist') + '/$1',
+      },
+      // Bare import — anything that resolves through the index. We avoid
+      // doing this in the renderer (use mac-tools/mac-agent which import
+      // from subpaths) but keep the alias so types still resolve.
+      {
+        find: '@deepcode/core',
+        replacement: resolve(__dirname, '..', '..', 'packages', 'core', 'src', 'index.ts'),
+      },
+    ],
   },
 });

@@ -147,3 +147,11 @@ select {
 }
 select:focus { outline: none; border-color: var(--accent); }
 .block { display: block; }
+.bg-error\/80 { background: rgba(248, 113, 113, 0.8); }
+.animate-pulse { animation: dc-pulse 1.4s ease-in-out infinite; }
+@keyframes dc-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+.mx-6 { margin-left: 1.5rem; margin-right: 1.5rem; }
+.disabled\:opacity-50:disabled { opacity: 0.5; }
