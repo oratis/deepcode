@@ -43,6 +43,19 @@ export interface ReplOpts {
   model?: string;
   /** Initial effort (overrides settings). */
   effort?: Effort;
+  // M3c CLI flag wiring
+  /** Replace the default system prompt entirely. */
+  systemPromptOverride?: string;
+  /** Append text to the system prompt. */
+  appendSystemPrompt?: string;
+  /** Path to a file whose contents are appended to system prompt. */
+  appendSystemPromptFile?: string;
+  /** Whitelist of tool names — only these are loaded. */
+  allowedTools?: string[];
+  /** Blacklist of tool names — these are removed. */
+  disallowedTools?: string[];
+  /** Cap on agent loop turns. */
+  maxTurns?: number;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -79,7 +92,21 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     authToken: creds.authToken,
     baseURL: creds.baseURL ?? settings.baseURL,
   });
-  const tools = new ToolRegistry();
+  // M3c: --allowedTools / --disallowedTools filtering BEFORE registry construction
+  let tools: ToolRegistry;
+  if (opts.allowedTools || opts.disallowedTools) {
+    const { BUILTIN_TOOLS } = await import('@deepcode/core');
+    const allowSet = opts.allowedTools ? new Set(opts.allowedTools) : null;
+    const denySet = new Set(opts.disallowedTools ?? []);
+    const filtered = BUILTIN_TOOLS.filter((t) => {
+      if (denySet.has(t.name)) return false;
+      if (allowSet && !allowSet.has(t.name)) return false;
+      return true;
+    });
+    tools = new ToolRegistry(filtered);
+  } else {
+    tools = new ToolRegistry();
+  }
   const commands = new CommandRegistry();
 
   // M5: load memory, skills, output style — assemble final system prompt
@@ -128,11 +155,22 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   }
 
   // Build the composite system prompt
-  let systemPrompt = DEFAULT_SYSTEM_PROMPT;
+  // M3c: honor --system-prompt (replaces default) + --append-system-prompt /
+  // --append-system-prompt-file (appended after memory/skills/style).
+  let systemPrompt = opts.systemPromptOverride ?? DEFAULT_SYSTEM_PROMPT;
   if (memory.text) systemPrompt += '\n\n' + memory.text;
   const skillsBlock = buildSkillsDescriptionBlock(skills);
   if (skillsBlock) systemPrompt += '\n\n' + skillsBlock;
   systemPrompt = applyStyle(systemPrompt, activeStyle);
+  if (opts.appendSystemPrompt) systemPrompt += '\n\n' + opts.appendSystemPrompt;
+  if (opts.appendSystemPromptFile) {
+    try {
+      const { readFile } = await import('node:fs/promises');
+      systemPrompt += '\n\n' + (await readFile(opts.appendSystemPromptFile, 'utf8'));
+    } catch (err) {
+      output.write(`⚠ Could not read --append-system-prompt-file: ${(err as Error).message}\n`);
+    }
+  }
 
   // Hook dispatcher (M3)
   const hooks = new HookDispatcher({
@@ -210,6 +248,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       model: ctx.model,
       maxTokens,
       temperature,
+      maxTurns: opts.maxTurns,
       cwd: ctx.cwd,
       session: { manager: sessions, id: session.id },
       mode: ctx.mode as Mode,
