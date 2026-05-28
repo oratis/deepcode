@@ -222,6 +222,24 @@ export {
   type PluginCapabilityBridge,
 } from './plugins/index.js';
 
+// Worktree (M8 — isolated git worktree creation for background tasks)
+export {
+  createWorktree,
+  removeWorktree,
+  type WorktreeHandle,
+  type CreateWorktreeOpts,
+} from './worktree/index.js';
+
+// launchd LaunchAgent installer (M8 — macOS scheduled tasks daemon)
+export {
+  buildPlist,
+  installPlist,
+  uninstallPlist,
+  launchdPlistPath,
+  LAUNCHD_LABEL,
+  type LaunchdInstallOpts,
+} from './launchd/index.js';
+
 // Keybindings (M8 — ~/.deepcode/keybindings.json + Vim mode state machine)
 export {
   DEFAULT_KEYBINDINGS,
