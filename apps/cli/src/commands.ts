@@ -1,7 +1,12 @@
 // CLI slash commands — pure functions over a session context.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.6 (30+ commands; M2 ships a core subset)
 
-import type { DeepCodeSettings, SessionManager, SessionMeta } from '@deepcode/core';
+import type {
+  DeepCodeSettings,
+  McpClientHandle,
+  SessionManager,
+  SessionMeta,
+} from '@deepcode/core';
 import { redact, type Credentials } from '@deepcode/core';
 
 export interface SessionContext {
@@ -18,6 +23,10 @@ export interface SessionContext {
   exitRequested?: boolean;
   /** Replace history entirely (used by /clear, /resume). */
   clearHistory?: boolean;
+  /** Connected MCP server handles (M3c). */
+  mcpServers?: McpClientHandle[];
+  /** MCP servers that failed to connect on startup (M3c). */
+  mcpErrors?: Array<{ serverName: string; error: string }>;
 }
 
 export interface SlashCommand {
@@ -215,6 +224,37 @@ export const InitCommand: SlashCommand = {
   },
 };
 
+export const McpCommand: SlashCommand = {
+  name: '/mcp',
+  description: 'List connected MCP servers and their tools.',
+  async run(_args, ctx) {
+    const servers = ctx.mcpServers ?? [];
+    if (servers.length === 0) {
+      return [
+        'No MCP servers connected.',
+        '',
+        'Add servers in settings.json under "mcpServers". Example:',
+        '  { "mcpServers": { "filesystem": { "command": "npx",',
+        '      "args": ["@modelcontextprotocol/server-filesystem", "/tmp"] } } }',
+      ];
+    }
+    const lines = [`Connected MCP servers (${servers.length}):`];
+    for (const s of servers) {
+      lines.push(`  ● ${s.serverName}  ·  ${s.tools.length} tools`);
+      for (const t of s.tools.slice(0, 6)) {
+        lines.push(`     - ${t.name}`);
+      }
+      if (s.tools.length > 6) lines.push(`     … and ${s.tools.length - 6} more`);
+    }
+    if ((ctx.mcpErrors ?? []).length > 0) {
+      lines.push('');
+      lines.push('Servers that failed to connect:');
+      for (const e of ctx.mcpErrors!) lines.push(`  ✕ ${e.serverName}  ${e.error}`);
+    }
+    return lines;
+  },
+};
+
 export const TodosCommand: SlashCommand = {
   name: '/todos',
   description: 'Show active TODO list (M3 wires TodoWrite tool).',
@@ -237,6 +277,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   AddDirCommand,
   ResumeCommand,
   InitCommand,
+  McpCommand,
   TodosCommand,
 ];
 

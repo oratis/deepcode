@@ -136,6 +136,16 @@ export {
   type Frontmatter,
 } from './skills/index.js';
 
+// MCP client (M3c — stdio transport; http/sse/OAuth/serve → M3c-ext)
+export {
+  connectMcpServer,
+  connectAllMcpServers,
+  closeAllMcpServers,
+  type McpClientHandle,
+  type McpToolMeta,
+  type ConnectAllResult,
+} from './mcp/index.js';
+
 // Plugins (M5 — manifest + hash pinning + local install + discovery)
 export {
   installLocal,
