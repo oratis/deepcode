@@ -1,6 +1,6 @@
 [package]
 name = "deepcode_desktop"
-version = "0.1.5"
+version = "0.1.6"
 description = "DeepCode Mac desktop client"
 authors = ["oratis"]
 edition = "2021"

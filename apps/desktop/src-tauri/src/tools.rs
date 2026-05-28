@@ -14,6 +14,7 @@ use tokio::process::Command;
 // ──────────────────────────────────────────────────────────────────────────
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReadOk {
     pub content: String,
     pub lines_total: usize,
@@ -101,6 +102,7 @@ pub struct EditInput {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct EditOk {
     pub replaced: usize,
     pub diff_preview: String,
@@ -155,6 +157,7 @@ pub struct BashInput {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BashOk {
     pub stdout: String,
     pub stderr: String,
