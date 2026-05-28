@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   # ----------------------------------------------------------------------
-  # Validate
+  # Validate — typecheck + tests + build all packages
   # ----------------------------------------------------------------------
   validate:
     name: Validate before release
@@ -23,13 +23,11 @@ jobs:
       is_mandatory: ${{ steps.version.outputs.is_mandatory }}
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
-
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
@@ -60,14 +58,12 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
           registry-url: https://registry.npmjs.org
-
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
@@ -79,8 +75,6 @@ jobs:
       - name: Publish
         run: |
           cd apps/cli
-          # On beta/nightly, publish with --tag <channel> so default `latest`
-          # stays on stable.
           if [ "${{ needs.validate.outputs.channel }}" = "stable" ]; then
             pnpm publish --no-git-checks --access public
           else
@@ -90,19 +84,12 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # ----------------------------------------------------------------------
-  # Build + sign Mac client (.dmg)
+  # Build + sign Mac client (.dmg) via Tauri
   # ----------------------------------------------------------------------
   build-mac:
-    name: Build + sign + notarize Mac client
+    name: Build + sign + notarize Mac client (Tauri)
     needs: validate
     runs-on: macos-14
-    # Activates when the desktop package has the electron dep installed
-    # AND the maintainer has set BUILD_MAC=1 in the GitHub Actions env
-    # (or the apps/desktop/electron-builder.yml file exists which it does
-    # since M6-rest part 1 — flipping the gate to `vars.BUILD_MAC == 'true'`
-    # so the maintainer enables it via Repository Variables once Apple
-    # secrets are wired). See docs/SHIPPING_MAC.md.
-    if: ${{ vars.BUILD_MAC == 'true' }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v6
@@ -111,70 +98,108 @@ jobs:
         with:
           node-version: '22'
           cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
 
-      - name: Activate template configs
-        run: |
-          cd apps/desktop
-          if [ -f vite.config.template.ts ]; then mv vite.config.template.ts vite.config.ts; fi
-          if [ -f postcss.config.template.js ]; then mv postcss.config.template.js postcss.config.js; fi
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: cargo-mac-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
 
       - name: Set version
         run: |
           cd apps/desktop
           npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+          # Sync the tauri.conf.json version too
+          node -e "
+            const fs=require('fs');
+            const p='src-tauri/tauri.conf.json';
+            const c=JSON.parse(fs.readFileSync(p,'utf8'));
+            c.version='${{ needs.validate.outputs.version }}';
+            fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n');
+          "
+          # And Cargo.toml
+          sed -i.bak -E 's/^version = ".*"/version = "${{ needs.validate.outputs.version }}"/' src-tauri/Cargo.toml
+          rm -f src-tauri/Cargo.toml.bak
 
-      - name: Build renderer + main
+      - name: Import Developer ID certificate
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          cd apps/desktop
-          pnpm build:renderer
-          pnpm build:electron
+          # CSC_LINK is base64-encoded .p12 of the Developer ID Application cert
+          echo "$CSC_LINK" | base64 --decode > /tmp/cert.p12
+          security create-keychain -p actions ci.keychain
+          security default-keychain -s ci.keychain
+          security unlock-keychain -p actions ci.keychain
+          security import /tmp/cert.p12 -k ci.keychain -P "$CSC_KEY_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k actions ci.keychain
+          rm -f /tmp/cert.p12
 
-      - name: Build (electron-builder)
+      - name: Store notarization credentials
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
-          cd apps/desktop
-          pnpm electron-builder --mac --arm64 --x64 --publish never
+          xcrun notarytool store-credentials "DEEPCODE_NOTARY" \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+      - name: Build + sign + notarize
+        env:
+          DEEPCODE_TARGET: aarch64-apple-darwin
+          DEEPCODE_NOTARY_PROFILE: DEEPCODE_NOTARY
+        run: bash scripts/sign-and-notarize.sh
+
+      - name: Stage release artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/DeepCode_${{ needs.validate.outputs.version }}_aarch64.dmg \
+             release-artifacts/DeepCode-${{ needs.validate.outputs.version }}-arm64.dmg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: mac-release
-          path: |
-            apps/desktop/release/*.dmg
-            apps/desktop/release/latest-mac.yml
+          path: release-artifacts/DeepCode-*.dmg
 
   # ----------------------------------------------------------------------
-  # GitHub Release
+  # GitHub Release — runs after Mac build so the DMG can be attached
   # ----------------------------------------------------------------------
   github-release:
     name: Publish GitHub Release
-    needs: [validate, publish-cli]
+    needs: [validate, publish-cli, build-mac]
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
-
-      - name: Mark mandatory in latest-mac.yml if applicable
-        if: needs.validate.outputs.is_mandatory == 'true'
-        run: |
-          echo "Note: this release tag has +security.X suffix — Mac client auto-update will be marked mandatory."
-
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'pnpm'
 
-      - name: Install (needed for tsx)
-        run: pnpm install --frozen-lockfile
+      - run: pnpm install --frozen-lockfile
 
-      - name: Generate release notes (conventional-commit grouped)
+      - name: Download Mac DMG
+        uses: actions/download-artifact@v4
+        with:
+          name: mac-release
+          path: release-artifacts/
+
+      - name: Generate release notes
         id: notes
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
@@ -189,8 +214,8 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3
         with:
-          name: ${{ needs.validate.outputs.version }}
+          name: v${{ needs.validate.outputs.version }}
           body_path: release-notes.md
           prerelease: ${{ needs.validate.outputs.channel != 'stable' }}
           generate_release_notes: false
-          # files: omitted until M6 mac artifacts exist
+          files: release-artifacts/*.dmg

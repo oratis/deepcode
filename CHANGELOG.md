@@ -5,6 +5,30 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] — 2026-05-28
+
+### Visual redesign — phase 2
+- **All 7 utility screens** (Sessions / Plugins / Skills / Permissions /
+  MCP / Settings / About) redesigned to match `docs/VISUAL_DESIGN.html`.
+  New shared `Screen` + `Card` + `Row` primitives.
+- **About** is now a proper hero card with brand mark + gradient text
+  + status diagnostics + docs links (replacing the boxed table layout
+  the user shared as visually off-spec).
+- **Settings** has a GUI/JSON segmented toggle: GUI shows a quick
+  reference + filterable flat table; JSON shows a live-validated
+  textarea. Save persists to ~/.deepcode/settings.json (was
+  view-only).
+- **Permissions** Save now actually persists rules (was stubbed).
+- **Sessions** has search + click-to-resume with relative time.
+- **Plugins** surfaces trust badges + custom Toggle switches.
+- **Skills** has 2-column filter-list + SKILL.md preview.
+- **MCP** uses status badges + tool count + inline error tail.
+
+### Release pipeline (M9)
+- `release.yml` rewritten for Tauri (was Electron-era). Tag → CI
+  → npm publish + signed/notarized DMG + GitHub Release with notes.
+- `docs/RELEASING.md` explains the 6 secrets needed and step-by-step.
+
 ## [0.1.2] — 2026-05-28
 
 ### Fixes — caught from user playtest of 0.1.1
