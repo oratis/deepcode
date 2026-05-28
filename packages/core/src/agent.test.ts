@@ -254,4 +254,49 @@ describe('runAgent', () => {
       expect(lastMsg.content[0].content).toContain('X-content');
     }
   });
+
+  it('prepends a <system-reminder> block to the user message by default', async () => {
+    const provider = new MockProvider([endTurn('hi')]);
+    const tools = new ToolRegistry();
+    await runAgent({
+      provider,
+      tools,
+      systemPrompt: '',
+      userMessage: 'do the thing',
+      model: 'deepseek-chat',
+      cwd,
+    });
+    const sentMessages = provider.received[0]!.messages;
+    const firstUser = sentMessages[0] as StoredMessage;
+    const text = firstUser.content.find((c) => c.type === 'text');
+    expect(text?.type).toBe('text');
+    if (text?.type === 'text') {
+      expect(text.text).toMatch(/<system-reminder>/);
+      expect(text.text).toMatch(/Today's date/);
+      expect(text.text).toMatch(/Current working directory/);
+      expect(text.text).toMatch(/do the thing$/);
+    }
+  });
+
+  it('honors systemReminders: false to skip injection entirely', async () => {
+    const provider = new MockProvider([endTurn('hi')]);
+    const tools = new ToolRegistry();
+    await runAgent({
+      provider,
+      tools,
+      systemPrompt: '',
+      userMessage: 'no reminder please',
+      model: 'deepseek-chat',
+      cwd,
+      systemReminders: false,
+    });
+    const firstUser = provider.received[0]!.messages[0] as StoredMessage;
+    const text = firstUser.content[0];
+    if (text?.type === 'text') {
+      expect(text.text).toBe('no reminder please');
+      expect(text.text).not.toMatch(/<system-reminder>/);
+    } else {
+      expect.fail('expected text block');
+    }
+  });
 });

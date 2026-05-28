@@ -216,6 +216,20 @@ export {
   type PluginCapabilityBridge,
 } from './plugins/index.js';
 
+// System reminders (M3c-rest — date / cwd / todos / external file mods / AGENTS.md missing)
+export {
+  buildSystemReminders,
+  prependReminders,
+  dateReminder,
+  cwdReminder,
+  agentsMdMissingReminder,
+  todosPendingReminder,
+  externalFileModifiedReminder,
+  type ReminderContext,
+  type ReminderOptions,
+  type ReminderType,
+} from './reminders/index.js';
+
 // Sub-agents (M4 — .deepcode/agents/*.md)
 export {
   loadSubAgents,
