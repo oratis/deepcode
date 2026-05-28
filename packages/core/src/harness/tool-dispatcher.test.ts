@@ -15,7 +15,7 @@ describe('dispatchToolCall', () => {
   });
 
   it('mode=plan blocks write tools (short-circuit, hook does not fire)', async () => {
-    let hookFired = false;
+    // hookFired flag retained for documentation but not asserted directly
     const hooks = new HookDispatcher({
       hooks: {
         PreToolUse: [{ hooks: [{ type: 'command', command: 'echo hook' }] }],

@@ -4,6 +4,7 @@
   "private": true,
   "description": "DeepCode — Claude Code 的 DeepSeek 版（monorepo root）",
   "license": "MIT",
+  "type": "module",
   "engines": {
     "node": ">=22",
     "pnpm": ">=9"
@@ -17,15 +18,21 @@
     "build": "tsc -b",
     "typecheck": "tsc -b --pretty",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yml,yaml}\"",
-    "clean": "pnpm -r clean"
+    "clean": "pnpm -r clean",
+    "prepare": "husky || true"
   },
   "devDependencies": {
+    "@eslint/js": "^9.16.0",
     "@types/node": "^22.10.0",
+    "eslint": "^9.16.0",
+    "husky": "^9.1.0",
     "prettier": "^3.3.0",
     "typescript": "^5.7.0",
+    "typescript-eslint": "^8.18.0",
     "vitest": "^2.1.0"
   }
 }

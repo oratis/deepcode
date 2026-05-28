@@ -23,7 +23,7 @@ import { join, resolve } from 'node:path';
 import type { SandboxConfig } from '../../config/types.js';
 import { buildLinuxBwrapArgs, buildMacOsProfile, detectPlatform } from '../../sandbox/profile.js';
 import type { InstalledPlugin } from '../manifest.js';
-import type { ToolHandler, ToolResult } from '../../types.js';
+import type { ToolHandler } from '../../types.js';
 
 export interface RpcRequest {
   id: string;

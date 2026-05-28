@@ -11,7 +11,7 @@
 // The trust ladder uses these to color a plugin as "official" / "marketplace"
 // / "user-local" / "untrusted".
 
-import { verify } from 'node:crypto';
+import { createPublicKey, verify } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -68,7 +68,6 @@ export function verifyEntrySignature(entry: MarketplaceEntry): boolean {
     // node:crypto ed25519 verify requires a KeyObject — derive from raw pubkey
     // bytes wrapped in SPKI. The published pubkey is itself DER-SPKI base64.
     const pubKeyDer = Buffer.from(entry.publisherPubKey, 'base64');
-    const { createPublicKey } = require('node:crypto') as typeof import('node:crypto');
     const pub = createPublicKey({ key: pubKeyDer, format: 'der', type: 'spki' });
     return verify(null, payload, pub, sig);
   } catch {

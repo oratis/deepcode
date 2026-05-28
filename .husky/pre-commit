@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# DeepCode pre-commit hook — runs typecheck + tests on the affected packages.
+# Skip with `git commit --no-verify` (you'll own the consequences).
+
+set -e
+
+echo "▎ pre-commit: typecheck"
+pnpm -r typecheck
+
+echo "▎ pre-commit: tests"
+pnpm -r test
+
+echo "✓ pre-commit checks passed"
