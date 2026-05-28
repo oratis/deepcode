@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs } from './parse-args.js';
+import { parseArgs, resolveEffort } from './parse-args.js';
 
 describe('parseArgs', () => {
   it('parses empty argv', () => {
@@ -127,5 +127,41 @@ describe('parseArgs', () => {
     expect(p.effort).toBe('high');
     expect(p.maxTurns).toBe(12);
     expect(p.unknownFlags).toEqual([]);
+  });
+});
+
+describe('resolveEffort (precedence)', () => {
+  it('cli flag wins over env and settings', () => {
+    expect(
+      resolveEffort({ cliFlag: 'high', envVar: 'low', settingsLevel: 'max' }),
+    ).toBe('high');
+  });
+
+  it('env var wins when no cli flag', () => {
+    expect(resolveEffort({ envVar: 'xhigh', settingsLevel: 'low' })).toBe(
+      'xhigh',
+    );
+  });
+
+  it('settings wins when no cli flag and no env', () => {
+    expect(resolveEffort({ settingsLevel: 'low' })).toBe('low');
+  });
+
+  it('defaults to medium when nothing is set', () => {
+    expect(resolveEffort({})).toBe('medium');
+  });
+
+  it('ignores invalid env var', () => {
+    expect(resolveEffort({ envVar: 'ultra', settingsLevel: 'low' })).toBe(
+      'low',
+    );
+  });
+
+  it('trims whitespace in env var', () => {
+    expect(resolveEffort({ envVar: '  high  ' })).toBe('high');
+  });
+
+  it('ignores empty env var', () => {
+    expect(resolveEffort({ envVar: '', settingsLevel: 'max' })).toBe('max');
   });
 });

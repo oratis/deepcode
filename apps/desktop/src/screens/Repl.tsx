@@ -3,7 +3,21 @@
 // Milestone: M6 (real agent integration)
 
 import { useEffect, useRef, useState } from 'react';
-import { appendAllowMatcher } from '../lib/tauri-api.js';
+import {
+  appendAllowMatcher,
+  loadSettingsFile,
+  saveSettingsFile,
+} from '../lib/tauri-api.js';
+
+type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+const EFFORT_LABELS: Record<Effort, string> = {
+  low: 'Standard',
+  medium: 'Standard+',
+  high: 'High',
+  xhigh: 'Extra High',
+  max: 'Max',
+};
+const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
@@ -47,7 +61,33 @@ export function ReplScreen(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [effort, setEffort] = useState<Effort>('medium');
   const listRef = useRef<HTMLDivElement>(null);
+
+  // Load saved effort on mount.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = (await loadSettingsFile()) as { effortLevel?: string };
+        if (s.effortLevel && EFFORTS.includes(s.effortLevel as Effort)) {
+          setEffort(s.effortLevel as Effort);
+        }
+      } catch {
+        /* fall back to default */
+      }
+    })();
+  }, []);
+
+  async function handleEffortChange(next: Effort): Promise<void> {
+    setEffort(next);
+    // Persist to ~/.deepcode/settings.json so the choice survives restart.
+    try {
+      const current = (await loadSettingsFile()) as Record<string, unknown>;
+      await saveSettingsFile({ ...current, effortLevel: next });
+    } catch (err) {
+      console.warn('Failed to persist effort:', err);
+    }
+  }
 
   // Subscribe to agent events for the lifetime of this view
   useEffect(() => {
@@ -167,6 +207,7 @@ export function ReplScreen(): JSX.Element {
       const r = await window.deepcode.agent.start({
         sessionId: 'default',
         userMessage: text,
+        effort,
       });
       setActiveTurnId(r.turnId);
     } catch (err) {
@@ -245,6 +286,25 @@ export function ReplScreen(): JSX.Element {
         </div>
       )}
       <form onSubmit={handleSubmit} className="border-t border-border p-3">
+        <div className="mb-2 flex items-center gap-2 text-xs text-muted">
+          <label htmlFor="effort-select">Effort:</label>
+          <select
+            id="effort-select"
+            value={effort}
+            onChange={(e) => void handleEffortChange(e.target.value as Effort)}
+            disabled={busy}
+            className="rounded border border-border bg-bg px-2 py-1 text-fg outline-none focus:border-accent"
+          >
+            {EFFORTS.map((tier) => (
+              <option key={tier} value={tier}>
+                {tier} — {EFFORT_LABELS[tier]}
+              </option>
+            ))}
+          </select>
+          <span className="text-muted">
+            controls max tokens + temperature for each turn
+          </span>
+        </div>
         <div className="flex gap-2">
           <input
             type="text"

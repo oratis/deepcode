@@ -68,6 +68,9 @@ export interface DeepCodeAPI {
       userMessage: string;
       mode?: string;
       model?: string;
+      /** 'low' | 'medium' | 'high' | 'xhigh' | 'max' — controls
+       *  maxTokens + temperature. Defaults to 'medium'. */
+      effort?: string;
       allowedTools?: string[];
     }) => Promise<{ turnId: string }>;
     abort: (args: { turnId: string }) => Promise<boolean>;

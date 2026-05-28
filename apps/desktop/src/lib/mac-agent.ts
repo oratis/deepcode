@@ -12,9 +12,13 @@
 // avoid pulling BUILTIN_TOOLS / SessionManager / etc. at module-load time.
 // The renderer can't link against node:fs / node:child_process.
 import { runAgent } from '@deepcode/core/dist/agent.js';
-import { DeepSeekProvider } from '@deepcode/core/dist/providers/deepseek.js';
+import {
+  DeepSeekProvider,
+  EFFORT_PARAMS,
+} from '@deepcode/core/dist/providers/deepseek.js';
 import type {
   AgentEvent,
+  Effort,
   Mode,
   ToolHandler,
 } from '@deepcode/core/dist/types.js';
@@ -76,6 +80,8 @@ export interface StartTurnArgs {
   userMessage: string;
   model?: string;
   mode?: Mode;
+  /** Effort tier — controls maxTokens + temperature. Default 'medium'. */
+  effort?: Effort;
   onEvent: (e: AgentEvent) => void;
   onDone: (reason: 'end_turn' | 'max_turns' | 'aborted' | 'error') => void;
   /** Called when the agent needs user approval for a tool call. Resolves to:
@@ -108,6 +114,7 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
   // Run the agent loop in the background. Errors are surfaced via onEvent.
   (async () => {
     try {
+      const effortParams = EFFORT_PARAMS[args.effort ?? 'medium'];
       const result = await runAgent({
         provider: prov,
         tools,
@@ -115,6 +122,8 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
         userMessage: args.userMessage,
         history,
         model: args.model ?? 'deepseek-chat',
+        maxTokens: effortParams.maxTokens,
+        temperature: effortParams.temperature,
         cwd: '/', // Renderer doesn't know real cwd; tools accept absolute paths
         signal: abort.signal,
         mode: args.mode,

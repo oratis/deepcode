@@ -68,6 +68,31 @@ const VALID_MODES: Mode[] = [
 ];
 const VALID_EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
+/**
+ * Resolve the effective effort level from all precedence layers.
+ * Order (high → low): cli flag → DEEPCODE_EFFORT_LEVEL env → settings → default.
+ * Spec: docs/DEVELOPMENT_PLAN.md §3.13c.
+ *
+ * Returns `'medium'` if nothing produces a valid value.
+ */
+export function resolveEffort(args: {
+  cliFlag?: string;
+  envVar?: string;
+  settingsLevel?: string;
+}): Effort {
+  const candidates: Array<string | undefined> = [
+    args.cliFlag,
+    args.envVar?.trim(),
+    args.settingsLevel,
+  ];
+  for (const c of candidates) {
+    if (c && (VALID_EFFORTS as string[]).includes(c)) {
+      return c as Effort;
+    }
+  }
+  return 'medium';
+}
+
 export function parseArgs(argv: string[]): ParsedArgs {
   const out: ParsedArgs = {
     showHelp: false,

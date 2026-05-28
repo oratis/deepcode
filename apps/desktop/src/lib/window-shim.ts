@@ -102,7 +102,7 @@ export function installTauriShim(): void {
       },
     },
     agent: {
-      async start({ userMessage, model, mode }) {
+      async start({ userMessage, model, mode, effort }) {
         // Pre-allocate turn ID so onEvent callbacks can reference it
         // without waiting for the promise to resolve.
         let pendingTurnId = `pending-${Date.now()}`;
@@ -110,6 +110,13 @@ export function installTauriShim(): void {
           userMessage,
           model,
           mode: mode as Mode | undefined,
+          effort: effort as
+            | 'low'
+            | 'medium'
+            | 'high'
+            | 'xhigh'
+            | 'max'
+            | undefined,
           onEvent: (e: AgentEvent) =>
             emitEvent({ kind: 'event', turnId: pendingTurnId, ...e }),
           onDone: (reason) =>

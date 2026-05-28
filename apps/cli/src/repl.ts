@@ -38,6 +38,7 @@ import {
 import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
 import { CommandRegistry, type SessionContext } from './commands.js';
+import { resolveEffort } from './parse-args.js';
 
 export interface ReplOpts {
   input: Readable;
@@ -89,7 +90,14 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
 
   const model = opts.model ?? settings.model ?? 'deepseek-chat';
   const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
-  const effort = opts.effort ?? settings.effortLevel ?? 'medium';
+  // Precedence: --effort flag → DEEPCODE_EFFORT_LEVEL env → settings.effortLevel → default.
+  // Spec: docs/DEVELOPMENT_PLAN.md §3.13c. (/effort runtime switch and skill
+  // frontmatter override happen later in the loop, not at construction time.)
+  const effort = resolveEffort({
+    cliFlag: opts.effort,
+    envVar: process.env.DEEPCODE_EFFORT_LEVEL,
+    settingsLevel: settings.effortLevel,
+  });
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
 
   const sessions = new SessionManager();
