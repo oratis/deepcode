@@ -7,8 +7,11 @@ import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatche
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
-import { buildSystemReminders, type ReminderType } from './reminders/index.js';
-import { SessionManager } from './sessions/index.js';
+// NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
+// build (Tauri renderer) that doesn't use them avoids pulling node:fs at
+// module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
+import type { ReminderType } from './reminders/index.js';
+import type { SessionManager } from './sessions/index.js';
 import type { ToolRegistry } from './tools/registry.js';
 import type {
   AgentEvent,
@@ -105,6 +108,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     let userText = opts.userMessage;
     if (opts.systemReminders !== false) {
       try {
+        // Lazy-load with @vite-ignore so bundlers skip this module — the
+        // renderer passes systemReminders:false to bypass it entirely, and
+        // a static import here would drag node:fs into the browser bundle.
+        const remindersMod = /* @vite-ignore */ './reminders/index.js';
+        const { buildSystemReminders } = (await import(remindersMod)) as typeof import('./reminders/index.js');
         const block = await buildSystemReminders(
           {
             cwd: opts.cwd,

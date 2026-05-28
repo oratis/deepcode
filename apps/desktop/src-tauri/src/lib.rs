@@ -12,11 +12,13 @@
 mod commands;
 mod credentials;
 mod settings;
+mod tools;
 
 use commands::{
     cli_path, get_app_info, get_settings_path, list_sessions, load_settings_file, open_url,
     read_credentials, save_credentials, save_settings_file,
 };
+use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +39,12 @@ pub fn run() {
             list_sessions,
             cli_path,
             open_url,
+            tool_read,
+            tool_write,
+            tool_edit,
+            tool_bash,
+            tool_glob,
+            tool_grep,
         ])
         .setup(|app| {
             // macOS: hide window menu items we don't use.
