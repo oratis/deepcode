@@ -5,102 +5,117 @@
 **Claude Code 的 DeepSeek 版** —— 完整复刻 Claude Code 全部能力，底层 LLM 切换到 **DeepSeek**
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Status](https://img.shields.io/badge/status-pre--alpha-orange.svg)](docs/DEVELOPMENT_PLAN.md)
+[![Tests](https://img.shields.io/badge/tests-549%20passing-brightgreen.svg)](.github/workflows/ci.yml)
+[![v1 scope](https://img.shields.io/badge/v1%20scope-~98%25-brightgreen.svg)](MORNING_REPORT.md)
 
 </div>
 
 ---
 
-> **当前状态**：📐 **设计阶段（M0）**。开发方案 v0.5 与视觉设计 v0.4 已锁定，工程实现尚未开始。  
-> 不要把这个 repo 当作可用产品 —— 它现在只是设计文档与 mockup。
-
 ## 这是什么
 
-如果你在用 **Claude Code**（Anthropic 的 AI 编程 CLI / 桌面客户端）但希望底层模型用 **DeepSeek** 而不是 Claude，DeepCode 就是为你做的。
+如果你在用 **Claude Code** 但希望底层模型用 **DeepSeek** 而不是 Claude，DeepCode 就是为你做的。
 
-我们的目标是：
+- ✅ **完整对齐** Claude Code 的全部能力：工具调用 / MCP / 子代理 / hooks / skills / plugins / sandbox / checkpointing / 输出风格 / 5 档 effort levels
+- ✅ **四种形态**：Node.js CLI · Mac 客户端 · VS Code 扩展 · LSP bridge (Neovim/Emacs/Sublime)
+- ✅ **零迁移成本**：settings.json / hooks / MCP servers / skills / agents 与 Claude Code 1:1 对齐。见 [docs/MIGRATION_FROM_CLAUDE_CODE.md](docs/MIGRATION_FROM_CLAUDE_CODE.md)
+- ✅ **同安全保证**：sandbox-exec (macOS) + bwrap (Linux) + ed25519 marketplace signatures + DNS proxy + pipeline analysis ([docs/security-model.md](docs/security-model.md))
 
-- ✅ **完整复刻** Claude Code 的全部能力 —— 工具调用 / MCP / 子代理 / hooks / skills / plugins / harness / sandbox / checkpointing / 输出风格 / effort levels
-- ✅ **两种形态**：Node.js CLI + Mac 客户端（v1.1+ 追加 VS Code + JetBrains 扩展）
-- ✅ **零迁移成本**：settings.json / hooks / MCP servers / 自定义命令格式与 Claude Code 1:1 对齐；用户可直接从 Claude Code 导入配置
-- ✅ **Mac 客户端自动更新**：Claude Code 式 "Relaunch to update vX.Y.Z" 浮层
-- ✅ **GitHub Releases** 作为唯一发布渠道，签名 + 公证 + 三通道（stable / beta / nightly）
-
-## 为什么不做（v1）
-
-诚实声明范围边界：
-
-- ❌ **图像输入**（v1 / v1.1 早期）：DeepSeek 无 vision 模型。等官方出 vision 或决策接 Qwen-VL fallback
-- ❌ **Windows GUI**：CLI 在 WSL2 跑 Linux 版即可；不出 Windows 安装
-- ❌ **Managed/MDM 配置层**：v1 不是企业产品
-- ❌ **多账号 / 多 provider 切换 UI**：架构留扩展点，v1 仅 DeepSeek
-- ❌ **云同步 / 协作 / 远程会话**：DeepCode 是本地工具
-
-完整 WON'T 列表见 `docs/DEVELOPMENT_PLAN.md` §0.2。
-
-## 怎么用（pre-alpha 设计稿，尚不可用）
-
-实际可用后的预期：
+## 快速上手
 
 ```bash
-# 安装 CLI
+# 1. 装 CLI
 npm i -g deepcode-cli
 
-# 首次启动 — 填入 DeepSeek API Key
+# 2. 设 DeepSeek key（首次启动会引导）
 deepcode
 
-# 一次性 headless 模式（CI 用）
-deepcode -p "fix the bug in src/auth.ts"
-
-# 切到 plan mode
-deepcode --mode plan
-
-# 切到 R1 + Deep effort
+# 3. 干活
+deepcode -p "fix the bug in src/auth.ts"   # headless one-shot
+deepcode --mode plan                       # plan mode REPL
 deepcode --model deepseek-reasoner --effort high
 ```
 
-Mac 客户端：拖入 Applications → 首启完成 onboarding（3 步：介绍 / 填 key / 选模型）。
+Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboarding。
 
-详见 `docs/DEVELOPMENT_PLAN.md` §5 CLI 安装路径与全套 flags。
+## 完成度
+
+```
+M0  设计骨架            ████████████████████ 100%
+M1  内核 MVP            ████████████████████ 100%
+M2  CLI MVP             ████████████████████ 100%
+M3  modes/hooks/memory  ████████████████████ 100%
+M3c MCP/compact/etc.    ████████████████████ 100%
+M3c-rest                ████████████████████ 100%
+M3.5 sandbox            ████████████████████ 100%
+M4  skills/agents/style ████████████████████ 100%
+M5  plugins manifest    ████████████████████ 100%
+M5.1 plugin subprocess  ████████████████████ 100%
+M5.2 marketplace        ████████████████████ 100%
+M6  Mac client          ██████████████████░░  90% (UI 11 屏 + IPC 协议完，等装 Electron binary)
+M7  file panel + rewind ████░░░░░░░░░░░░░░░░  20% (UI 骨架；Monaco 等 binary)
+M8  polish              ████████████████████ 100%
+M9  release pipeline    ██████████████████░░  90%
+v1.1  VS Code/JetBrains █████░░░░░░░░░░░░░░░  25% (VS Code 骨架 + LSP 骨架)
+```
+
+**549 个测试通过 · CI ubuntu + macOS 双矩阵绿色**。
+
+详细汇报：[MORNING_REPORT.md](MORNING_REPORT.md)
 
 ## 文档地图
 
-| 文件                                                                         | 内容                                                                                                                                                                    | 必读?  |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)                         | **整体开发方案 v0.5**（1500+ 行，含 §3.x 关键模块、§6 里程碑、§7 风险）                                                                                                 | ✅     |
-| [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html)                           | **视觉设计 v0.4**（11 屏 mockup：onboarding / CLI REPL / Mac 主视图 / composer / 文件面板 / 命令面板 / plan mode / plugins / settings / MCP manager / 自动更新 banner） | ✅     |
-| [docs/design/sandbox-plan-worktree.md](docs/design/sandbox-plan-worktree.md) | sandbox × plan mode × worktree 三者关系矩阵 + 状态机 + 测试场景                                                                                                         | ✅     |
-| [docs/design/plugin-security.md](docs/design/plugin-security.md)             | plugin 安全模型：威胁模型 / sandbox 子进程 / hash pin / 信任 ladder / kill switch                                                                                       | ✅     |
-| [docs/design/effort-levels.md](docs/design/effort-levels.md)                 | effort 5 档到 DeepSeek API 参数映射 + M1 实测计划                                                                                                                       | ✅     |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                                           | 贡献指南 / 开发环境 / commit message 规范 / 测试要求                                                                                                                    | 贡献者 |
+### 用户文档
 
-## 现在的进度
+| 文件 | 内容 |
+| --- | --- |
+| [docs/MIGRATION_FROM_CLAUDE_CODE.md](docs/MIGRATION_FROM_CLAUDE_CODE.md) | 从 Claude Code 5 分钟迁移指南 + 字段映射 |
+| [docs/BEHAVIOR_PARITY.md](docs/BEHAVIOR_PARITY.md) | 与 Claude Code 的逐项行为对比 |
+| [docs/SHIPPING_MAC.md](docs/SHIPPING_MAC.md) | 给 maintainer：Apple Dev ID + 签名 + 公证全流程 |
+| [docs/VOICE_INPUT.md](docs/VOICE_INPUT.md) | 装 whisper.cpp 本地语音输入 |
+| [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md) | 5 分钟 launch 视频逐段录制脚本 |
 
-✅ **M0 · 完成**
+### 设计文档
 
-- [x] 开发方案 v0.5 (15 周 v1 + 4 周 v1.1)
-- [x] 视觉设计 v0.4（11 屏）
-- [x] 3 份必出设计文档（sandbox×plan×worktree / plugin 安全 / effort levels）
-- [x] CONTRIBUTING.md / SECURITY.md
-- [x] README skeleton（本文件）
-- [x] monorepo 骨架（pnpm workspaces / TS project references / Vitest / Prettier / GHA CI）
-- [x] `pnpm install && pnpm typecheck && pnpm build && pnpm test` 全绿
-- [ ] 第一份 BEHAVIOR_PARITY.md 框架（M3 开始填）
+| 文件 | 内容 |
+| --- | --- |
+| [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) | 整体开发方案 v0.5（1500+ 行 / §3 模块 / §6 里程碑） |
+| [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html) | 视觉设计 v0.4（11 屏 mockup） |
+| [docs/security-model.md](docs/security-model.md) | 威胁模型 + 防御层 + 攻击向量测试 + 已知缺口 |
+| [docs/design/sandbox-plan-worktree.md](docs/design/sandbox-plan-worktree.md) | sandbox × plan mode × worktree 关系矩阵 |
+| [docs/design/plugin-security.md](docs/design/plugin-security.md) | plugin 信任 ladder + sandbox 子进程 |
+| [docs/design/effort-levels.md](docs/design/effort-levels.md) | 5 档 effort 到 DeepSeek API 参数映射 |
+| [docs/m1-validation.md](docs/m1-validation.md) | M1 用真 DeepSeek API 验证记录 |
 
-⏸ **M1 · 内核 MVP**（next）：DeepSeekProvider + agent loop + 6 P0 工具 + sessions(jsonl) + 文件快照 + trust dialog 基础。详见 `docs/DEVELOPMENT_PLAN.md` §6 里程碑表。
+## 项目结构
 
-## 命名由来
+```
+packages/
+  core/          # @deepcode/core — agent loop, providers, tools, MCP, sandbox, hooks (UI-agnostic)
+  shared-ui/     # @deepcode/shared-ui — types shared between CLI + Mac client + VS Code
+apps/
+  cli/           # deepcode-cli — Node.js CLI (npm publishable)
+  desktop/       # @deepcode/desktop — Electron Mac client
+  vscode/        # @deepcode/vscode — VS Code extension (v1.1)
+  lsp/           # @deepcode/lsp — LSP bridge for Neovim/Emacs/Sublime (v1.1)
+docs/
+  design/        # internal design docs
+  ...            # user-facing docs (migration, security, shipping)
+scripts/
+  gen-release-notes.ts  # conventional-commit grouped release notes
+```
 
-- **Deep** = DeepSeek 的 Deep + 深度思考的 Deep
+## 命名
+
+- **Deep** = DeepSeek + 深度思考
 - **Code** = 编程
-- Logo：纯白猫头剪影（两尖耳 + 圆头），承载于品牌蓝 (`#4D6BFE`) 渐变方块
+- Logo：白猫剪影（两尖耳 + 圆头）
 
 ## 致谢
 
-- **Anthropic** 的 [Claude Code](https://github.com/anthropics/claude-code) —— 我们的对齐基准
-- **DeepSeek** —— 提供模型与 API
-- **[LISA](https://github.com/oratis/LISA)** —— 内核 agent loop / MCP client / 工具实现的设计蓝本
-- MCP 生态社区 —— Model Context Protocol 协议本身
+- **Anthropic** 的 [Claude Code](https://github.com/anthropics/claude-code) —— 对齐基准
+- **DeepSeek** —— 模型与 API
+- **MCP** 生态 —— Model Context Protocol 协议
 
 ## 许可
 
@@ -110,6 +125,6 @@ Mac 客户端：拖入 Applications → 首启完成 onboarding（3 步：介绍
 
 <div align="center">
 
-📬 [GitHub Issues](https://github.com/oratis/deepcode/issues) · [Discussions](https://github.com/oratis/deepcode/discussions)
+📬 [Issues](https://github.com/oratis/deepcode/issues) · [Discussions](https://github.com/oratis/deepcode/discussions) · [Migration guide](docs/MIGRATION_FROM_CLAUDE_CODE.md)
 
 </div>
