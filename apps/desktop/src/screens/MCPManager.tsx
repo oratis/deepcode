@@ -15,8 +15,14 @@ export function MCPManagerScreen(): JSX.Element {
   const [servers, setServers] = useState<McpServerStatus[] | null>(null);
 
   useEffect(() => {
-    // Real impl: window.deepcode.mcp.list() — wired in M6-rest IPC PR.
-    setServers([]);
+    if (window.deepcode?.mcp?.list) {
+      void window.deepcode.mcp
+        .list()
+        .then((rows) => setServers(rows as McpServerStatus[]))
+        .catch(() => setServers([]));
+    } else {
+      setServers([]);
+    }
   }, []);
 
   if (servers === null) {
