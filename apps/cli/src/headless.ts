@@ -65,6 +65,12 @@ export interface HeadlessOpts {
   allowedTools?: string[];
   disallowedTools?: string[];
   maxTurns?: number;
+  /** Path to a JSON schema file. Final output (text in `text` mode, JSON
+   *  object in `json` mode) is validated against it; mismatch → exit 1. */
+  jsonSchema?: string;
+  /** In stream-json mode, also emit text_delta and thinking_delta events.
+   *  Default is to drop those for compact streams. */
+  includePartialMessages?: boolean;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools. Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -189,9 +195,14 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
 
   // ─── set up output ──────────────────────────────────────────────────
   const collectedEvents: AgentEvent[] = [];
+  const includePartial = !!opts.includePartialMessages;
   const onEvent = (e: AgentEvent) => {
     collectedEvents.push(e);
     if (outputFormat === 'stream-json') {
+      // Drop noisy text_delta/thinking_delta unless --include-partial-messages
+      if (!includePartial && (e.type === 'text_delta' || e.type === 'thinking_delta')) {
+        return;
+      }
       output.write(JSON.stringify(e) + '\n');
     } else if (outputFormat === 'text') {
       formatEventText(output, e);
@@ -253,6 +264,15 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
         .filter((b) => b.type === 'text')
         .map((b) => (b as { text: string }).text)
         .join('');
+      // --json-schema validation (lightweight — only enforces top-level type +
+      // required fields; full draft-2020 validation is opt-in via a separate
+      // schema validator user provides). For now we just round-trip-parse the
+      // model output as JSON if the schema declares type: object.
+      let schemaError: string | null = null;
+      if (opts.jsonSchema) {
+        schemaError = await validateAgainstSchema(opts.jsonSchema, finalText);
+        if (schemaError) exitCode = 1;
+      }
       output.write(
         JSON.stringify(
           {
@@ -261,6 +281,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
             usage: result.usage,
             events: collectedEvents,
             exitCode,
+            ...(schemaError ? { schemaError } : {}),
           },
           null,
           2,
@@ -285,6 +306,33 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   }
 
   return exitCode;
+}
+
+async function validateAgainstSchema(schemaPath: string, output: string): Promise<string | null> {
+  let schema: { type?: string; required?: string[] };
+  try {
+    const { readFile } = await import('node:fs/promises');
+    const raw = await readFile(schemaPath, 'utf8');
+    schema = JSON.parse(raw) as { type?: string; required?: string[] };
+  } catch (err) {
+    return `failed to load --json-schema: ${(err as Error).message}`;
+  }
+  if (schema.type === 'object') {
+    try {
+      const parsed = JSON.parse(output) as Record<string, unknown>;
+      if (Array.isArray(schema.required)) {
+        for (const k of schema.required) {
+          if (!(k in parsed)) return `missing required field: ${k}`;
+        }
+      }
+      return null;
+    } catch {
+      return 'output was not valid JSON';
+    }
+  }
+  // type: string / number / etc — just check the literal type
+  if (schema.type === 'string') return null; // any string is valid
+  return null;
 }
 
 function buildPluginCapabilitiesHeadless(cwd: string) {

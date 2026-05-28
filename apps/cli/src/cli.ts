@@ -56,6 +56,8 @@ async function main(): Promise<number> {
       allowedTools: args.allowedTools,
       disallowedTools: args.disallowedTools,
       maxTurns: args.maxTurns,
+      jsonSchema: args.jsonSchema,
+      includePartialMessages: args.includePartialMessages,
     });
   }
 
