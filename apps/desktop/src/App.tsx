@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Nav, type ScreenName } from './components/Nav.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
+import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
 import { AboutScreen } from './screens/About.js';
 import { ChatScreen } from './screens/Chat.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
@@ -26,8 +27,15 @@ export function App(): JSX.Element {
   useEffect(() => {
     void window.deepcode.version().then(setVersion);
     void window.deepcode.creds.load().then((c) => setHasKey(c.hasKey));
-    const off = window.deepcode.onUpdateDownloaded((info) => setUpdate(info));
-    return () => off();
+    const offShim = window.deepcode.onUpdateDownloaded((info) => setUpdate(info));
+    // Also subscribe to the real Tauri updater (so even if the shim
+    // surface drifts, the banner still fires).
+    const offReal = onUpdateDownloaded((info) => setUpdate(info));
+    startUpdaterPolling();
+    return () => {
+      offShim();
+      offReal();
+    };
   }, []);
 
   if (hasKey === null) {
