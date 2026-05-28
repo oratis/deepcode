@@ -35,6 +35,12 @@ export interface SessionContext {
   }>;
   /** Plugin discover/wire warnings (hash drift, spawn failure). */
   pluginWarnings?: string[];
+  /**
+   * Optional initFlow callback — wired by REPL bootstrap so the /init slash
+   * command can drive a multi-phase interactive flow (explore → propose →
+   * approve → write). Returns the path written, or null if user cancelled.
+   */
+  initFlow?: () => Promise<string | null>;
 }
 
 export interface SlashCommand {
@@ -223,12 +229,17 @@ export const ResumeCommand: SlashCommand = {
 
 export const InitCommand: SlashCommand = {
   name: '/init',
-  description: 'Write a starter DEEPCODE.md (M3 makes this fully interactive).',
-  run(_args, ctx) {
-    return [
-      `Will write a starter DEEPCODE.md at ${ctx.cwd}/DEEPCODE.md.`,
-      `(M2 stub — full multi-phase interactive flow lands in M3 per DEVELOPMENT_PLAN.md §3.6.)`,
-    ];
+  description: 'Interactive: explore project, propose AGENTS.md, ask user to approve.',
+  async run(_args, ctx) {
+    if (!ctx.initFlow) {
+      return [
+        'Init flow is only available in the interactive REPL.',
+        'Run `deepcode` (no args) then type /init.',
+      ];
+    }
+    const path = await ctx.initFlow();
+    if (!path) return ['Cancelled — no file written.'];
+    return [`✓ Wrote ${path}.`];
   },
 };
 

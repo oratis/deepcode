@@ -224,6 +224,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       ...(pluginsWire?.hashMismatches ?? []),
       ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
     ],
+    initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
   };
 
   output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
@@ -288,6 +289,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       permissions: settings.permissions,
       hooks,
       autoCompact: { contextWindow: 128_000, threshold: 0.8 },
+      autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
@@ -373,6 +375,120 @@ function formatToolInput(input: Record<string, unknown>): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+/**
+ * Multi-phase /init flow — scans the project, asks the LLM to draft an
+ * AGENTS.md, shows the draft, and asks the user to approve. Returns the
+ * path written, or null if the user said no.
+ */
+async function runInitFlow(args: {
+  cwd: string;
+  output: Writable;
+  rl: { question: (q: string) => Promise<string> };
+  provider: DeepSeekProvider;
+  model: string;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<string | null> {
+  const { cwd, output, rl, provider, model, maxTokens, temperature } = args;
+  const path = await import('node:path');
+  const fsp = await import('node:fs/promises');
+  const target = path.join(cwd, 'AGENTS.md');
+
+  // Phase 1: scan
+  output.write('  ▎ /init — Phase 1/3: scanning project...\n');
+  const summary = await buildProjectSummary(cwd);
+
+  // Phase 2: propose
+  output.write('  ▎ /init — Phase 2/3: asking model to draft AGENTS.md...\n');
+  const draft = await draftAgentsMd(provider, model, summary, maxTokens, temperature);
+
+  // Phase 3: approve
+  output.write('\n  ▎ Proposed AGENTS.md:\n');
+  output.write('  ┌─────────────────────────────────────────\n');
+  for (const line of draft.split('\n').slice(0, 40)) {
+    output.write(`  │ ${line}\n`);
+  }
+  if (draft.split('\n').length > 40) output.write('  │ ... (truncated)\n');
+  output.write('  └─────────────────────────────────────────\n');
+
+  let exists = false;
+  try {
+    await fsp.access(target);
+    exists = true;
+  } catch {
+    /* none */
+  }
+  const verb = exists ? 'Overwrite' : 'Write';
+  const ans = (await rl.question(`     ${verb} ${target}? [y]es / [n]o: `)).trim().toLowerCase();
+  if (ans !== 'y' && ans !== 'yes') return null;
+  await fsp.writeFile(target, draft, 'utf8');
+  return target;
+}
+
+async function buildProjectSummary(cwd: string): Promise<string> {
+  const path = await import('node:path');
+  const fsp = await import('node:fs/promises');
+  const parts: string[] = [];
+  // Top-level listing
+  try {
+    const entries = await fsp.readdir(cwd, { withFileTypes: true });
+    parts.push('Top-level entries:');
+    for (const e of entries.slice(0, 40)) {
+      parts.push(`  ${e.isDirectory() ? 'd' : '-'} ${e.name}`);
+    }
+  } catch {
+    /* ignore */
+  }
+  // Pick up to 3 well-known files
+  for (const f of ['package.json', 'README.md', 'pyproject.toml', 'Cargo.toml', 'go.mod']) {
+    try {
+      const raw = await fsp.readFile(path.join(cwd, f), 'utf8');
+      parts.push(`\n=== ${f} (first 30 lines) ===`);
+      parts.push(raw.split('\n').slice(0, 30).join('\n'));
+    } catch {
+      /* not present */
+    }
+  }
+  return parts.join('\n');
+}
+
+async function draftAgentsMd(
+  provider: DeepSeekProvider,
+  model: string,
+  summary: string,
+  maxTokens?: number,
+  temperature?: number,
+): Promise<string> {
+  const sys = `You are drafting an AGENTS.md (the per-project agent-instructions file). Output ONLY the Markdown — no preface, no fences. Sections to include:
+
+1. Project name and one-line description
+2. Tech stack
+3. How to install / build / test
+4. Code style conventions (if discernible)
+5. Where the entry points / important files live
+6. Any "do/don't" notes specific to this project
+
+Keep it under 80 lines.`;
+  const r = await provider.runTurn({
+    model,
+    systemPrompt: sys,
+    tools: [],
+    messages: [
+      {
+        role: 'user',
+        content: [{ type: 'text', text: `Project scan:\n${summary}` }],
+      },
+    ],
+    maxTokens: maxTokens ?? 2048,
+    temperature: temperature ?? 0.3,
+  });
+  const text = r.content
+    .filter((c) => c.type === 'text')
+    .map((c) => (c as { text: string }).text)
+    .join('');
+  return text.trim() || '# AGENTS.md\n\n(The model returned an empty draft.)\n';
 }
 
 /**

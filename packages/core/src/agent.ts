@@ -53,6 +53,8 @@ export interface RunAgentOptions {
   permissions?: PermissionRules;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
+  /** AutoModeConfig from settings.autoMode — used when mode === 'auto'. */
+  autoMode?: import('./config/types.js').AutoModeConfig;
   /** M3.5: passed through to Bash tool ctx for sandbox wrapping. */
   sandboxConfig?: import('./config/types.js').SandboxConfig;
   /** M3c: auto-compact when cumulative tokens approach contextWindow * threshold.
@@ -239,6 +241,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           rules: opts.permissions,
           hooks: opts.hooks,
           cwd: opts.cwd,
+          autoMode: opts.autoMode,
+          autoModeProvider: opts.provider,
         });
         let allowed = verdict.decision === 'allow';
         if (verdict.decision === 'ask' && opts.approval) {

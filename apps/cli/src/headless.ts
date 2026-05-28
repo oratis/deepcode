@@ -239,6 +239,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       permissions: settings.permissions,
       hooks,
       autoCompact: { contextWindow: 128_000, threshold: 0.8 },
+      autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
       // In headless mode there's no human to ask: auto-deny anything that
       // would normally need approval. Users wanting auto-yes should pass

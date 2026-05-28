@@ -3,15 +3,17 @@
 // Spec: docs/design/sandbox-plan-worktree.md §5.1
 //       docs/DEVELOPMENT_PLAN.md §3.8 / §3.15
 
+import { classifyAutoMode, type AutoVerdict } from '../auto-mode/index.js';
 import { evaluateMode, type ModeRequest, type ModeVerdict } from '../modes/index.js';
 import {
   evaluatePermission,
   type PermissionRequest,
   type PermissionVerdict,
 } from '../config/permissions.js';
-import type { PermissionRules } from '../config/types.js';
+import type { AutoModeConfig, PermissionRules } from '../config/types.js';
 import type { Mode } from '../types.js';
 import type { HookDispatcher, HookResult } from '../hooks/index.js';
+import type { Provider } from '../providers/types.js';
 
 export interface DispatchRequest {
   tool: string;
@@ -20,6 +22,10 @@ export interface DispatchRequest {
   rules?: PermissionRules;
   hooks?: HookDispatcher;
   cwd: string;
+  /** AutoModeConfig from settings — required when mode === 'auto'. */
+  autoMode?: AutoModeConfig;
+  /** Provider used for the LLM classifier in auto mode. */
+  autoModeProvider?: Provider;
 }
 
 export interface DispatchVerdict {
@@ -69,6 +75,37 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
       modeVerdict,
       permissionVerdict: permVerdict,
     };
+  }
+
+  // Auto mode: when no static rule decided + no explicit permission allow,
+  // invoke the LLM classifier. The classifier's verdict overrides the mode's
+  // default of 'ask'.
+  if (req.mode === 'auto' && permVerdict === 'no-match') {
+    const autoVerdict: AutoVerdict = await classifyAutoMode({
+      toolName: req.tool,
+      toolInput: req.input,
+      config: req.autoMode,
+      provider: req.autoModeProvider,
+    });
+    if (autoVerdict === 'deny') {
+      return {
+        decision: 'deny',
+        source: 'mode',
+        reason: `auto-mode classifier rejected ${req.tool}.`,
+        modeVerdict: 'deny',
+        permissionVerdict: permVerdict,
+      };
+    }
+    if (autoVerdict === 'allow') {
+      return {
+        decision: 'allow',
+        source: 'mode',
+        reason: `auto-mode classifier approved ${req.tool}.`,
+        modeVerdict: 'allow',
+        permissionVerdict: permVerdict,
+      };
+    }
+    // 'ask' falls through to the normal hook + return path below
   }
 
   // Step 3: PreToolUse hook (only if mode didn't outright deny)
