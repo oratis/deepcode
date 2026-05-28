@@ -29,8 +29,17 @@ export {
   BashTool,
   GrepTool,
   GlobTool,
+  TodoWriteTool,
+  WebFetchTool,
+  WebSearchTool,
+  readTodos,
+  TODO_FILE,
+  parseDuckDuckGoHtml,
   ToolRegistry,
   BUILTIN_TOOLS,
+  type TodoItem,
+  type TodoStatus,
+  type SearchHit,
 } from './tools/index.js';
 
 // Sessions

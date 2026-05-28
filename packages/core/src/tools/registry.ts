@@ -7,9 +7,16 @@ import { EditTool } from './edit.js';
 import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 import { ReadTool } from './read.js';
+import { TodoWriteTool } from './todo.js';
+import { WebFetchTool } from './web-fetch.js';
+import { WebSearchTool } from './web-search.js';
 import { WriteTool } from './write.js';
 
-/** The 6 P0 tools shipped in M1. */
+/**
+ * Built-in tools shipped by default.
+ *   · 6 P0 tools from M1 (Read/Write/Edit/Bash/Grep/Glob)
+ *   · 3 M3c-rest tools (TodoWrite/WebFetch/WebSearch)
+ */
 export const BUILTIN_TOOLS: ToolHandler[] = [
   ReadTool,
   WriteTool,
@@ -17,6 +24,9 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   BashTool,
   GrepTool,
   GlobTool,
+  TodoWriteTool,
+  WebFetchTool,
+  WebSearchTool,
 ];
 
 export class ToolRegistry {
