@@ -163,8 +163,8 @@ Specific deviations:
 | `--bare`                                                                     | 🔄 (parsed, semantics deferred) |
 | `--settings` / `--agents` / `--mcp-config` / `--plugin-dir` / `--plugin-url` | 🔄 (parsed only)                |
 | `--no-plugins` / `--strict`                                                  | 🔄 (parsed only)                |
-| `-p` headless                                                                | 🔄 M8                           |
-| `--output-format` / `--json-schema` / `--include-partial-messages`           | 🔄 M8                           |
+| `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes |
+| `--output-format` / `--json-schema` / `--include-partial-messages`           | 🟡 output-format ✅; json-schema + include-partial-messages parsed only |
 | `--resume <id>` / `--continue` / `--fork-session`                            | 🔄 M3c+                         |
 
 ## What DeepCode adds that Claude Code doesn't have (yet)

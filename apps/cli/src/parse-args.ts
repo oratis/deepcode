@@ -262,10 +262,12 @@ TOOLS
   --disallowedTools "Tool,..."          Blacklist
 
 HEADLESS / CI (-p mode only)
-  --output-format text|json|stream-json
+  --output-format text|json|stream-json Default text. json = single object at exit; stream-json = NDJSON events.
   --json-schema <path>                  Constrain final output to a JSON schema
   --include-partial-messages            Stream partial deltas
   --verbose                             Print LLM/tool call traces
+
+Exit codes (headless): 0 ok · 1 generic · 2 bad-input · 3 api/auth · 4 max-turns · 5 aborted
 
 OVERRIDES
   --settings <path>                     Override settings.json discovery
