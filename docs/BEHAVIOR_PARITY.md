@@ -24,7 +24,8 @@ Legend: `✅` matches · `🟡` matches with caveats · `🔄` deferred · `⚠�
 | `/init`               | ✓           | ✓ (stub)                   | 🔄 — multi-phase interactive flow deferred to M3c-ext                                      |
 | `/mcp`                | ✓           | ✓                          | ✅                                                                                         |
 | `/add-dir`            | ✓           | ✓ (records intent)         | 🟡 — M3 will enforce                                                                       |
-| `/todos`              | ✓           | ✓ (stub)                   | 🔄 — wired with TodoWrite tool (M3+)                                                       |
+| `/todos`              | ✓           | ✓                          | ✅ — reads `<sessionDir>/todos.json` written by TodoWrite tool                              |
+| `/plugins`            | ✓           | ✓                          | ✅ — lists wired plugins + contributed hook events + warnings (M5.2)                        |
 | `/compact`            | ✓           | ✓ auto-trigger             | 🟡 — manual `/compact` slash command not exposed yet (auto works via agent loop)           |
 | `/btw`                | ✓           | ✗                          | 🔄                                                                                         |
 | `/recap`              | ✓           | ✗                          | 🔄                                                                                         |

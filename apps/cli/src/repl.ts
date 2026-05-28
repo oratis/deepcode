@@ -2,12 +2,16 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §5
 
 import {
+  BashTool,
   CredentialsStore,
   DeepSeekProvider,
   EFFORT_PARAMS,
   HookDispatcher,
+  ReadTool,
   SessionManager,
   ToolRegistry,
+  WebFetchTool,
+  WriteTool,
   applyStyle,
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
@@ -20,12 +24,14 @@ import {
   makeSkillTool,
   resolveCredentials,
   runAgent,
+  wirePlugins,
   type DeepCodeSettings,
   type Effort,
   type McpClientHandle,
   type Mode,
   type AgentEvent,
   type StoredMessage,
+  type WireResult,
 } from '@deepcode/core';
 import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
@@ -182,6 +188,20 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
   });
 
+  // M5.2: wire installed plugins (discover + spawn + merge contributed hooks)
+  let pluginsWire: WireResult | null = null;
+  try {
+    pluginsWire = await wirePlugins({
+      home: opts.home,
+      disabled: settings.disabledPlugins,
+      hooks,
+      capabilities: buildPluginCapabilities(cwd),
+      log: (s) => output.write(s + '\n'),
+    });
+  } catch (err) {
+    output.write(`  ⊞ Plugins: wire-up failed — ${(err as Error).message}\n`);
+  }
+
   let history: StoredMessage[] = [];
   const ctx: SessionContext = {
     cwd,
@@ -195,6 +215,15 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
     mcpServers,
     mcpErrors,
+    wiredPlugins: pluginsWire?.plugins.map((p) => ({
+      name: p.plugin.manifest.name,
+      version: p.plugin.manifest.version,
+      contributedHookEvents: p.contributedHookEvents,
+    })),
+    pluginWarnings: [
+      ...(pluginsWire?.hashMismatches ?? []),
+      ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
+    ],
   };
 
   output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
@@ -282,6 +311,8 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   if (mcpServers.length > 0) {
     await closeAllMcpServers(mcpServers);
   }
+  // Shut down plugin subprocesses
+  if (pluginsWire) await pluginsWire.shutdown();
   return 0;
 }
 
@@ -319,6 +350,53 @@ function formatToolInput(input: Record<string, unknown>): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
+}
+
+/**
+ * Build the capability bridge passed to plugin subprocesses (M5.2).
+ *
+ * Each capability invokes the host's existing tool implementation — which
+ * means plugin calls flow through the SAME read/write/exec gates as the
+ * agent. (mode + permissions + sandbox come from the ToolContext we pass in.)
+ *
+ * NOTE: this bridge does NOT carry mode/permissions yet — that's M5.2-ext.
+ * Today the plugin's `bash` calls are unsandboxed because we don't have a
+ * sandboxConfig in ctx here. Callers wanting hardening should set
+ * settings.sandbox.enabled and pass sandboxConfig in a later iteration.
+ */
+function buildPluginCapabilities(cwd: string): {
+  fs_read: (path: string) => Promise<string>;
+  fs_write: (path: string, content: string) => Promise<void>;
+  bash: (cmd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
+  fetch: (url: string, opts?: { method?: string; body?: string }) => Promise<string>;
+} {
+  const ctx = { cwd };
+  return {
+    fs_read: async (path: string) => {
+      const r = await ReadTool.execute({ file_path: path }, ctx);
+      if (r.isError) throw new Error(r.content);
+      return r.content;
+    },
+    fs_write: async (path: string, content: string) => {
+      const r = await WriteTool.execute({ file_path: path, content }, ctx);
+      if (r.isError) throw new Error(r.content);
+    },
+    bash: async (cmd: string) => {
+      const r = await BashTool.execute({ command: cmd }, ctx);
+      const d = (r.data ?? {}) as { stderr?: string; exitCode?: number };
+      return {
+        stdout: r.content ?? '',
+        stderr: d.stderr ?? '',
+        exitCode: d.exitCode ?? (r.isError ? 1 : 0),
+      };
+    },
+    fetch: async (url: string, fopts?: { method?: string; body?: string }) => {
+      void fopts; // method/body deferred — WebFetch is GET-only
+      const r = await WebFetchTool.execute({ url }, ctx);
+      if (r.isError) throw new Error(r.content);
+      return r.content;
+    },
+  };
 }
 
 /**

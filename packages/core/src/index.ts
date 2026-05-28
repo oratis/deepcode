@@ -183,7 +183,8 @@ export {
   type ConnectAllResult,
 } from './mcp/index.js';
 
-// Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge)
+// Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge;
+// M5.2 — live registry wireup)
 export {
   installLocal,
   discoverPlugins,
@@ -197,6 +198,8 @@ export {
   spawnAllPlugins,
   shutdownAllPlugins,
   generatePluginToken,
+  wirePlugins,
+  hasInstalledPlugins,
   type PluginManifest,
   type InstalledPlugin,
   type PluginTrust,
@@ -207,6 +210,10 @@ export {
   type RpcResponse,
   type PluginSubprocessOpts,
   type SpawnAllOpts,
+  type WirePluginsOpts,
+  type WiredPlugin,
+  type WireResult,
+  type PluginCapabilityBridge,
 } from './plugins/index.js';
 
 // Sub-agents (M4 — .deepcode/agents/*.md)

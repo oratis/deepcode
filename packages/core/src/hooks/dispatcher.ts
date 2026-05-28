@@ -18,7 +18,7 @@ export interface HookDispatcherOpts {
 }
 
 export class HookDispatcher {
-  private readonly hooks: Hooks;
+  private hooks: Hooks;
   private readonly disabled: boolean;
   private readonly defaultTimeoutMs: number;
   private readonly allowedHttpHookUrls?: string[];
@@ -28,6 +28,20 @@ export class HookDispatcher {
     this.disabled = !!opts.disableAllHooks;
     this.defaultTimeoutMs = opts.defaultTimeoutMs ?? 60_000;
     this.allowedHttpHookUrls = opts.allowedHttpHookUrls;
+  }
+
+  /**
+   * Merge additional hook matchers into the dispatcher (e.g. from plugins).
+   * Matchers under the same event name are appended in order.
+   */
+  mergeHooks(extra: Hooks): void {
+    for (const [event, matchers] of Object.entries(extra) as Array<
+      [keyof Hooks, HookMatcher[] | undefined]
+    >) {
+      if (!matchers || matchers.length === 0) continue;
+      const existing = this.hooks[event] ?? [];
+      this.hooks[event] = [...existing, ...matchers];
+    }
   }
 
   /**

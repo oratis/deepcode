@@ -102,6 +102,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     cwd: opts.cwd,
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
+    sessionDir: opts.session
+      ? `${opts.session.manager.root}/${opts.session.id}`
+      : undefined,
   };
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;

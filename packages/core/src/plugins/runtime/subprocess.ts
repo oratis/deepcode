@@ -68,6 +68,16 @@ export class PluginSubprocess {
     this.opts = opts;
   }
 
+  /** Read-only accessor for the plugin metadata this subprocess wraps. */
+  get plugin(): InstalledPlugin {
+    return this.opts.plugin;
+  }
+
+  /** Whether the child process is currently running. */
+  get isAlive(): boolean {
+    return this.alive;
+  }
+
   async start(): Promise<void> {
     const entry = resolve(
       this.opts.plugin.path,
