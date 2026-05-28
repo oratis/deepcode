@@ -38,7 +38,12 @@ pnpm --filter @deepcode/desktop tauri build --target "$TARGET"
 # Locate artifacts
 APP_PATH="apps/desktop/src-tauri/target/$TARGET/release/bundle/macos/DeepCode.app"
 DMG_DIR="apps/desktop/src-tauri/target/$TARGET/release/bundle/dmg"
-DMG_PATH="$(ls -t "$DMG_DIR"/*.dmg 2>/dev/null | head -1 || true)"
+# Tauri's bundle target is just "app"; we build the DMG ourselves in step 7
+# via make-dmg.sh (gives us iconSize control + centered layout). Compute
+# the expected output path here so step 7 can write to it.
+mkdir -p "$DMG_DIR"
+DMG_VER="$(grep '"version"' apps/desktop/src-tauri/tauri.conf.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')"
+DMG_PATH="$DMG_DIR/DeepCode_${DMG_VER}_aarch64.dmg"
 
 if [ ! -d "$APP_PATH" ]; then
   echo "ERROR: $APP_PATH not found — build failed?"
@@ -81,14 +86,13 @@ xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$PROFILE" --wait
 echo "==> Stapling notarization ticket to $APP_PATH ..."
 xcrun stapler staple "$APP_PATH"
 
-# ----- 7. Rebuild the .dmg with the NOW-signed-and-stapled .app -----
-# IMPORTANT: Tauri's bundle_dmg.sh ran in step 1 and baked the UNSIGNED .app
-# into the DMG. Just signing the DMG container doesn't fix that — Apple
-# notarization unpacks the DMG and re-verifies the .app inside. So we
-# rebuild the DMG from scratch with the now-signed .app, plus apply the
-# pretty Finder layout (700x420 window, 128px icons, centered positions).
-if [ -n "$DMG_PATH" ] && [ -f "$DMG_PATH" ]; then
-  echo "==> Rebuilding DMG with signed+stapled .app + Finder layout ..."
+# ----- 7. Build the .dmg fresh with the signed+stapled .app -----
+# Tauri's bundle targets are configured to skip "dmg" (bundle_dmg.sh has
+# been flaky). We always build the DMG ourselves via make-dmg.sh — that
+# gives us iconSize control + centered Finder layout + writes to a
+# predictable path.
+if [ -n "$DMG_PATH" ]; then
+  echo "==> Building DMG with signed+stapled .app + pretty Finder layout ..."
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   bash "$SCRIPT_DIR/make-dmg.sh" "$APP_PATH" "$DMG_PATH" "DeepCode"
 
