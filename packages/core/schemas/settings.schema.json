@@ -1,0 +1,199 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://deepcode.dev/schemas/settings.schema.json",
+  "title": "DeepCode settings.json",
+  "description": "Per-user/project/local config. Three precedence layers: user (~/.deepcode/settings.json) < project (.deepcode/settings.json) < local (.deepcode/settings.local.json, gitignored).",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "model": {
+      "type": "string",
+      "enum": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"],
+      "description": "Default model. deepseek-chat = fast general; deepseek-reasoner = multi-step reasoning."
+    },
+    "baseURL": {
+      "type": "string",
+      "format": "uri",
+      "description": "DeepSeek API base URL. Default: https://api.deepseek.com/v1."
+    },
+    "apiKeyHelper": {
+      "type": "string",
+      "description": "Path to an executable that prints the API key on stdout. Overrides credentials.json."
+    },
+    "effortLevel": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "xhigh", "max"],
+      "description": "Default effort tier — affects maxTokens + temperature + multi-turn budget."
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultMode": {
+          "type": "string",
+          "enum": ["default", "acceptEdits", "plan", "auto", "dontAsk", "bypassPermissions"]
+        },
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "ask": { "type": "array", "items": { "type": "string" } },
+        "deny": { "type": "array", "items": { "type": "string" } },
+        "additionalDirectories": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "autoMode": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allow": { "type": "array", "items": { "type": "string" } },
+        "soft_deny": { "type": "array", "items": { "type": "string" } },
+        "hard_deny": { "type": "array", "items": { "type": "string" } },
+        "model": { "type": "string" },
+        "fallback": { "type": "string", "enum": ["ask", "deny"] }
+      }
+    },
+    "sandbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "filesystem": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowWrite": { "type": "array", "items": { "type": "string" } },
+            "denyWrite": { "type": "array", "items": { "type": "string" } },
+            "allowRead": { "type": "array", "items": { "type": "string" } },
+            "denyRead": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "network": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "allowedDomains": { "type": "array", "items": { "type": "string" } },
+            "deniedDomains": { "type": "array", "items": { "type": "string" } },
+            "allowUnixSockets": { "type": "boolean" },
+            "allowLocalBinding": { "type": "boolean" }
+          }
+        },
+        "excludedCommands": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Whole-pipeline command names that bypass sandbox (e.g. 'git')."
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "PreToolUse": { "$ref": "#/definitions/HookMatcherList" },
+        "PostToolUse": { "$ref": "#/definitions/HookMatcherList" },
+        "Stop": { "$ref": "#/definitions/HookMatcherList" },
+        "SubagentStop": { "$ref": "#/definitions/HookMatcherList" },
+        "PreCompact": { "$ref": "#/definitions/HookMatcherList" },
+        "PostCompact": { "$ref": "#/definitions/HookMatcherList" },
+        "SessionStart": { "$ref": "#/definitions/HookMatcherList" },
+        "SessionEnd": { "$ref": "#/definitions/HookMatcherList" },
+        "UserPromptSubmit": { "$ref": "#/definitions/HookMatcherList" },
+        "Notification": { "$ref": "#/definitions/HookMatcherList" }
+      }
+    },
+    "allowedHttpHookUrls": {
+      "type": "array",
+      "items": { "type": "string", "format": "uri" },
+      "description": "Whitelist of URL prefixes that 'http' hook handlers may POST to."
+    },
+    "disableAllHooks": { "type": "boolean" },
+    "memoryLoadCapKB": { "type": "integer", "minimum": 1, "maximum": 10000 },
+    "outputStyle": { "type": "string" },
+    "skillOverrides": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "mcpServers": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/definitions/McpServer" }
+    },
+    "enabledMcpjsonServers": { "type": "array", "items": { "type": "string" } },
+    "disabledMcpjsonServers": { "type": "array", "items": { "type": "string" } },
+    "disabledPlugins": { "type": "array", "items": { "type": "string" } },
+    "worktree": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "baseRef": { "type": "string" },
+        "symlinkDirectories": { "type": "array", "items": { "type": "string" } },
+        "sparsePaths": { "type": "array", "items": { "type": "string" } },
+        "bgIsolation": { "type": "boolean" }
+      }
+    },
+    "voice": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string", "enum": ["whisper.cpp", "stub"] },
+        "binPath": { "type": "string" },
+        "modelPath": { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "HookMatcherList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "matcher": { "type": "string" },
+          "hooks": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/HookHandler" }
+          }
+        }
+      }
+    },
+    "HookHandler": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["command", "http", "mcp_tool", "prompt", "agent"]
+        },
+        "command": { "type": "string" },
+        "url": { "type": "string", "format": "uri" },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "server": { "type": "string" },
+        "tool": { "type": "string" },
+        "prompt": { "type": "string" },
+        "agent": { "type": "string" },
+        "timeout": { "type": "integer", "minimum": 1, "maximum": 3600 },
+        "if": { "type": "string", "description": "Permission-rule-syntax filter." }
+      },
+      "required": ["type"]
+    },
+    "McpServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "command": { "type": "string" },
+        "args": { "type": "array", "items": { "type": "string" } },
+        "env": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "url": { "type": "string", "format": "uri" },
+        "transport": { "type": "string", "enum": ["stdio", "http", "sse"] },
+        "headers": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "headersHelper": { "type": "string" },
+        "alwaysLoad": { "type": "boolean" }
+      }
+    }
+  }
+}

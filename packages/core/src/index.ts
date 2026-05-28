@@ -241,6 +241,25 @@ export {
   type MarketplaceConfig,
 } from './plugins/index.js';
 
+// Settings JSON schema + shallow validator (v1.1)
+export {
+  settingsSchemaJson,
+  settingsSchemaObject,
+  validateSettingsShallow,
+} from './config/schema.js';
+
+// Vision (v1.1 — image input abstraction)
+export {
+  StubVisionProvider,
+  OpenAICompatVisionProvider,
+  loadImage,
+  parseDataUrl,
+  guessContentType,
+  type VisionProvider,
+  type ImageContentBlock,
+  type ProviderImagePayload,
+} from './vision/index.js';
+
 // IPC protocol (M6-rest — renderer ↔ main process type-safe channels)
 export {
   newTurnId,
