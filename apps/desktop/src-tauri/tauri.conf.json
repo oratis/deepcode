@@ -55,12 +55,12 @@
   },
   "plugins": {
     "updater": {
-      "active": false,
+      "active": true,
       "endpoints": [
         "https://github.com/oratis/deepcode/releases/latest/download/latest.json"
       ],
       "dialog": false,
-      "pubkey": ""
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0MDMzRUQ0RkVFNUREODUKUldTRjNlWCsxRDREbEttVHEwUEplK1FKbnRCakpGb3dVWTYveFdxSmxwK2ZROWFZcW1kYzZMSGcK"
     }
   }
 }
