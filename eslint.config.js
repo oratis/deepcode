@@ -13,7 +13,9 @@ export default [
       '**/dist/**',
       '**/dist-electron/**',
       '**/node_modules/**',
+      '**/target/**', // Rust/Cargo build output (generated JS in src-tauri/target)
       '**/.tsbuildinfo',
+      'release-artifacts/**',
       'apps/desktop/electron/**', // requires electron types — pending M6-rest
     ],
   },
