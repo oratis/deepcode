@@ -257,3 +257,45 @@ pub fn open_url(_url: String) -> Result<(), String> {
     // renderer; this is a stub kept for future server-side validation.
     Ok(())
 }
+
+// ── Serde contract ─────────────────────────────────────────────────────
+// AppInfo + SessionMeta are read by tauri-api.ts using snake_case keys
+// (home_dir, size_bytes, updated_at_secs). They intentionally do NOT use
+// rename_all="camelCase" (unlike the tool output structs in tools.rs). Lock
+// that so a stray rename_all can't silently break the renderer. See HANDOFF §8a.
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    fn keys(v: &serde_json::Value) -> Vec<String> {
+        v.as_object().unwrap().keys().cloned().collect()
+    }
+
+    #[test]
+    fn app_info_serializes_snake_case() {
+        let v = serde_json::to_value(AppInfo {
+            version: "1.0.0".into(),
+            platform: "darwin".into(),
+            home_dir: Some(std::path::PathBuf::from("/Users/x")),
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"home_dir".to_string()), "got {k:?}");
+        assert!(!k.contains(&"homeDir".to_string()), "camelCase leaked: {k:?}");
+    }
+
+    #[test]
+    fn session_meta_serializes_snake_case() {
+        let v = serde_json::to_value(SessionMeta {
+            id: "s1".into(),
+            path: std::path::PathBuf::from("/tmp/s1.jsonl"),
+            size_bytes: 42,
+            updated_at_secs: 1700,
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"size_bytes".to_string()), "got {k:?}");
+        assert!(k.contains(&"updated_at_secs".to_string()), "got {k:?}");
+        assert!(!k.contains(&"sizeBytes".to_string()), "camelCase leaked: {k:?}");
+    }
+}
