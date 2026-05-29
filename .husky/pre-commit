@@ -4,6 +4,9 @@
 
 set -e
 
+echo "▎ pre-commit: lint"
+pnpm lint
+
 echo "▎ pre-commit: typecheck"
 pnpm -r typecheck
 
