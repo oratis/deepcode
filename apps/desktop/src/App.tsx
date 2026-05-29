@@ -120,15 +120,9 @@ export function App(): JSX.Element {
         }}
       />
       <main className="chat-main" key={`main-${sessionEpoch}`}>
-        {renderScreen(screen, setScreen, projectPath, () =>
-          setSessionEpoch((k) => k + 1),
-        )}
+        {renderScreen(screen, setScreen, projectPath, () => setSessionEpoch((k) => k + 1))}
       </main>
-      <InspectorRail
-        activeScreen={screen}
-        onChange={(s) => setScreen(s)}
-        contextFill={undefined}
-      />
+      <InspectorRail activeScreen={screen} onChange={(s) => setScreen(s)} contextFill={undefined} />
     </div>
   );
 }
@@ -144,12 +138,7 @@ function renderScreen(
       // 'chat' folded into 'repl' — the new shell has only the REPL surface.
       return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
     case 'sessions':
-      return (
-        <SessionsScreen
-          onPick={() => setScreen('repl')}
-          onNew={() => setScreen('repl')}
-        />
-      );
+      return <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />;
     case 'plugins':
       return <PluginsScreen />;
     case 'skills':

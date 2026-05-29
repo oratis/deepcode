@@ -24,13 +24,7 @@ interface ToolCardProps {
   diff?: boolean;
 }
 
-export function ToolCard({
-  name,
-  target,
-  status,
-  body,
-  diff,
-}: ToolCardProps): JSX.Element {
+export function ToolCard({ name, target, status, body, diff }: ToolCardProps): JSX.Element {
   return (
     <div className="tool-card">
       <div className="tc-head">
@@ -38,9 +32,7 @@ export function ToolCard({
         {target && <span className="target">{target}</span>}
         {status && <Badge kind={status.kind}>{status.label}</Badge>}
       </div>
-      {body !== undefined && (
-        <div className={diff ? 'tc-body diff' : 'tc-body'}>{body}</div>
-      )}
+      {body !== undefined && <div className={diff ? 'tc-body diff' : 'tc-body'}>{body}</div>}
     </div>
   );
 }

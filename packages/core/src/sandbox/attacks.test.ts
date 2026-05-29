@@ -201,8 +201,7 @@ describe('wrapBashCommand: excluded-command spoofing', () => {
 // ──────────────────────────────────────────────────────────────────────────
 
 const isMac = process.platform === 'darwin';
-const hasSandboxExec =
-  isMac && spawnSync('which', ['sandbox-exec']).status === 0;
+const hasSandboxExec = isMac && spawnSync('which', ['sandbox-exec']).status === 0;
 
 describe.runIf(hasSandboxExec)('sandbox-exec end-to-end (macOS)', () => {
   let workDir: string;
@@ -312,7 +311,10 @@ describe.runIf(hasBwrap)('bwrap end-to-end (Linux)', () => {
   });
 
   it('blocks writing outside the bound cwd', async () => {
-    const outsideTarget = join(tmpdir(), `outside-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    const outsideTarget = join(
+      tmpdir(),
+      `outside-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    );
     const wrapped = await wrapBashCommand({
       userCommand: `echo evil > "${outsideTarget}" 2>&1; echo "[exit=$?]"`,
       cwd: workDir,

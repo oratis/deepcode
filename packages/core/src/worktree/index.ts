@@ -41,7 +41,8 @@ export async function createWorktree(opts: CreateWorktreeOpts): Promise<Worktree
   const source = opts.source;
   await assertGitRepo(source);
   const parent = opts.parentDir ?? tmpdir();
-  const branch = opts.branch ?? `dc/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+  const branch =
+    opts.branch ?? `dc/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
   const path = join(parent, `dc-wt-${basename(source)}-${branch.replace(/[/]/g, '_')}`);
   const baseRef = opts.config?.baseRef ?? 'HEAD';
 

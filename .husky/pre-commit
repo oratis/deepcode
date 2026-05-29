@@ -4,6 +4,9 @@
 
 set -e
 
+echo "▎ pre-commit: format check"
+pnpm format:check
+
 echo "▎ pre-commit: lint"
 pnpm lint
 

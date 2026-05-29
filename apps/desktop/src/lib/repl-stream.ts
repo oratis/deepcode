@@ -70,7 +70,10 @@ export function appendToolUse(msgs: Msg[], tool: ToolInvocation): Msg[] {
   const target = idx === -1 ? null : (msgs[idx] as AssistantMsg);
   if (target && target.turn.streaming) {
     const copy = [...msgs];
-    copy[idx] = { role: 'assistant', turn: { ...target.turn, tools: [...target.turn.tools, tool] } };
+    copy[idx] = {
+      role: 'assistant',
+      turn: { ...target.turn, tools: [...target.turn.tools, tool] },
+    };
     return copy;
   }
   return [...msgs, { role: 'assistant', turn: { text: '', tools: [tool], streaming: true } }];
@@ -106,10 +109,11 @@ export function attachToolResult(
 
 /** Clear the streaming flag on ALL assistant turns (not just the last one). */
 export function finalizeStreaming(msgs: Msg[]): Msg[] {
-  return msgs.map((m): Msg =>
-    m.role === 'assistant' && m.turn.streaming
-      ? { role: 'assistant', turn: { ...m.turn, streaming: false } }
-      : m,
+  return msgs.map(
+    (m): Msg =>
+      m.role === 'assistant' && m.turn.streaming
+        ? { role: 'assistant', turn: { ...m.turn, streaming: false } }
+        : m,
   );
 }
 

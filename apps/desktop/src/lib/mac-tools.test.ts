@@ -15,30 +15,21 @@ import { describe, expect, it } from 'vitest';
 // which can't load outside a Tauri webview. The helpers are pure so
 // duplicating them in the test is fine; if either ever changes, both
 // places must be updated.
-function pickStr(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): string | undefined {
+function pickStr(input: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'string') return v;
   }
   return undefined;
 }
-function pickNum(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): number | undefined {
+function pickNum(input: Record<string, unknown>, ...keys: string[]): number | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'number') return v;
   }
   return undefined;
 }
-function pickBool(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): boolean | undefined {
+function pickBool(input: Record<string, unknown>, ...keys: string[]): boolean | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'boolean') return v;
@@ -54,9 +45,9 @@ describe('mac-tools key pickers', () => {
   });
 
   it('pickStr prefers earlier-listed keys (snake_case wins over camelCase)', () => {
-    expect(
-      pickStr({ file_path: '/snake', filePath: '/camel' }, 'file_path', 'filePath'),
-    ).toBe('/snake');
+    expect(pickStr({ file_path: '/snake', filePath: '/camel' }, 'file_path', 'filePath')).toBe(
+      '/snake',
+    );
   });
 
   it('pickStr returns undefined when no key matches', () => {
@@ -64,12 +55,8 @@ describe('mac-tools key pickers', () => {
   });
 
   it('pickStr skips non-string values', () => {
-    expect(
-      pickStr({ file_path: 42, filePath: '/ok' }, 'file_path', 'filePath'),
-    ).toBe('/ok');
-    expect(
-      pickStr({ file_path: null, filePath: '/ok' }, 'file_path', 'filePath'),
-    ).toBe('/ok');
+    expect(pickStr({ file_path: 42, filePath: '/ok' }, 'file_path', 'filePath')).toBe('/ok');
+    expect(pickStr({ file_path: null, filePath: '/ok' }, 'file_path', 'filePath')).toBe('/ok');
   });
 
   it('pickNum handles primitives correctly', () => {
@@ -81,9 +68,7 @@ describe('mac-tools key pickers', () => {
   it('pickBool handles primitives correctly', () => {
     expect(pickBool({ replace_all: true }, 'replace_all', 'replaceAll')).toBe(true);
     expect(pickBool({ replaceAll: false }, 'replace_all', 'replaceAll')).toBe(false);
-    expect(
-      pickBool({ replace_all: 'true' as unknown as boolean }, 'replace_all'),
-    ).toBeUndefined();
+    expect(pickBool({ replace_all: 'true' as unknown as boolean }, 'replace_all')).toBeUndefined();
   });
 
   it('empty input returns undefined for all pickers', () => {

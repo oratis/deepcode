@@ -85,9 +85,7 @@ async function llmClassify(
     model: model ?? 'deepseek-chat',
     systemPrompt: CLASSIFY_PROMPT,
     tools: [],
-    messages: [
-      { role: 'user', content: [{ type: 'text', text: userMsg }] },
-    ],
+    messages: [{ role: 'user', content: [{ type: 'text', text: userMsg }] }],
     maxTokens: 8,
     temperature: 0,
   });

@@ -16,11 +16,11 @@ Edit DeepCode's `settings.json` files safely. Always show a diff first.
 
 ## The three layers
 
-| Layer    | Path                                        | Precedence (highest = last applied) |
-| -------- | ------------------------------------------- | ----------------------------------- |
-| User     | `~/.deepcode/settings.json`                 | lowest                              |
-| Project  | `<cwd>/.deepcode/settings.json`             | middle                              |
-| Local    | `<cwd>/.deepcode/settings.local.json` (git-ignored) | highest                       |
+| Layer   | Path                                                | Precedence (highest = last applied) |
+| ------- | --------------------------------------------------- | ----------------------------------- |
+| User    | `~/.deepcode/settings.json`                         | lowest                              |
+| Project | `<cwd>/.deepcode/settings.json`                     | middle                              |
+| Local   | `<cwd>/.deepcode/settings.local.json` (git-ignored) | highest                             |
 
 When the user says "for this project", write to project-scoped. When
 they say "everywhere", user-scoped. When secret-y (API keys, work-only
@@ -38,19 +38,20 @@ overrides), local.
 
 ## Common requests
 
-| User asks                                | Setting                                                              |
-| ---------------------------------------- | -------------------------------------------------------------------- |
-| "Don't ask me about reads"               | `permissions.allow: ["Read"]`                                        |
-| "Stop running tests for me"              | `permissions.deny: ["Bash(npm test:*)"]`                             |
-| "Use deepseek-reasoner by default"       | `model: "deepseek-reasoner"`                                         |
-| "Lower the effort"                       | `effortLevel: "low"`                                                 |
-| "Turn off the sandbox"                   | `sandbox.enabled: false`                                             |
-| "Disable plugin X"                       | `disabledPlugins: ["X"]`                                             |
-| "Add a hook to lint after edits"         | `hooks.PostToolUse: [{ matcher: "Edit|Write", hooks: [...] }]`       |
+| User asks                          | Setting                                  |
+| ---------------------------------- | ---------------------------------------- | ------------------------ |
+| "Don't ask me about reads"         | `permissions.allow: ["Read"]`            |
+| "Stop running tests for me"        | `permissions.deny: ["Bash(npm test:*)"]` |
+| "Use deepseek-reasoner by default" | `model: "deepseek-reasoner"`             |
+| "Lower the effort"                 | `effortLevel: "low"`                     |
+| "Turn off the sandbox"             | `sandbox.enabled: false`                 |
+| "Disable plugin X"                 | `disabledPlugins: ["X"]`                 |
+| "Add a hook to lint after edits"   | `hooks.PostToolUse: [{ matcher: "Edit    | Write", hooks: [...] }]` |
 
 ## Refuse
 
 Don't:
+
 - Delete `permissions.deny` rules without explicit confirmation.
 - Write `apiKeyHelper` that points at a script you didn't author.
 - Enable `bypassPermissions` as a default — it has to be a deliberate user act.

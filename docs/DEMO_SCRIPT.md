@@ -25,6 +25,7 @@ Press Enter.
 **Visual**: REPL boots, system reminder shows today's date + cwd.
 
 Type:
+
 ```
 add a CONTRIBUTING.md outline to this repo
 ```
@@ -42,6 +43,7 @@ You stay in control."
 Type `/mode plan` → "plan".
 
 Type:
+
 ```
 refactor the auth module into separate files for login, logout, session
 ```
@@ -57,6 +59,7 @@ plan you approve."
 ## 1:40–2:20 — Skill in action
 
 Type:
+
 ```
 review my latest commit
 ```
@@ -72,6 +75,7 @@ agent finds the right one by description match."
 ## 2:20–3:00 — Sub-agent + hooks
 
 Show `~/.deepcode/agents/explorer.md` briefly. Type:
+
 ```
 explorer: what does this repo do?
 ```
@@ -90,6 +94,7 @@ same shape."
 ## 3:00–3:40 — Sandbox + permissions
 
 Type:
+
 ```
 delete the test database
 ```
@@ -105,6 +110,7 @@ Permission rule `Bash(rm:*)` is `ask`. Permission prompt appears. Show
 ## 3:40–4:20 — Mac client
 
 Switch to the Mac client. Show:
+
 - Onboarding screen (briefly, with a placeholder key)
 - REPL with the same chat
 - Sessions list
@@ -119,6 +125,7 @@ Releases."
 ## 4:20–4:50 — Plugins + marketplace
 
 Type in the install spec:
+
 ```
 gh:deepcode-plugins/git-helpers
 ```

@@ -48,8 +48,10 @@ describe('blockedIpReason', () => {
 });
 
 describe('ssrfCheckUrl', () => {
-  const stub = (addrs: string[]): Resolver => async () =>
-    addrs.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
+  const stub =
+    (addrs: string[]): Resolver =>
+    async () =>
+      addrs.map((address) => ({ address, family: address.includes(':') ? 6 : 4 }));
 
   it('blocks literal metadata IP without resolving (default policy)', async () => {
     expect(await ssrfCheckUrl(new URL('http://169.254.169.254/latest/meta-data/'))).toMatch(
@@ -67,12 +69,16 @@ describe('ssrfCheckUrl', () => {
     const throwing: Resolver = async () => {
       throw new Error('should not resolve');
     };
-    expect(
-      await ssrfCheckUrl(new URL('http://metadata.google.internal/'), {}, throwing),
-    ).toMatch(/internal/);
+    expect(await ssrfCheckUrl(new URL('http://metadata.google.internal/'), {}, throwing)).toMatch(
+      /internal/,
+    );
     expect(await ssrfCheckUrl(new URL('http://localhost/'), {}, throwing)).toBeNull();
-    expect(await ssrfCheckUrl(new URL('http://localhost/'), HARDENED, throwing)).toMatch(/internal/);
-    expect(await ssrfCheckUrl(new URL('http://foo.local/'), HARDENED, throwing)).toMatch(/internal/);
+    expect(await ssrfCheckUrl(new URL('http://localhost/'), HARDENED, throwing)).toMatch(
+      /internal/,
+    );
+    expect(await ssrfCheckUrl(new URL('http://foo.local/'), HARDENED, throwing)).toMatch(
+      /internal/,
+    );
   });
 
   it('blocks hostnames resolving to the metadata IP even under default policy', async () => {

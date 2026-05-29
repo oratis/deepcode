@@ -57,7 +57,9 @@ export function validateSettingsShallow(settings: Record<string, unknown>): stri
     settings['effortLevel'] !== undefined &&
     !effortEnum.includes(settings['effortLevel'] as string)
   ) {
-    errors.push(`settings.effortLevel "${settings['effortLevel']}" not in ${effortEnum.join(' | ')}`);
+    errors.push(
+      `settings.effortLevel "${settings['effortLevel']}" not in ${effortEnum.join(' | ')}`,
+    );
   }
 
   const modeEnum = ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'];

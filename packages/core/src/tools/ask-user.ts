@@ -38,7 +38,10 @@ export const AskUserQuestionTool: ToolHandler = {
             type: 'object',
             properties: {
               label: { type: 'string', description: 'Short option text (1-5 words).' },
-              description: { type: 'string', description: 'Explanation of what this option means.' },
+              description: {
+                type: 'string',
+                description: 'Explanation of what this option means.',
+              },
             },
             required: ['label'],
           },

@@ -48,8 +48,7 @@ describe('handleMessage — executeCommand', () => {
     for (let i = 0; i < 50; i++) {
       const done = out.find(
         (m) =>
-          m.method === 'deepcode/agentEvent' &&
-          (m.params as { kind: string }).kind === 'turn_done',
+          m.method === 'deepcode/agentEvent' && (m.params as { kind: string }).kind === 'turn_done',
       );
       if (done) break;
       await new Promise((r) => setTimeout(r, 20));
@@ -108,10 +107,7 @@ describe('handleMessage — executeCommand', () => {
 describe('handleMessage — unknown method', () => {
   it('returns -32603 internal error', async () => {
     const out: LspMessage[] = [];
-    await handleMessage(
-      { jsonrpc: '2.0', id: 6, method: 'unknown/method' },
-      (m) => out.push(m),
-    );
+    await handleMessage({ jsonrpc: '2.0', id: 6, method: 'unknown/method' }, (m) => out.push(m));
     expect(out[0]!.error).toBeDefined();
   });
 });

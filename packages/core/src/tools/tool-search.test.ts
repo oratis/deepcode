@@ -53,10 +53,7 @@ describe('ToolSearch keyword query', () => {
     for (let i = 0; i < 20; i++) entries.push(entry(`tool${i}`, 'common-word common'));
     const store = new RegistryDeferredStore(reg, entries);
     const search = makeToolSearchTool(store);
-    const r = await search.execute(
-      { query: 'common', max_results: 3 },
-      { cwd: '/x' },
-    );
+    const r = await search.execute({ query: 'common', max_results: 3 }, { cwd: '/x' });
     const data = r.data as { hits: unknown[] };
     expect(data.hits).toHaveLength(3);
   });
@@ -65,10 +62,7 @@ describe('ToolSearch keyword query', () => {
 describe('ToolSearch select: query', () => {
   it('loads named tools into the registry', async () => {
     const reg = new ToolRegistry([]);
-    const store = new RegistryDeferredStore(reg, [
-      entry('A', 'desc A'),
-      entry('B', 'desc B'),
-    ]);
+    const store = new RegistryDeferredStore(reg, [entry('A', 'desc A'), entry('B', 'desc B')]);
     const search = makeToolSearchTool(store);
     const r = await search.execute({ query: 'select:A,B' }, { cwd: '/x' });
     expect(r.content).toMatch(/Loaded: A, B/);

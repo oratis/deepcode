@@ -9,11 +9,11 @@
 本轮 (v6 → v7) 又推了 3 个 feature PR + 这个汇报。重点是为 v1.1 开了头：
 VS Code 扩展 + LSP bridge，让 DeepCode 进入 IDE 生态。
 
-| # | 主题 | 主要内容 |
-| --- | --- | --- |
-| #55 | v1.1 入口 — VS Code + LSP | `apps/vscode` 扩展骨架（commands + Chat 视图 + 配置） · `apps/lsp` stdio LSP 服务器 + JSON-RPC handler + 3 个 custom commands + 8 个单元测试 + Neovim/Emacs/Sublime 配置示例 |
-| #56 | schema + image + migration | `packages/core/schemas/settings.schema.json` (draft-07 全覆盖) + `validateSettingsShallow` + Vision 接口（Stub + OpenAICompat with 14 tests）+ `docs/MIGRATION_FROM_CLAUDE_CODE.md` 5 分钟切换指南 |
-| 本 PR | README 完善 + 报告 | 重写 README.md：状态从 "M0 设计阶段" 改为生产级 progress bar / 文档地图 / 项目结构表 · 本汇报 v7 |
+| #     | 主题                       | 主要内容                                                                                                                                                                                           |
+| ----- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| #55   | v1.1 入口 — VS Code + LSP  | `apps/vscode` 扩展骨架（commands + Chat 视图 + 配置） · `apps/lsp` stdio LSP 服务器 + JSON-RPC handler + 3 个 custom commands + 8 个单元测试 + Neovim/Emacs/Sublime 配置示例                       |
+| #56   | schema + image + migration | `packages/core/schemas/settings.schema.json` (draft-07 全覆盖) + `validateSettingsShallow` + Vision 接口（Stub + OpenAICompat with 14 tests）+ `docs/MIGRATION_FROM_CLAUDE_CODE.md` 5 分钟切换指南 |
+| 本 PR | README 完善 + 报告         | 重写 README.md：状态从 "M0 设计阶段" 改为生产级 progress bar / 文档地图 / 项目结构表 · 本汇报 v7                                                                                                   |
 
 ## 状态对照
 
@@ -75,14 +75,14 @@ Marketplace 上线                       ████████░░░░░
 
 ## 6 个包的最终矩阵
 
-| 包 | 状态 | 测试 | 备注 |
-| --- | --- | --- | --- |
-| `@deepcode/core` | ✅ ship-ready | 478 | 内核，UI-agnostic，npm 可发 |
-| `@deepcode/shared-ui` | ✅ ship-ready | 0 (types-only) | 共享类型 |
-| `deepcode-cli` | ✅ ship-ready | 47 | npm 可发，npx 可跑 |
-| `@deepcode/desktop` | 🟡 等装 Electron | 0 (TBD) | UI/IPC/build 配置全在 |
-| `@deepcode/vscode` | 🟡 v1.1 骨架 | 0 (TBD) | manifest + extension.ts 骨架 |
-| `@deepcode/lsp` | 🟡 v1.1 骨架 | 8 | stdio server + handler 完整 |
+| 包                    | 状态             | 测试           | 备注                         |
+| --------------------- | ---------------- | -------------- | ---------------------------- |
+| `@deepcode/core`      | ✅ ship-ready    | 478            | 内核，UI-agnostic，npm 可发  |
+| `@deepcode/shared-ui` | ✅ ship-ready    | 0 (types-only) | 共享类型                     |
+| `deepcode-cli`        | ✅ ship-ready    | 47             | npm 可发，npx 可跑           |
+| `@deepcode/desktop`   | 🟡 等装 Electron | 0 (TBD)        | UI/IPC/build 配置全在        |
+| `@deepcode/vscode`    | 🟡 v1.1 骨架     | 0 (TBD)        | manifest + extension.ts 骨架 |
+| `@deepcode/lsp`       | 🟡 v1.1 骨架     | 8              | stdio server + handler 完整  |
 
 ## 总结
 
@@ -97,6 +97,7 @@ Claude session 能做的代码工作已经穷尽。
 - 文档（28 个 .md）100%
 
 剩下的全部需要用户层动作或外部资源：
+
 - Apple Developer ID（$99/yr + Xcode）
 - Electron binary 装包（~250MB CI 时间）
 - 真录 demo 视频（人 + mic + iMovie）

@@ -140,7 +140,9 @@ describe('fetchIndex / fetchRevoked / resolveEntry', () => {
       version: '1',
       entries: [{ name: 'demo', version: '1.0.0', sourceHash: 'h-bad' }],
     };
-    await expect(resolveEntry({ marketplaceUrl: baseUrl, name: 'demo' })).rejects.toThrow(/revocation/i);
+    await expect(resolveEntry({ marketplaceUrl: baseUrl, name: 'demo' })).rejects.toThrow(
+      /revocation/i,
+    );
   });
 
   it('resolveEntry refuses tampered entry', async () => {
@@ -148,7 +150,9 @@ describe('fetchIndex / fetchRevoked / resolveEntry', () => {
     e.sourceHash = 'tampered-hash';
     index = { version: '1', entries: [e] };
     revoked = { version: '1', entries: [] };
-    await expect(resolveEntry({ marketplaceUrl: baseUrl, name: 'demo' })).rejects.toThrow(/Signature/);
+    await expect(resolveEntry({ marketplaceUrl: baseUrl, name: 'demo' })).rejects.toThrow(
+      /Signature/,
+    );
   });
 
   it('fetchRevoked treats 404 as empty list', async () => {

@@ -22,9 +22,9 @@ swap the base URL and key.
 
 ## Models
 
-| Model               | Alias              | Strengths                              |
-| ------------------- | ------------------ | -------------------------------------- |
-| `deepseek-chat`     | → `deepseek-v4-flash` | Fast general chat; tool use            |
+| Model               | Alias                 | Strengths                                       |
+| ------------------- | --------------------- | ----------------------------------------------- |
+| `deepseek-chat`     | → `deepseek-v4-flash` | Fast general chat; tool use                     |
 | `deepseek-reasoner` | → `deepseek-v4-pro`   | Multi-step reasoning; emits `reasoning_content` |
 
 Set via the standard `model` field.
@@ -64,10 +64,10 @@ chose to call a tool. Loop: send back `role: 'tool'` messages with the
 
 ## Pricing (rough; verify on dashboard)
 
-| Tier         | Input  | Output | Reasoning |
-| ------------ | ------ | ------ | --------- |
-| deepseek-chat | 1¥/M  | 2¥/M  | —         |
-| deepseek-reasoner | 1¥/M | 16¥/M | 4¥/M     |
+| Tier              | Input | Output | Reasoning |
+| ----------------- | ----- | ------ | --------- |
+| deepseek-chat     | 1¥/M  | 2¥/M   | —         |
+| deepseek-reasoner | 1¥/M  | 16¥/M  | 4¥/M      |
 
 ## Common pitfalls
 

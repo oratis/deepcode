@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.6] — 2026-05-28
 
 ### 🐛 Critical fix — Bash tool calls were always reporting "error"
+
 The Rust output structs (`ReadOk`, `EditOk`, `BashOk`) returned fields
 in snake_case (`exit_code`, `lines_total`, `diff_preview`) while the
 TS wrappers read them in camelCase. Result: `r.exitCode` was always
@@ -21,6 +22,7 @@ output structs. Glob and Grep were already single-word fields, no
 change needed.
 
 ### Polish carry-over
+
 - **Keyboard shortcuts**: ⌘N starts a new session, ⌘, opens Settings,
   ⌘/ opens About. New `src/lib/keyboard.ts` helper.
 - **Switching project now clears chat history** so the next message
@@ -30,6 +32,7 @@ change needed.
 ## [0.1.5] — 2026-05-28
 
 ### Polish + dead-code removal
+
 - **Composer `+` menu wired**. Click `+` → popover with three actions:
   Attach file (opens native file picker, inserts `@<absolute-path>`
   into the textarea), Slash command (prepends `/`), Memory note
@@ -51,6 +54,7 @@ change needed.
 ## [0.1.4] — 2026-05-28
 
 ### Robustness + polish
+
 - **React error boundary** wraps the entire app. Uncaught render errors
   now show a recoverable error panel ("DeepCode crashed") with the
   stack trace + reload button, instead of leaving the user with a
@@ -64,12 +68,13 @@ change needed.
 ## [0.1.3] — 2026-05-28
 
 ### Visual redesign — phase 2
+
 - **All 7 utility screens** (Sessions / Plugins / Skills / Permissions /
   MCP / Settings / About) redesigned to match `docs/VISUAL_DESIGN.html`.
   New shared `Screen` + `Card` + `Row` primitives.
 - **About** is now a proper hero card with brand mark + gradient text
-  + status diagnostics + docs links (replacing the boxed table layout
-  the user shared as visually off-spec).
+  - status diagnostics + docs links (replacing the boxed table layout
+    the user shared as visually off-spec).
 - **Settings** has a GUI/JSON segmented toggle: GUI shows a quick
   reference + filterable flat table; JSON shows a live-validated
   textarea. Save persists to ~/.deepcode/settings.json (was
@@ -81,6 +86,7 @@ change needed.
 - **MCP** uses status badges + tool count + inline error tail.
 
 ### Release pipeline (M9)
+
 - `release.yml` rewritten for Tauri (was Electron-era). Tag → CI
   → npm publish + signed/notarized DMG + GitHub Release with notes.
 - `docs/RELEASING.md` explains the 6 secrets needed and step-by-step.
@@ -88,6 +94,7 @@ change needed.
 ## [0.1.2] — 2026-05-28
 
 ### Fixes — caught from user playtest of 0.1.1
+
 - **Tool input field-name fix.** `tool_write` (and read / edit / bash /
   glob / grep) were failing with `missing required key filePath` when
   DeepSeek emitted snake_case keys but the wrapper expected camelCase.
@@ -109,6 +116,7 @@ change needed.
   Skills, MCP, About, Settings). Expand-chevron ‹ still deferred.
 
 ### UX improvements
+
 - **Proper dropdowns** for mode / model / effort — click-popover with
   inline descriptions and meta annotations, replacing the brittle
   click-to-cycle pattern.
@@ -120,6 +128,7 @@ change needed.
 ## [0.1.1] — 2026-05-28
 
 ### Visual redesign — phase 1
+
 Major UI overhaul aligning the desktop client to `docs/VISUAL_DESIGN.html`.
 Phase 1 covers the three highest-traffic surfaces: Onboarding, Sessions
 sidebar, and the main Chat / REPL view. Other six screens land in 0.1.2.
@@ -143,6 +152,7 @@ sidebar, and the main Chat / REPL view. Other six screens land in 0.1.2.
   text headline matching the design spec.
 
 ### Conversation flow
+
 - Carries over the `dangerouslyAllowBrowser: true` fix from 0.1.0 so the
   OpenAI SDK's browser-environment guard doesn't trip in the Tauri webview
 - Surfaces full error stack traces in the chat stream when the agent
@@ -152,6 +162,7 @@ sidebar, and the main Chat / REPL view. Other six screens land in 0.1.2.
 ## [0.1.0] — 2026-05-28
 
 ### Mac client + CLI baseline
+
 - **CLI:** agent loop, 30+ slash commands, MCP support, plugin system,
   sandbox, hooks, modes, skills, sub-agents, output styles, effort
   levels, headless `-p` mode

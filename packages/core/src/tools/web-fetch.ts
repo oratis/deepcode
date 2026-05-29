@@ -159,7 +159,10 @@ export const WebFetchTool: ToolHandler = {
     } catch (err) {
       const e = err as Error;
       if (e.name === 'AbortError') {
-        return { content: `Error: fetch aborted (timeout ${TIMEOUT_MS}ms or signal).`, isError: true };
+        return {
+          content: `Error: fetch aborted (timeout ${TIMEOUT_MS}ms or signal).`,
+          isError: true,
+        };
       }
       return { content: `Error fetching ${parsed.toString()}: ${e.message}`, isError: true };
     } finally {

@@ -38,9 +38,7 @@ describe('splitClauses', () => {
   });
 
   it('strips empty clauses', () => {
-    expect(splitClauses(';;; ; a')).toEqual([
-      expect.objectContaining({ command: 'a' }),
-    ]);
+    expect(splitClauses(';;; ; a')).toEqual([expect.objectContaining({ command: 'a' })]);
   });
 });
 

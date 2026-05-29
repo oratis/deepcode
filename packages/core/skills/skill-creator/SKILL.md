@@ -15,12 +15,12 @@ effort there.
 
 ## Where the file goes
 
-| Source                                  | Loaded as                                    |
-| --------------------------------------- | -------------------------------------------- |
-| `packages/core/skills/<name>/SKILL.md`  | Built-in (ships with the package)            |
-| `~/.deepcode/skills/<name>/SKILL.md`    | User-global                                  |
-| `<cwd>/.deepcode/skills/<name>/SKILL.md` | Project-scoped                              |
-| Plugin's `skills/<name>/SKILL.md`       | Plugin-contributed                           |
+| Source                                   | Loaded as                         |
+| ---------------------------------------- | --------------------------------- |
+| `packages/core/skills/<name>/SKILL.md`   | Built-in (ships with the package) |
+| `~/.deepcode/skills/<name>/SKILL.md`     | User-global                       |
+| `<cwd>/.deepcode/skills/<name>/SKILL.md` | Project-scoped                    |
+| Plugin's `skills/<name>/SKILL.md`        | Plugin-contributed                |
 
 For user-authored skills, default to user-global. Suggest project-scoped
 only when the skill is specifically about THIS project.

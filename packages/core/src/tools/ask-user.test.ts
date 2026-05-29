@@ -21,7 +21,10 @@ describe('AskUserQuestionTool', () => {
     const r = await AskUserQuestionTool.execute(
       {
         question: 'A or B?',
-        options: [{ label: 'A', description: 'first' }, { label: 'B', description: 'second' }],
+        options: [
+          { label: 'A', description: 'first' },
+          { label: 'B', description: 'second' },
+        ],
       },
       {
         cwd: '/x',

@@ -132,15 +132,11 @@ describe('parseArgs', () => {
 
 describe('resolveEffort (precedence)', () => {
   it('cli flag wins over env and settings', () => {
-    expect(
-      resolveEffort({ cliFlag: 'high', envVar: 'low', settingsLevel: 'max' }),
-    ).toBe('high');
+    expect(resolveEffort({ cliFlag: 'high', envVar: 'low', settingsLevel: 'max' })).toBe('high');
   });
 
   it('env var wins when no cli flag', () => {
-    expect(resolveEffort({ envVar: 'xhigh', settingsLevel: 'low' })).toBe(
-      'xhigh',
-    );
+    expect(resolveEffort({ envVar: 'xhigh', settingsLevel: 'low' })).toBe('xhigh');
   });
 
   it('settings wins when no cli flag and no env', () => {
@@ -152,9 +148,7 @@ describe('resolveEffort (precedence)', () => {
   });
 
   it('ignores invalid env var', () => {
-    expect(resolveEffort({ envVar: 'ultra', settingsLevel: 'low' })).toBe(
-      'low',
-    );
+    expect(resolveEffort({ envVar: 'ultra', settingsLevel: 'low' })).toBe('low');
   });
 
   it('trims whitespace in env var', () => {

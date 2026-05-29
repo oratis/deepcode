@@ -35,12 +35,7 @@
     "shortDescription": "DeepSeek-powered coding agent",
     "longDescription": "DeepCode is a Claude-Code-parity coding agent powered by DeepSeek — chat, plan mode, tool use, sandboxed bash, MCP, plugins.",
     "copyright": "Copyright © 2026 DeepCode",
-    "icon": [
-      "icons/32x32.png",
-      "icons/128x128.png",
-      "icons/128x128@2x.png",
-      "icons/icon.icns"
-    ],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
     "macOS": {
       "minimumSystemVersion": "11.0",
       "frameworks": [],
@@ -56,9 +51,7 @@
   "plugins": {
     "updater": {
       "active": true,
-      "endpoints": [
-        "https://github.com/oratis/deepcode/releases/latest/download/latest.json"
-      ],
+      "endpoints": ["https://github.com/oratis/deepcode/releases/latest/download/latest.json"],
       "dialog": false,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk0MDMzRUQ0RkVFNUREODUKUldTRjNlWCsxRDREbEttVHEwUEplK1FKbnRCakpGb3dVWTYveFdxSmxwK2ZROWFZcW1kYzZMSGcK"
     }

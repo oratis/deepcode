@@ -173,8 +173,7 @@ export function Sidebar({
             lineHeight: 1.5,
           }}
         >
-          No sessions yet — your conversations will appear here once you
-          start one.
+          No sessions yet — your conversations will appear here once you start one.
         </div>
       )}
     </aside>

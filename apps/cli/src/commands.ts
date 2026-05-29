@@ -163,7 +163,8 @@ const EFFORT_TIERS: Array<{
 
 export const EffortCommand: SlashCommand = {
   name: '/effort',
-  description: 'Set effort tier (interactive picker if no arg): /effort [low|medium|high|xhigh|max]',
+  description:
+    'Set effort tier (interactive picker if no arg): /effort [low|medium|high|xhigh|max]',
   run(args, ctx) {
     if (args.length === 0) {
       // Selector UI — show the table; user picks via `/effort <name>` next turn.
@@ -183,9 +184,7 @@ export const EffortCommand: SlashCommand = {
     const next = args[0]!;
     const tier = EFFORT_TIERS.find((t) => t.name === next);
     if (!tier) {
-      return [
-        `Unknown effort "${next}". Valid: ${EFFORT_TIERS.map((t) => t.name).join(' | ')}`,
-      ];
+      return [`Unknown effort "${next}". Valid: ${EFFORT_TIERS.map((t) => t.name).join(' | ')}`];
     }
     ctx.effort = next;
     return [
@@ -328,8 +327,7 @@ export const TodosCommand: SlashCommand = {
       if (todos.length === 0) return ['No active todos.'];
       const lines = [`Todos (${todos.length}):`];
       for (const t of todos) {
-        const marker =
-          t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '●' : '○';
+        const marker = t.status === 'completed' ? '✓' : t.status === 'in_progress' ? '●' : '○';
         const text = t.status === 'in_progress' ? t.activeForm : t.content;
         lines.push(`  ${marker} ${text}`);
       }
@@ -492,7 +490,8 @@ export const RewindCommand: SlashCommand = {
         ];
       }
       case 'summarize-from': {
-        if (!ctx.provider) return ['(/rewind summarize-from requires a provider — none configured.)'];
+        if (!ctx.provider)
+          return ['(/rewind summarize-from requires a provider — none configured.)'];
         const kept = trimHistoryBefore(currentHistory, cutoffMs);
         const tail = currentHistory.slice(kept.length);
         if (tail.length === 0) {
@@ -506,7 +505,8 @@ export const RewindCommand: SlashCommand = {
         ];
       }
       case 'summarize-up-to': {
-        if (!ctx.provider) return ['(/rewind summarize-up-to requires a provider — none configured.)'];
+        if (!ctx.provider)
+          return ['(/rewind summarize-up-to requires a provider — none configured.)'];
         const head = trimHistoryBefore(currentHistory, cutoffMs);
         const tail = currentHistory.slice(head.length);
         if (head.length === 0) {

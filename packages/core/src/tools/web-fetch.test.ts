@@ -3,7 +3,12 @@ import { AddressInfo } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WebFetchTool } from './web-fetch.js';
 
-function startServer(handler: (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void): Promise<{ server: Server; url: string }> {
+function startServer(
+  handler: (
+    req: import('node:http').IncomingMessage,
+    res: import('node:http').ServerResponse,
+  ) => void,
+): Promise<{ server: Server; url: string }> {
   return new Promise((res) => {
     const server = createServer(handler);
     server.listen(0, '127.0.0.1', () => {
@@ -56,10 +61,7 @@ describe('WebFetchTool', () => {
   });
 
   it('rejects invalid URL', async () => {
-    const result = await WebFetchTool.execute(
-      { url: 'not-a-url' },
-      { cwd: process.cwd() },
-    );
+    const result = await WebFetchTool.execute({ url: 'not-a-url' }, { cwd: process.cwd() });
     expect(result.isError).toBe(true);
     expect(result.content).toMatch(/invalid URL/i);
   });

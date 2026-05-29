@@ -99,12 +99,9 @@ export function SkillsScreen(): JSX.Element {
                       style={{
                         padding: '10px 14px',
                         borderBottom:
-                          i === filtered.length - 1
-                            ? 'none'
-                            : '1px solid var(--line-soft)',
+                          i === filtered.length - 1 ? 'none' : '1px solid var(--line-soft)',
                         cursor: 'pointer',
-                        background:
-                          s.name === active ? 'var(--brand-tint)' : 'transparent',
+                        background: s.name === active ? 'var(--brand-tint)' : 'transparent',
                       }}
                     >
                       <div
@@ -126,9 +123,7 @@ export function SkillsScreen(): JSX.Element {
                         </span>
                         <Badge kind={badge.kind}>{badge.label}</Badge>
                       </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
-                        {s.description}
-                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-2)' }}>{s.description}</div>
                     </li>
                   );
                 })}
@@ -173,7 +168,8 @@ export function SkillsScreen(): JSX.Element {
                   lineHeight: 1.5,
                 }}
               >
-                {current.body ?? '(SKILL.md body not loaded — the desktop IPC for fetching skill body lands in v0.2.)'}
+                {current.body ??
+                  '(SKILL.md body not loaded — the desktop IPC for fetching skill body lands in v0.2.)'}
               </pre>
             </Card>
           ) : (

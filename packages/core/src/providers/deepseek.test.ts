@@ -150,7 +150,11 @@ describe('DeepSeekProvider', () => {
           {
             delta: {
               tool_calls: [
-                { index: 0, id: 'call_w', function: { name: 'Write', arguments: '{"file_path":"a.js","content":"cons' } },
+                {
+                  index: 0,
+                  id: 'call_w',
+                  function: { name: 'Write', arguments: '{"file_path":"a.js","content":"cons' },
+                },
               ],
             },
           },
@@ -183,14 +187,25 @@ describe('DeepSeekProvider', () => {
           {
             delta: {
               tool_calls: [
-                { index: 0, id: 'ok1', function: { name: 'Read', arguments: '{"file_path":"a.ts"}' } },
-                { index: 1, id: 'bad', function: { name: 'Write', arguments: '{"file_path":"b.ts","content":"x' } },
+                {
+                  index: 0,
+                  id: 'ok1',
+                  function: { name: 'Read', arguments: '{"file_path":"a.ts"}' },
+                },
+                {
+                  index: 1,
+                  id: 'bad',
+                  function: { name: 'Write', arguments: '{"file_path":"b.ts","content":"x' },
+                },
               ],
             },
           },
         ],
       },
-      { choices: [{ delta: {}, finish_reason: 'length' }], usage: { prompt_tokens: 5, completion_tokens: 8 } },
+      {
+        choices: [{ delta: {}, finish_reason: 'length' }],
+        usage: { prompt_tokens: 5, completion_tokens: 8 },
+      },
     ];
     const p = new DeepSeekProvider({ apiKey: 'sk-test', fetch: mockFetch(chunks) });
     const result = await p.runTurn({
