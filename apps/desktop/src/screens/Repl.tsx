@@ -26,9 +26,18 @@ import {
 } from '@deepcode/core/dist/keybindings/vim.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
-import { PlusMenu, type PlusMenuItem } from '../components/PlusMenu.js';
+import { PlusMenu } from '../components/PlusMenu.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { projectName } from '../lib/project.js';
+import {
+  appendTextDelta,
+  appendToolUse,
+  attachToolResult,
+  finalizeStreaming,
+  lastAssistantIndex,
+  pickTarget,
+  type Msg,
+} from '../lib/repl-stream.js';
 import {
   appendAllowMatcher,
   loadKeybindings,
@@ -96,37 +105,6 @@ const MODE_OPTIONS: DropdownOption<
   },
 ];
 
-interface ToolInvocation {
-  toolId: string;
-  name: string;
-  target?: string;
-  input: Record<string, unknown>;
-  status: 'running' | 'ok' | 'err';
-  resultText?: string;
-}
-
-interface AssistantTurn {
-  text: string;
-  /** Tool calls interleaved during this turn — rendered as cards after the text. */
-  tools: ToolInvocation[];
-  streaming: boolean;
-}
-
-interface UserMsg {
-  role: 'user';
-  text: string;
-}
-interface AssistantMsg {
-  role: 'assistant';
-  turn: AssistantTurn;
-}
-interface SystemMsg {
-  role: 'system';
-  text: string;
-  level?: 'info' | 'error';
-}
-type Msg = UserMsg | AssistantMsg | SystemMsg;
-
 interface AgentEvt {
   kind: 'event' | 'turn_done';
   turnId: string;
@@ -137,6 +115,10 @@ interface AgentEvt {
   result?: { content: string; isError?: boolean };
   error?: string;
   stopReason?: string;
+  // usage event — emitted per provider round-trip with that turn's token counts
+  inputTokens?: number;
+  outputTokens?: number;
+  reasoningTokens?: number;
   // permission_request fields
   requestId?: string;
   toolName?: string;
@@ -167,7 +149,9 @@ export function ReplScreen({
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
-  const [effort, setEffort] = useState<Effort>('medium');
+  // 'high' (6k output) by default — 'medium' (3k) truncates multi-file writes.
+  // Overridden by a persisted effortLevel in settings on mount.
+  const [effort, setEffort] = useState<Effort>('high');
   const [model, setModel] = useState<string>('deepseek-chat');
   const [mode, setMode] = useState<
     'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
@@ -176,6 +160,10 @@ export function ReplScreen({
     inputTokens: 0,
     outputTokens: 0,
   });
+  // Cumulative spend across all turns this conversation (¥). Tracked separately
+  // from `usage` because the context bar wants the latest snapshot while cost
+  // must sum every billed turn.
+  const [costYuan, setCostYuan] = useState(0);
   const [vimEnabled, setVimEnabled] = useState(false);
   const [vimMode, setVimMode] = useState<VimMode>('INSERT');
   const vimStateRef = useRef<VimState | null>(null);
@@ -249,16 +237,19 @@ export function ReplScreen({
             ),
           );
           break;
-        case 'usage':
-          // Some providers emit a usage event; track for the ctx bar
-          if (typeof e.input === 'object' && e.input) {
-            const u = e.input as { inputTokens?: number; outputTokens?: number };
-            setUsage({
-              inputTokens: u.inputTokens ?? 0,
-              outputTokens: u.outputTokens ?? 0,
-            });
-          }
+        case 'usage': {
+          // Emitted once per provider round-trip. The token counts arrive as
+          // top-level fields (inputTokens/outputTokens), NOT under `input` —
+          // reading the wrong field is why the ctx bar + cost were stuck at 0.
+          const inTok = e.inputTokens ?? 0;
+          const outTok = e.outputTokens ?? 0;
+          // The latest turn's input ≈ the current context footprint, so it
+          // drives the context bar (overwrite, not accumulate).
+          setUsage({ inputTokens: inTok, outputTokens: outTok });
+          // Cost bills every turn, so it accrues across the whole conversation.
+          setCostYuan((c) => c + (inTok / 1_000_000) * 1.0 + (outTok / 1_000_000) * 2.0);
           break;
+        }
         case 'error':
           setMessages((m) => [
             ...m,
@@ -450,6 +441,10 @@ export function ReplScreen({
   // contradict the system prompt already sent.
   const controlsLocked = busy || pendingApproval !== null;
 
+  // Only the last assistant turn is "active" — its cursor blinks while the rest
+  // stay static. Guards against a second cursor if a turn was left streaming.
+  const activeAssistantIdx = lastAssistantIndex(messages);
+
   // ── Context bar fill ──
   const contextWindow = 128_000;
   const usedTokens = usage.inputTokens + usage.outputTokens;
@@ -487,7 +482,9 @@ export function ReplScreen({
       </div>
 
       <div className="chat-stream" ref={listRef}>
-        {messages.map((m, i) => renderMessage(m, i, pendingApproval, handleApproval))}
+        {messages.map((m, i) =>
+          renderMessage(m, i, pendingApproval, handleApproval, i === activeAssistantIdx),
+        )}
 
         {busy && !pendingApproval && (
           <div className="msg assistant">
@@ -665,7 +662,7 @@ export function ReplScreen({
           </div>
           <span>{fillPct.toFixed(1)}%</span>
           <span style={{ marginLeft: 'auto', color: 'var(--text-3)' }}>
-            ¥ {((usage.inputTokens / 1_000_000) * 1.0 + (usage.outputTokens / 1_000_000) * 2.0).toFixed(4)}
+            ¥ {costYuan.toFixed(4)}
           </span>
         </div>
       </div>
@@ -680,6 +677,7 @@ function renderMessage(
   i: number,
   pendingApproval: PendingApproval | null,
   onApproval: (decision: 'allow' | 'deny' | 'always') => void,
+  isActive: boolean,
 ): JSX.Element | null {
   if (m.role === 'user') {
     return (
@@ -723,7 +721,7 @@ function renderMessage(
         <div className="author">DeepCode</div>
         <div className="content">
           {m.turn.text}
-          {m.turn.streaming && <span className="streaming-cursor" />}
+          {m.turn.streaming && isActive && <span className="streaming-cursor" />}
           {m.turn.tools.map((t) => (
             <div key={t.toolId}>
               <ToolCard
@@ -775,7 +773,8 @@ function renderMessage(
   );
 }
 
-// ─── Mutators ────────────────────────────────────────────────────────
+// ─── UI helpers ───────────────────────────────────────────────────────
+// (Stream mutators live in ../lib/repl-stream.ts so they can be unit-tested.)
 
 /** Abbreviate a long path by replacing $HOME prefix with "~". */
 function abbreviatePath(p: string): string {
@@ -785,108 +784,7 @@ function abbreviatePath(p: string): string {
   return p;
 }
 
-function pickTarget(input: Record<string, unknown>): string | undefined {
-  for (const k of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
-    const v = input[k];
-    if (typeof v === 'string') return v;
-  }
-  return undefined;
-}
-
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…\n[truncated]' : s;
 }
 
-function lastAssistantTurn(msgs: Msg[]): AssistantTurn | null {
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const m = msgs[i]!;
-    if (m.role === 'assistant') return m.turn;
-  }
-  return null;
-}
-
-function appendTextDelta(msgs: Msg[], delta: string): Msg[] {
-  const last = msgs[msgs.length - 1];
-  if (last && last.role === 'assistant' && last.turn.streaming) {
-    return [
-      ...msgs.slice(0, -1),
-      {
-        role: 'assistant',
-        turn: { ...last.turn, text: last.turn.text + delta },
-      },
-    ];
-  }
-  return [
-    ...msgs,
-    {
-      role: 'assistant',
-      turn: { text: delta, tools: [], streaming: true },
-    },
-  ];
-}
-
-function appendToolUse(msgs: Msg[], tool: ToolInvocation): Msg[] {
-  // Attach to the last assistant turn; if none open, start one
-  const last = msgs[msgs.length - 1];
-  if (last && last.role === 'assistant' && last.turn.streaming) {
-    return [
-      ...msgs.slice(0, -1),
-      {
-        role: 'assistant',
-        turn: { ...last.turn, tools: [...last.turn.tools, tool] },
-      },
-    ];
-  }
-  return [
-    ...msgs,
-    {
-      role: 'assistant',
-      turn: { text: '', tools: [tool], streaming: true },
-    },
-  ];
-}
-
-function attachToolResult(
-  msgs: Msg[],
-  toolId: string,
-  content: string,
-  status: 'ok' | 'err',
-): Msg[] {
-  const turn = lastAssistantTurn(msgs);
-  if (!turn) return msgs;
-  return msgs.map((m): Msg => {
-    if (m.role !== 'assistant') return m;
-    const idx = m.turn.tools.findIndex((t) => t.toolId === toolId);
-    if (idx === -1) {
-      // Fallback: attach to the last running tool
-      // ES2022-safe: find last running tool by reverse iteration
-      let runningIdx = -1;
-      for (let j = m.turn.tools.length - 1; j >= 0; j--) {
-        if (m.turn.tools[j]!.status === 'running') {
-          runningIdx = j;
-          break;
-        }
-      }
-      if (runningIdx === -1) return m;
-      const tools = [...m.turn.tools];
-      tools[runningIdx] = {
-        ...tools[runningIdx]!,
-        status,
-        resultText: content,
-      };
-      return { ...m, turn: { ...m.turn, tools } };
-    }
-    const tools = [...m.turn.tools];
-    tools[idx] = { ...tools[idx]!, status, resultText: content };
-    return { ...m, turn: { ...m.turn, tools } };
-  });
-}
-
-function finalizeStreaming(msgs: Msg[]): Msg[] {
-  const last = msgs[msgs.length - 1];
-  if (!last || last.role !== 'assistant' || !last.turn.streaming) return msgs;
-  return [
-    ...msgs.slice(0, -1),
-    { role: 'assistant', turn: { ...last.turn, streaming: false } },
-  ];
-}

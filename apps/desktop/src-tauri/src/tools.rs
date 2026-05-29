@@ -323,3 +323,61 @@ pub async fn tool_grep(input: GrepInput) -> Result<GrepOk, String> {
     Ok(GrepOk { matches, truncated })
 }
 
+
+// ── Serde casing contract ──────────────────────────────────────────────
+// Regression guard for HANDOFF §8a: Tauri's serde does NOT auto-convert case
+// between Rust and JS. Every multi-word *output* field must serialize as
+// camelCase, because the renderer reads e.g. `r.exitCode` / `r.linesTotal`.
+// This bug shipped twice (Read line counts, Bash exit-code "error" badge); these
+// tests fail loudly if a `#[serde(rename_all = "camelCase")]` is ever dropped.
+#[cfg(test)]
+mod casing_tests {
+    use super::*;
+
+    fn keys(v: &serde_json::Value) -> Vec<String> {
+        v.as_object().unwrap().keys().cloned().collect()
+    }
+
+    #[test]
+    fn read_ok_serializes_camel_case() {
+        let v = serde_json::to_value(ReadOk {
+            content: String::new(),
+            lines_total: 10,
+            lines_shown: 5,
+            offset: 0,
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"linesTotal".to_string()), "got {k:?}");
+        assert!(k.contains(&"linesShown".to_string()), "got {k:?}");
+        assert!(!k.contains(&"lines_total".to_string()), "snake_case leaked: {k:?}");
+    }
+
+    #[test]
+    fn edit_ok_serializes_camel_case() {
+        let v = serde_json::to_value(EditOk {
+            replaced: 1,
+            diff_preview: String::new(),
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"diffPreview".to_string()), "got {k:?}");
+        assert!(!k.contains(&"diff_preview".to_string()), "snake_case leaked: {k:?}");
+    }
+
+    #[test]
+    fn bash_ok_serializes_camel_case() {
+        let v = serde_json::to_value(BashOk {
+            stdout: String::new(),
+            stderr: String::new(),
+            exit_code: 0,
+            timed_out: false,
+        })
+        .unwrap();
+        let k = keys(&v);
+        // The exit-code badge bug: renderer compares r.exitCode !== 0.
+        assert!(k.contains(&"exitCode".to_string()), "got {k:?}");
+        assert!(k.contains(&"timedOut".to_string()), "got {k:?}");
+        assert!(!k.contains(&"exit_code".to_string()), "snake_case leaked: {k:?}");
+    }
+}
