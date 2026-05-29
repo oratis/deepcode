@@ -100,12 +100,29 @@ export class CredentialsStore {
 
   private async saveFile(creds: Credentials): Promise<void> {
     const path = this.filePath();
-    await fs.mkdir(dirname(path), { recursive: true });
+    const dir = dirname(path);
+    await fs.mkdir(dir, { recursive: true });
     // If Keychain is the source of truth, only write baseURL marker
     const toWrite: Credentials = this.useKeychain
       ? { baseURL: creds.baseURL }
       : { apiKey: creds.apiKey, authToken: creds.authToken, baseURL: creds.baseURL };
-    await fs.writeFile(path, JSON.stringify(toWrite, null, 2) + '\n', 'utf8');
+    const data = JSON.stringify(toWrite, null, 2) + '\n';
+
+    // Write to a temp file created with mode 0600, then atomically rename over
+    // the target. Writing then chmod-ing the real file leaves a TOCTOU window in
+    // which a plaintext apiKey/authToken is briefly readable at the default
+    // umask (typically 0644). Creating at 0600 closes that window, and the
+    // rename is atomic so readers never see a half-written file.
+    const tmp = join(dir, `.credentials.${process.pid}.${Date.now()}.tmp`);
+    await fs.writeFile(tmp, data, { mode: 0o600 });
+    try {
+      await fs.rename(tmp, path);
+    } catch (err) {
+      await fs.rm(tmp, { force: true });
+      throw err;
+    }
+    // Belt-and-suspenders: some filesystems ignore the create mode, and a
+    // pre-existing target may have had looser perms before this rename.
     await fs.chmod(path, 0o600);
   }
 

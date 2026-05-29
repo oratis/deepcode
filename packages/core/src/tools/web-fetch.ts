@@ -6,10 +6,12 @@
 //   · Honors AbortSignal from agent loop.
 //   · Strips request to HEAD/GET only — no POST from this tool (use Bash + curl
 //     if a write is truly needed; permission gate catches that).
-//   · No redirect-following beyond fetch's default; if host policy needs custom
-//     allowlists, wire through ctx (future work).
+//   · SSRF guard: rejects targets that resolve to private/loopback/link-local
+//     ranges, and re-checks every redirect hop (manual redirect following, capped
+//     at MAX_REDIRECTS). See ./ssrf.ts.
 
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
+import { fetchPolicyFromEnv, ssrfCheckUrl } from './ssrf.js';
 
 interface FetchInput {
   url: string;
@@ -19,6 +21,7 @@ interface FetchInput {
 
 const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 const TIMEOUT_MS = 30_000;
+const MAX_REDIRECTS = 5;
 
 export const WebFetchTool: ToolHandler = {
   name: 'WebFetch',
@@ -66,12 +69,47 @@ export const WebFetchTool: ToolHandler = {
     if (ctx.signal) ctx.signal.addEventListener('abort', linkedAbort);
 
     try {
-      const res = await fetch(parsed.toString(), {
-        method: 'GET',
-        redirect: 'follow',
-        headers: { 'user-agent': 'DeepCode/0.1 (+https://github.com/oratis/deepcode)' },
-        signal: controller.signal,
-      });
+      // Follow redirects manually so each hop is SSRF-checked (fetch's built-in
+      // 'follow' would silently chase a redirect into a private network).
+      const policy = fetchPolicyFromEnv();
+      let current = parsed;
+      let res: Response;
+      for (let hop = 0; ; hop++) {
+        const reason = await ssrfCheckUrl(current, policy);
+        if (reason) {
+          return {
+            content: `Error: refusing to fetch ${current.toString()} — ${reason}.`,
+            isError: true,
+            data: { url: current.toString(), blocked: true },
+          };
+        }
+        res = await fetch(current.toString(), {
+          method: 'GET',
+          redirect: 'manual',
+          headers: { 'user-agent': 'DeepCode/0.1 (+https://github.com/oratis/deepcode)' },
+          signal: controller.signal,
+        });
+        if (res.status < 300 || res.status >= 400) break;
+        const loc = res.headers.get('location');
+        if (!loc) break; // 3xx without a Location — treat as terminal
+        if (hop >= MAX_REDIRECTS) {
+          return { content: `Error: too many redirects (>${MAX_REDIRECTS}).`, isError: true };
+        }
+        let next: URL;
+        try {
+          next = new URL(loc, current);
+        } catch {
+          return { content: `Error: invalid redirect target: ${loc}`, isError: true };
+        }
+        if (next.protocol !== 'http:' && next.protocol !== 'https:') {
+          return {
+            content: `Error: redirect to non-http(s) URL (${next.protocol}).`,
+            isError: true,
+          };
+        }
+        current = next;
+      }
+      parsed = current; // report the final URL in metadata
       const status = res.status;
       const contentType = res.headers.get('content-type') ?? '';
       const contentLength = Number(res.headers.get('content-length') ?? 0);
