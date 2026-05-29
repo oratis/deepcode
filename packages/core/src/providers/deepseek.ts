@@ -166,20 +166,40 @@ export class DeepSeekProvider implements Provider {
     if (text) {
       content.push({ type: 'text', text });
     }
+    // Assemble tool calls, dropping any that were truncated mid-stream. When the
+    // completion hits max_tokens while emitting a tool call, the accumulated
+    // `args` is partial JSON that won't parse — executing it produces garbage
+    // (e.g. a Write with no file_path). A call with no name at all is a stray
+    // streaming artifact. Both are dropped; a genuinely empty-arg call (args ===
+    // '' or '{}', e.g. ExitPlanMode) is kept and validated by the tool itself.
+    let validToolCalls = 0;
+    let truncatedToolCall = false;
     for (const call of toolCalls.values()) {
-      const toolUse: ToolUseBlock = {
+      if (!call.name) {
+        truncatedToolCall = true;
+        continue;
+      }
+      const parsed = safeParseJson(call.args);
+      if (call.args !== '' && parsed === null) {
+        truncatedToolCall = true;
+        continue;
+      }
+      content.push({
         type: 'tool_use',
         id: call.id,
         name: call.name,
-        input: safeParseJson(call.args) ?? {},
-      };
-      content.push(toolUse);
+        input: parsed ?? {},
+      } satisfies ToolUseBlock);
+      validToolCalls++;
     }
 
+    // stopReason precedence: only claim 'tool_use' when at least one call
+    // survived. If everything was truncated (or finish_reason was 'length'),
+    // report 'max_tokens' so the agent loop ends cleanly instead of executing a
+    // malformed call or looping on an empty tool turn.
     let stopReason: ProviderResult['stopReason'];
-    if (finish === 'tool_calls' || toolCalls.size > 0) stopReason = 'tool_use';
-    else if (finish === 'length') stopReason = 'max_tokens';
-    else if (finish === 'stop') stopReason = 'end_turn';
+    if (validToolCalls > 0) stopReason = 'tool_use';
+    else if (finish === 'length' || truncatedToolCall) stopReason = 'max_tokens';
     else stopReason = 'end_turn';
 
     return {

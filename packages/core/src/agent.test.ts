@@ -278,6 +278,157 @@ describe('runAgent', () => {
     }
   });
 
+  it('runs multiple read-only tool calls concurrently and preserves result order', async () => {
+    const events2: string[] = [];
+    const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const slowReadOnly = (name: string) => ({
+      name,
+      definition: { name, description: name, inputSchema: { type: 'object', properties: {} } },
+      async execute() {
+        events2.push(`start:${name}`);
+        await delay(20);
+        events2.push(`end:${name}`);
+        return { content: `${name} done` };
+      },
+    });
+    // Custom registry with two read-only-named tools (Grep + Glob ∈ READ_ONLY_TOOLS).
+    const tools = new ToolRegistry([
+      slowReadOnly('Grep'),
+      slowReadOnly('Glob'),
+    ] as unknown as Parameters<typeof ToolRegistry.prototype.register>[0][]);
+
+    const provider = new MockProvider([
+      {
+        content: [
+          { type: 'text', text: 'searching' },
+          { type: 'tool_use', id: 'g1', name: 'Grep', input: {} },
+          { type: 'tool_use', id: 'g2', name: 'Glob', input: {} },
+        ],
+        stopReason: 'tool_use',
+        usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0 },
+      },
+      endTurn('done'),
+    ]);
+
+    const result = await runAgent({
+      provider,
+      tools,
+      systemPrompt: '',
+      userMessage: 'find things',
+      model: 'deepseek-chat',
+      cwd,
+    });
+
+    // Concurrency: both tools start before either finishes.
+    expect(events2.slice(0, 2).every((e) => e.startsWith('start:'))).toBe(true);
+    expect(events2.slice(2).every((e) => e.startsWith('end:'))).toBe(true);
+
+    // Result order matches the model's call order (Grep then Glob) regardless of
+    // which promise settled first.
+    const toolResultMsg = result.history[2]!; // user msg with tool_result blocks
+    expect(toolResultMsg.role).toBe('user');
+    const ids = toolResultMsg.content
+      .filter((b): b is Extract<ContentBlock, { type: 'tool_result' }> => b.type === 'tool_result')
+      .map((b) => b.tool_use_id);
+    expect(ids).toEqual(['g1', 'g2']);
+  });
+
+  it('does not auto-compact on cumulative usage when each turn is below threshold', async () => {
+    // Regression: shouldCompact must use the *current* turn's input tokens, not
+    // the cumulative sum across turns. contextWindow 100, threshold 0.8 → trigger
+    // at 80. Each turn reports inputTokens 30 (below 80), so the per-turn proxy
+    // never crosses — but the cumulative sum (30+30+30=90) would, under the old
+    // buggy logic, fire compaction on turn 3. Assert it never fires.
+    await fs.writeFile(join(cwd, 'x.txt'), 'data');
+
+    // A provider that counts how many times the compaction summarizer runs
+    // (identified by the compaction system prompt + empty tool list).
+    let summarizerCalls = 0;
+    const turn = (): ProviderResult => ({
+      content: withToolCall('working', {
+        type: 'tool_use',
+        id: `c${Math.random()}`,
+        name: 'Read',
+        input: { file_path: 'x.txt' },
+      }),
+      stopReason: 'tool_use',
+      usage: { inputTokens: 30, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
+    });
+    const scripted: ProviderResult[] = [turn(), turn(), endTurn('done')];
+    const countingProvider: Provider = {
+      name: 'counting',
+      async runTurn(opts: ProviderRunOpts): Promise<ProviderResult> {
+        if (opts.systemPrompt.startsWith('You compress long agent conversations')) {
+          summarizerCalls++;
+          return endTurn('summary');
+        }
+        const next = scripted.shift();
+        if (!next) throw new Error('no scripted response');
+        return next;
+      },
+    };
+
+    const result = await runAgent({
+      provider: countingProvider,
+      tools: new ToolRegistry(),
+      systemPrompt: 'agent',
+      userMessage: 'go',
+      model: 'deepseek-chat',
+      cwd,
+      autoCompact: { contextWindow: 100, threshold: 0.8 },
+    });
+
+    expect(result.stopReason).toBe('end_turn');
+    expect(summarizerCalls).toBe(0);
+  });
+
+  it('auto-compacts once when a single turn crosses the threshold', async () => {
+    // Inverse of the above: when the *current* turn's input alone exceeds the
+    // threshold (90 > 80), compaction should fire. History after one tool turn
+    // is short, so compact() keeps it verbatim, but the summarizer is still
+    // invoked — proving the trigger path is live.
+    await fs.writeFile(join(cwd, 'x.txt'), 'data');
+    let summarizerCalls = 0;
+    const scripted: ProviderResult[] = [
+      {
+        content: withToolCall('working', {
+          type: 'tool_use',
+          id: 'big',
+          name: 'Read',
+          input: { file_path: 'x.txt' },
+        }),
+        stopReason: 'tool_use',
+        usage: { inputTokens: 90, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
+      },
+      endTurn('done'),
+    ];
+    const provider: Provider = {
+      name: 'counting',
+      async runTurn(opts: ProviderRunOpts): Promise<ProviderResult> {
+        if (opts.systemPrompt.startsWith('You compress long agent conversations')) {
+          summarizerCalls++;
+          return endTurn('summary');
+        }
+        const next = scripted.shift();
+        if (!next) throw new Error('no scripted response');
+        return next;
+      },
+    };
+
+    await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: 'agent',
+      userMessage: 'go',
+      model: 'deepseek-chat',
+      cwd,
+      // Tiny keep window so compact() doesn't short-circuit on the short history.
+      autoCompact: { contextWindow: 100, threshold: 0.8, keepFirstPairs: 0, keepLastMessages: 1 },
+    });
+
+    expect(summarizerCalls).toBe(1);
+  });
+
   it('honors systemReminders: false to skip injection entirely', async () => {
     const provider = new MockProvider([endTurn('hi')]);
     const tools = new ToolRegistry();
