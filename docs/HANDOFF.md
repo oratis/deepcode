@@ -24,15 +24,15 @@ DeepCode is **not** a Claude/Anthropic product. The brand color is DeepSeek blue
 
 ## 2. Current state — May 28 (overnight session ended)
 
-| Aspect | State |
-| ------ | ----- |
-| Main branch | `229afc3` — `fix(v0.1.6): Bash tool calls always reported "error"` (#75) |
-| Shipped DMG | `release-artifacts/DeepCode-0.1.6-arm64.dmg` (4.0 MB, notarized + stapled, SHA `aed79038…7a84`) |
-| CLI version | `0.1.6` (not yet npm-published) |
-| Test status | 558 passing / 10 skipped — `pnpm -r test` |
-| Typecheck | clean across all 7 workspaces |
-| Release pipeline | `.github/workflows/release.yml` ready; 6 GitHub Secrets needed (see `docs/RELEASING.md`) |
-| v1.0.0 tag | **not pushed** — user's call |
+| Aspect           | State                                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------- |
+| Main branch      | `229afc3` — `fix(v0.1.6): Bash tool calls always reported "error"` (#75)                        |
+| Shipped DMG      | `release-artifacts/DeepCode-0.1.6-arm64.dmg` (4.0 MB, notarized + stapled, SHA `aed79038…7a84`) |
+| CLI version      | `0.1.6` (not yet npm-published)                                                                 |
+| Test status      | 558 passing / 10 skipped — `pnpm -r test`                                                       |
+| Typecheck        | clean across all 7 workspaces                                                                   |
+| Release pipeline | `.github/workflows/release.yml` ready; 6 GitHub Secrets needed (see `docs/RELEASING.md`)        |
+| v1.0.0 tag       | **not pushed** — user's call                                                                    |
 
 All 9 design-spec screens are aligned to `docs/VISUAL_DESIGN.html`:
 Onboarding · Project picker · Chat (3-col shell) · Sessions · Plugins · Skills ·
@@ -65,16 +65,16 @@ DeepCode/
 
 ## 4. Tech stack quick reference
 
-| Layer | Stack |
-| --- | --- |
-| Renderer (desktop) | React 18 + raw CSS in `src/index.css` (no Tailwind any more), Vite 5 |
-| Bundler | Vite for desktop; tsc for everything else |
-| Desktop backend | Rust + Tauri 2; plugin-dialog / fs / opener / process / shell / updater |
-| Provider | OpenAI SDK against `https://api.deepseek.com/v1` — uses `dangerouslyAllowBrowser: true` for Tauri |
-| CLI | Node 22, ESM, `readline` for REPL |
-| MCP client | JSON-RPC over stdio + HTTP/SSE (in core) |
-| Sandbox | macOS `sandbox-exec` profiles + Linux `bwrap` (in core, M3.5) |
-| Tests | vitest everywhere (550+ tests) |
+| Layer              | Stack                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| Renderer (desktop) | React 18 + raw CSS in `src/index.css` (no Tailwind any more), Vite 5                              |
+| Bundler            | Vite for desktop; tsc for everything else                                                         |
+| Desktop backend    | Rust + Tauri 2; plugin-dialog / fs / opener / process / shell / updater                           |
+| Provider           | OpenAI SDK against `https://api.deepseek.com/v1` — uses `dangerouslyAllowBrowser: true` for Tauri |
+| CLI                | Node 22, ESM, `readline` for REPL                                                                 |
+| MCP client         | JSON-RPC over stdio + HTTP/SSE (in core)                                                          |
+| Sandbox            | macOS `sandbox-exec` profiles + Linux `bwrap` (in core, M3.5)                                     |
+| Tests              | vitest everywhere (550+ tests)                                                                    |
 
 ---
 
@@ -121,12 +121,14 @@ the commit if anything fails. Don't `--no-verify` lightly.
 ## 6. Critical files (where to look for X)
 
 ### Agent + provider
+
 - `packages/core/src/agent.ts` — the agent loop. `runAgent()` is the entry.
   `ApprovalCallback` returns `boolean | 'always'`.
 - `packages/core/src/providers/deepseek.ts` — DeepSeek wrapper. **MUST** include
   `dangerouslyAllowBrowser: true` for Tauri renderer.
 
 ### Desktop renderer ↔ Tauri bridge
+
 - `apps/desktop/src/lib/mac-agent.ts` — runs `runAgent` in the renderer using
   Mac-flavored tool wrappers. Owns the per-app conversation history. Creates
   session JSONL on first turn.
@@ -141,20 +143,22 @@ the commit if anything fails. Don't `--no-verify` lightly.
 - `apps/desktop/src-tauri/src/lib.rs` — Tauri plugin + handler registration.
 
 ### React screens
+
 - `apps/desktop/src/App.tsx` — App shell + screen routing + project-pick gate +
   global keyboard shortcuts.
 - `apps/desktop/src/screens/Repl.tsx` — the main chat surface. ~750 lines. Owns
   composer, message rendering, approval flow, effort/model/mode dropdowns,
   Vim mode wiring, system messages.
 - `apps/desktop/src/screens/{Onboarding,Sessions,Plugins,Skills,Permissions,
-  MCPManager,Settings,About}.tsx` — utility screens. All use the shared
+MCPManager,Settings,About}.tsx` — utility screens. All use the shared
   `Screen + Card + Row + SectionTitle` primitives in `components/Screen.tsx`.
 - `apps/desktop/src/components/{BrandMark,Pill,Badge,ToolCard,Dropdown,
-  PlusMenu,InspectorRail,Sidebar,ProjectPickerOverlay,UpdateBanner,
-  ErrorBoundary}.tsx` — the design-system primitives.
+PlusMenu,InspectorRail,Sidebar,ProjectPickerOverlay,UpdateBanner,
+ErrorBoundary}.tsx` — the design-system primitives.
 - `apps/desktop/src/types/screens.ts` — canonical `ScreenName` union.
 
 ### CLI
+
 - `apps/cli/src/repl.ts` — the readline-based REPL. Owns the agent's run loop
   on the CLI side.
 - `apps/cli/src/commands.ts` — slash command registry. ~50 commands incl.
@@ -162,6 +166,7 @@ the commit if anything fails. Don't `--no-verify` lightly.
 - `apps/cli/src/parse-args.ts` — flag parsing.
 
 ### Config / settings
+
 - `packages/core/src/config/loader.ts` — three-layer settings load (user /
   project / local). `appendAllowMatcher()` lives here.
 - `packages/core/src/config/types.ts` — the canonical `DeepCodeSettings` shape.
@@ -169,6 +174,7 @@ the commit if anything fails. Don't `--no-verify` lightly.
   prefix / domain).
 
 ### Release
+
 - `.github/workflows/release.yml` — tag-driven CI. Builds CLI + Mac DMG +
   publishes both. Needs 6 secrets (`docs/RELEASING.md`).
 - `scripts/sign-and-notarize.sh` — the local equivalent.
@@ -241,6 +247,7 @@ old cached binary. The version number is the cache key for LSReplacement.
 **Bump the version on every shippable build**, even for tiny fixes.
 
 To force-clear cache on the dev machine:
+
 ```bash
 /System/Library/Frameworks/CoreServices.framework/Versions/A/Frameworks/LaunchServices.framework/Versions/A/Support/lsregister -kill -r -domain local -domain system -domain user
 ```
@@ -248,6 +255,7 @@ To force-clear cache on the dev machine:
 ### d) The vite alias prefers `dist` over `src`
 
 `apps/desktop/vite.config.ts` has:
+
 ```ts
 { find: /^@deepcode\/core\/dist\/(.+)$/, replacement: '.../packages/core/dist/$1' }
 ```
@@ -288,6 +296,7 @@ commit, run `pnpm -r test` manually first.
 ## 9. Apple signing pipeline
 
 ### Local builds
+
 Credentials are in the dev machine's keychain. The dev's Apple ID is
 `wangharp@gmail.com`, team `9LH9NBX7P4`. The app-specific password is in the
 user's password manager. The `DEEPCODE_NOTARY` keychain profile is set up
@@ -297,9 +306,10 @@ The Developer ID Application cert is at SHA-1 `7DC903001F863681EDBB2B4B18755D15D
 (`Developer ID Application: Bihao Wang (9LH9NBX7P4)`).
 
 Steps the script does (`scripts/sign-and-notarize.sh`):
+
 1. `pnpm tauri build --target aarch64-apple-darwin` → produces `.app`
 2. `codesign --force --deep --options runtime --entitlements Entitlements.plist
-   --timestamp` the .app
+--timestamp` the .app
 3. `xcrun notarytool submit` the .app (Apple takes 1-5 min)
 4. `xcrun stapler staple` the .app
 5. `scripts/make-dmg.sh` builds the DMG with the signed+stapled .app inside +
@@ -310,6 +320,7 @@ Steps the script does (`scripts/sign-and-notarize.sh`):
 9. `spctl --assess` verifies
 
 ### CI builds
+
 `.github/workflows/release.yml` does the same thing on `macos-14` runners. Needs
 6 secrets in repo settings (see `docs/RELEASING.md`):
 
@@ -325,6 +336,7 @@ Steps the script does (`scripts/sign-and-notarize.sh`):
 ## 10. What's deferred / TODOs
 
 ### v0.2 (next minor)
+
 - Composer `+` menu currently does the basics (Attach file inserts `@path`,
   `/` prefixes a slash, `#` prefixes a memory note). Wire `@path` to actually
   fetch the file contents and inject into the prompt. Wire `#` to write to
@@ -337,6 +349,7 @@ Steps the script does (`scripts/sign-and-notarize.sh`):
 - VS Code extension polish (M6 work, basic).
 
 ### v1.0.0 (M9 milestone — user blocks this)
+
 - Configure the 6 GitHub Secrets
 - Write a 5-min demo video
 - Build the website landing page (no domain yet)
@@ -344,12 +357,14 @@ Steps the script does (`scripts/sign-and-notarize.sh`):
 - Push the tag — release.yml takes over
 
 ### v1.1 (after v1.0)
+
 - JetBrains plugin
 - Central marketplace registry (currently each plugin is install-by-URL)
 - Image input (DeepSeek vision when it lands, or Qwen-VL fallback)
 - LSP server feature expansion
 
 ### Known small bugs / cleanups
+
 - `apps/desktop/src/lib/mac-agent.ts#getHistoryLength` is exported but unused
 - `apps/cli/src/commands.ts#TodosCommand` has a `// M3c-rest` comment that's
   stale (it's actually wired now)
@@ -420,10 +435,11 @@ that we mirror in real React + CSS). When the design CSS in `index.css`
 deviates from the spec, the spec wins.
 
 The 9 screen sections in the spec are numbered. Cross-references:
+
 - Screen #1: Hero / homepage (deferred — we don't have a marketing page yet)
 - Screen #2: First-launch / Onboarding → `src/screens/Onboarding.tsx`
 - Screen #3: Main desktop view (3-col shell) → `src/App.tsx` shell + `Sidebar`
-  + `Repl` + `InspectorRail`
+  - `Repl` + `InspectorRail`
 - Screen #4: Composer detail → toolbar inside `Repl.tsx`
 - Screen #5: File panel — DEFERRED. The redesign dropped the right-side
   Source/Diff/History panel; it'd re-emerge if/when the inspector ‹ expand

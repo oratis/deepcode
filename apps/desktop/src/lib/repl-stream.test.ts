@@ -33,9 +33,7 @@ describe('repl-stream mutators', () => {
   it('does NOT spawn a second cursor when a system note interleaves the stream', () => {
     // Reproduces the "two blinking cursors" bug: a breadcrumb pushed between
     // streaming deltas must not orphan the open turn or start a new one.
-    let m: Msg[] = [
-      { role: 'user', text: 'write a game' },
-    ];
+    let m: Msg[] = [{ role: 'user', text: 'write a game' }];
     m = appendTextDelta(m, 'Creating files');
     m = appendToolUse(m, tool('w1', 'Write'));
     // User clicks "always allow" → a system note is pushed mid-turn.
@@ -62,7 +60,11 @@ describe('repl-stream mutators', () => {
     const turn = m[0]!;
     if (turn.role !== 'assistant') throw new Error('expected assistant');
     expect(turn.turn.tools[0]).toMatchObject({ toolId: 'a', status: 'running' });
-    expect(turn.turn.tools[1]).toMatchObject({ toolId: 'b', status: 'ok', resultText: 'grep output' });
+    expect(turn.turn.tools[1]).toMatchObject({
+      toolId: 'b',
+      status: 'ok',
+      resultText: 'grep output',
+    });
   });
 
   it('finalizeStreaming clears the flag on ALL assistant turns', () => {

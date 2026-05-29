@@ -23,9 +23,18 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "deepcode.openPanel", "title": "DeepCode: Open Panel" },
-      { "command": "deepcode.run", "title": "DeepCode: Run on selection" },
-      { "command": "deepcode.review", "title": "DeepCode: Review current diff" }
+      {
+        "command": "deepcode.openPanel",
+        "title": "DeepCode: Open Panel"
+      },
+      {
+        "command": "deepcode.run",
+        "title": "DeepCode: Run on selection"
+      },
+      {
+        "command": "deepcode.review",
+        "title": "DeepCode: Review current diff"
+      }
     ],
     "configuration": {
       "title": "DeepCode",
@@ -39,29 +48,51 @@
         "deepcode.model": {
           "type": "string",
           "default": "deepseek-chat",
-          "enum": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"],
+          "enum": [
+            "deepseek-chat",
+            "deepseek-reasoner",
+            "deepseek-v4-flash",
+            "deepseek-v4-pro"
+          ],
           "description": "DeepSeek model to use."
         },
         "deepcode.effort": {
           "type": "string",
           "default": "medium",
-          "enum": ["low", "medium", "high", "xhigh", "max"],
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
           "description": "Effort tier (affects maxTokens + temperature)."
         }
       }
     },
     "viewsContainers": {
       "activitybar": [
-        { "id": "deepcode", "title": "DeepCode", "icon": "media/icon.svg" }
+        {
+          "id": "deepcode",
+          "title": "DeepCode",
+          "icon": "media/icon.svg"
+        }
       ]
     },
     "views": {
       "deepcode": [
-        { "id": "deepcode.chat", "name": "Chat" }
+        {
+          "id": "deepcode.chat",
+          "name": "Chat"
+        }
       ]
     },
     "keybindings": [
-      { "command": "deepcode.openPanel", "key": "ctrl+shift+d", "mac": "cmd+shift+d" }
+      {
+        "command": "deepcode.openPanel",
+        "key": "ctrl+shift+d",
+        "mac": "cmd+shift+d"
+      }
     ]
   },
   "scripts": {

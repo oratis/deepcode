@@ -53,9 +53,7 @@ export function InspectorRail({
         onClick={() => onChange('permissions')}
       >
         ▤
-        {planCount !== undefined && planCount > 0 && (
-          <span className="dot-badge">{planCount}</span>
-        )}
+        {planCount !== undefined && planCount > 0 && <span className="dot-badge">{planCount}</span>}
       </button>
 
       <button

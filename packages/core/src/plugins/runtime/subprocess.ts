@@ -278,7 +278,10 @@ async function wrapNodeSpawn(
   };
   if (platform === 'macos') {
     const profile = buildMacOsProfile(merged, pluginDir);
-    const profilePath = join(tmpdir(), `deepcode-plug-sb-${process.pid}-${Date.now().toString(36)}.sb`);
+    const profilePath = join(
+      tmpdir(),
+      `deepcode-plug-sb-${process.pid}-${Date.now().toString(36)}.sb`,
+    );
     await fs.writeFile(profilePath, profile, 'utf8');
     return { command: 'sandbox-exec', args: ['-f', profilePath, 'node', entry] };
   }

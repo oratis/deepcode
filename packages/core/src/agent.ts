@@ -129,7 +129,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         // renderer passes systemReminders:false to bypass it entirely, and
         // a static import here would drag node:fs into the browser bundle.
         const remindersMod = /* @vite-ignore */ './reminders/index.js';
-        const { buildSystemReminders } = (await import(remindersMod)) as typeof import('./reminders/index.js');
+        const { buildSystemReminders } = (await import(
+          remindersMod
+        )) as typeof import('./reminders/index.js');
         const block = await buildSystemReminders(
           {
             cwd: opts.cwd,
@@ -160,9 +162,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     cwd: opts.cwd,
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
-    sessionDir: opts.session
-      ? `${opts.session.manager.root}/${opts.session.id}`
-      : undefined,
+    sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
     askUser: opts.askUser,
     modeSignal,
   };
@@ -250,9 +250,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     //      that mutate state / snapshot run sequentially to preserve ordering.
     // tool_result blocks carry their tool_use_id, so the final array is
     // re-assembled in the model's original order regardless of finish order.
-    const toolBlocks = result.content.filter(
-      (b): b is ToolUseBlock => b.type === 'tool_use',
-    );
+    const toolBlocks = result.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
     const resultsById = new Map<string, ToolResultBlock>();
     type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
     const ready: Ready[] = [];

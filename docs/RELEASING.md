@@ -11,14 +11,14 @@ validate → build CLI + publish to npm → build + sign + notarize Tauri DMG
 Set these in repo settings → Secrets and variables → Actions → New
 repository secret. All five are required for a successful Mac release.
 
-| Secret                          | Purpose                                                            |
-| ------------------------------- | ------------------------------------------------------------------ |
-| `APPLE_ID`                      | Your Apple Developer Apple ID (e.g. `you@example.com`)             |
-| `APPLE_APP_SPECIFIC_PASSWORD`   | App-specific password from appleid.apple.com (used by notarytool)  |
-| `APPLE_TEAM_ID`                 | 10-character team ID (from developer.apple.com → membership)       |
-| `CSC_LINK`                      | Base64-encoded `.p12` of the Developer ID Application cert         |
-| `CSC_KEY_PASSWORD`              | Password used when exporting the `.p12`                            |
-| `NPM_TOKEN`                     | npm access token with `publish` scope                              |
+| Secret                        | Purpose                                                           |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `APPLE_ID`                    | Your Apple Developer Apple ID (e.g. `you@example.com`)            |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password from appleid.apple.com (used by notarytool) |
+| `APPLE_TEAM_ID`               | 10-character team ID (from developer.apple.com → membership)      |
+| `CSC_LINK`                    | Base64-encoded `.p12` of the Developer ID Application cert        |
+| `CSC_KEY_PASSWORD`            | Password used when exporting the `.p12`                           |
+| `NPM_TOKEN`                   | npm access token with `publish` scope                             |
 
 ### 2. Export the Developer ID certificate
 
@@ -81,12 +81,12 @@ serially:
 
 Tag format determines the channel + publish target:
 
-| Tag format                | Channel   | npm tag    | GitHub release |
-| ------------------------- | --------- | ---------- | -------------- |
-| `v0.2.1`                  | `stable`  | `latest`   | not prerelease |
-| `v0.3.0-beta.1`           | `beta`    | `beta`     | prerelease     |
-| `v0.3.0-nightly.20260605` | `nightly` | `nightly`  | prerelease     |
-| `v0.2.2+security.1`       | `stable`  | `latest`   | mandatory flag |
+| Tag format                | Channel   | npm tag   | GitHub release |
+| ------------------------- | --------- | --------- | -------------- |
+| `v0.2.1`                  | `stable`  | `latest`  | not prerelease |
+| `v0.3.0-beta.1`           | `beta`    | `beta`    | prerelease     |
+| `v0.3.0-nightly.20260605` | `nightly` | `nightly` | prerelease     |
+| `v0.2.2+security.1`       | `stable`  | `latest`  | mandatory flag |
 
 The `+security.X` suffix sets `is_mandatory=true` in the release output
 so the Tauri updater can show a red "must update" banner.

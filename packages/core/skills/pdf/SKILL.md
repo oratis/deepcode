@@ -15,13 +15,13 @@ the OS-bundled tools (macOS) or `pdftk` (Linux) via Bash.
 
 ## Tools
 
-| Op                   | macOS                                              | Linux (pdftk)                                  |
-| -------------------- | -------------------------------------------------- | ---------------------------------------------- |
-| Extract pages 2-5    | `cpdf in.pdf 2-5 -o out.pdf` (needs cpdf)          | `pdftk in.pdf cat 2-5 output out.pdf`          |
-| Merge a, b, c        | (PDF Toolkit / cpdf)                                | `pdftk a.pdf b.pdf c.pdf cat output merged.pdf` |
-| Split per page       | `cpdf -split in.pdf -o page-%d.pdf`                | `pdftk in.pdf burst output page-%02d.pdf`      |
-| Text dump            | `pdftotext in.pdf -` (needs poppler)               | same                                           |
-| Page count           | `pdftk in.pdf dump_data | grep NumberOfPages`      | same                                           |
+| Op                | macOS                                     | Linux (pdftk)                                   |
+| ----------------- | ----------------------------------------- | ----------------------------------------------- | ---- |
+| Extract pages 2-5 | `cpdf in.pdf 2-5 -o out.pdf` (needs cpdf) | `pdftk in.pdf cat 2-5 output out.pdf`           |
+| Merge a, b, c     | (PDF Toolkit / cpdf)                      | `pdftk a.pdf b.pdf c.pdf cat output merged.pdf` |
+| Split per page    | `cpdf -split in.pdf -o page-%d.pdf`       | `pdftk in.pdf burst output page-%02d.pdf`       |
+| Text dump         | `pdftotext in.pdf -` (needs poppler)      | same                                            |
+| Page count        | `pdftk in.pdf dump_data                   | grep NumberOfPages`                             | same |
 
 If neither `cpdf` nor `pdftk` is installed, use Python + `pypdf` (one
 dep, pure Python):

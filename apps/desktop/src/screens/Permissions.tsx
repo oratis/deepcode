@@ -71,9 +71,7 @@ export function PermissionsScreen(): JSX.Element {
   }
 
   function removeRule(type: RuleType, idx: number): void {
-    setPerm((p) =>
-      p ? { ...p, [type]: p[type].filter((_, i) => i !== idx) } : p,
-    );
+    setPerm((p) => (p ? { ...p, [type]: p[type].filter((_, i) => i !== idx) } : p));
     setSaveMsg(null);
   }
 
@@ -114,12 +112,7 @@ export function PermissionsScreen(): JSX.Element {
       title="Permissions"
       subtitle="deny > ask > allow"
       actions={
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={handleSave}
-          disabled={saving}
-        >
+        <button type="button" className="btn btn-primary" onClick={handleSave} disabled={saving}>
           {saving && <span className="spinner" />}
           {saving ? 'Saving…' : 'Save'}
         </button>
@@ -134,10 +127,9 @@ export function PermissionsScreen(): JSX.Element {
               background: saveMsg.startsWith('✓')
                 ? 'rgba(20, 228, 162, 0.12)'
                 : 'rgba(255, 84, 112, 0.12)',
-              border: '1px solid '
-                + (saveMsg.startsWith('✓')
-                  ? 'rgba(20, 228, 162, 0.3)'
-                  : 'rgba(255, 84, 112, 0.3)'),
+              border:
+                '1px solid ' +
+                (saveMsg.startsWith('✓') ? 'rgba(20, 228, 162, 0.3)' : 'rgba(255, 84, 112, 0.3)'),
               color: saveMsg.startsWith('✓') ? 'var(--accent)' : 'var(--error)',
               borderRadius: 'var(--radius-sm)',
               fontSize: 12,
@@ -157,9 +149,7 @@ export function PermissionsScreen(): JSX.Element {
           <div style={{ display: 'flex', gap: 8 }}>
             <select
               value={newRule.type}
-              onChange={(e) =>
-                setNewRule({ ...newRule, type: e.target.value as RuleType })
-              }
+              onChange={(e) => setNewRule({ ...newRule, type: e.target.value as RuleType })}
               className="input"
               style={{ width: 110, fontFamily: 'inherit' }}
             >
@@ -170,7 +160,7 @@ export function PermissionsScreen(): JSX.Element {
             <input
               value={newRule.pattern}
               onChange={(e) => setNewRule({ ...newRule, pattern: e.target.value })}
-              placeholder='e.g. Bash(npm test:*) or Read(./src/**)'
+              placeholder="e.g. Bash(npm test:*) or Read(./src/**)"
               className="input"
               style={{ flex: 1 }}
               onKeyDown={(e) => {
@@ -194,9 +184,9 @@ export function PermissionsScreen(): JSX.Element {
               lineHeight: 1.5,
             }}
           >
-            Pattern syntax: bare tool name (<code>Bash</code>) · subcommand
-            (<code>Bash(git:*)</code>) · prefix (<code>Read(/etc/*)</code>) ·
-            domain (<code>WebFetch(domain:github.com)</code>).
+            Pattern syntax: bare tool name (<code>Bash</code>) · subcommand (
+            <code>Bash(git:*)</code>) · prefix (<code>Read(/etc/*)</code>) · domain (
+            <code>WebFetch(domain:github.com)</code>).
           </div>
         </Card>
 
@@ -230,9 +220,7 @@ export function PermissionsScreen(): JSX.Element {
                       style={{
                         padding: '8px 16px',
                         borderBottom:
-                          i === rules.length - 1
-                            ? 'none'
-                            : '1px solid var(--line-soft)',
+                          i === rules.length - 1 ? 'none' : '1px solid var(--line-soft)',
                         display: 'flex',
                         alignItems: 'center',
                         gap: 10,
@@ -267,7 +255,11 @@ export function PermissionsScreen(): JSX.Element {
         })}
 
         {perm.additionalDirectories.length > 0 && (
-          <Card title={`Additional directories (${perm.additionalDirectories.length})`} flush padding={0}>
+          <Card
+            title={`Additional directories (${perm.additionalDirectories.length})`}
+            flush
+            padding={0}
+          >
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
               {perm.additionalDirectories.map((d, i) => (
                 <li
@@ -292,9 +284,8 @@ export function PermissionsScreen(): JSX.Element {
 
         <SectionTitle>Notes</SectionTitle>
         <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
-          Inline "Always allow" buttons in the chat (over a pending tool
-          card) also write to this list. Removing a rule here disables it
-          immediately for the next tool call.
+          Inline "Always allow" buttons in the chat (over a pending tool card) also write to this
+          list. Removing a rule here disables it immediately for the next tool call.
         </div>
       </div>
     </Screen>

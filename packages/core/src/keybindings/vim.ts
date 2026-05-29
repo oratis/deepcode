@@ -35,7 +35,12 @@ export const DEFAULT_KEYBINDINGS: KeyBinding[] = [
   // Vim defaults (only fire when vim:true)
   { key: 'esc', action: 'vim-normal-mode', when: 'INSERT', description: 'Switch to NORMAL mode.' },
   { key: 'i', action: 'vim-insert-mode', when: 'NORMAL', description: 'Switch to INSERT mode.' },
-  { key: 'a', action: 'vim-append-mode', when: 'NORMAL', description: 'Append (insert after cursor).' },
+  {
+    key: 'a',
+    action: 'vim-append-mode',
+    when: 'NORMAL',
+    description: 'Append (insert after cursor).',
+  },
   { key: 'v', action: 'vim-visual-mode', when: 'NORMAL', description: 'Enter VISUAL mode.' },
   { key: '0', action: 'cursor-line-start', when: 'NORMAL' },
   { key: '$', action: 'cursor-line-end', when: 'NORMAL' },

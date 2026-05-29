@@ -12,16 +12,8 @@
 // avoid pulling BUILTIN_TOOLS / SessionManager / etc. at module-load time.
 // The renderer can't link against node:fs / node:child_process.
 import { runAgent } from '@deepcode/core/dist/agent.js';
-import {
-  DeepSeekProvider,
-  EFFORT_PARAMS,
-} from '@deepcode/core/dist/providers/deepseek.js';
-import type {
-  AgentEvent,
-  Effort,
-  Mode,
-  ToolHandler,
-} from '@deepcode/core/dist/types.js';
+import { DeepSeekProvider, EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
+import type { AgentEvent, Effort, Mode, ToolHandler } from '@deepcode/core/dist/types.js';
 import { MAC_TOOLS } from './mac-tools.js';
 import { readCredentials, sessionAppend, sessionCreate } from './tauri-api.js';
 
@@ -106,10 +98,7 @@ export interface StartTurnArgs {
    *   'deny'   — reject
    *   'always' — permit + persist a permissions.allow matcher
    */
-  onApproval?: (
-    toolName: string,
-    reason: string,
-  ) => Promise<'allow' | 'deny' | 'always'>;
+  onApproval?: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
 }
 
 export interface StartTurnResult {
@@ -188,9 +177,7 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
       history = result.history;
       // Append the new assistant message(s) for persistence.
       if (currentSessionId && history.length > 0) {
-        const newestAssistant = [...history]
-          .reverse()
-          .find((m) => m.role === 'assistant');
+        const newestAssistant = [...history].reverse().find((m) => m.role === 'assistant');
         if (newestAssistant) {
           try {
             await sessionAppend(currentSessionId, {

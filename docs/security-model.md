@@ -12,15 +12,15 @@ against the threat model here.
 DeepCode is an LLM-driven coding assistant. The threats we care about, in
 decreasing order of operator severity:
 
-| # | Threat                                                                   | Severity | Where mitigated         |
-| - | ------------------------------------------------------------------------ | -------- | ----------------------- |
-| 1 | Model exfiltrates DeepSeek API key (or other env secrets) via tool call  | High     | M3.5 sandbox + M5.1 env strip |
-| 2 | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)    | High     | M3.5 sandbox + permissions |
-| 3 | Plugin (third-party code) does either #1 or #2                           | High     | M5.1 subprocess + (M5.1-ext) OS sandbox |
-| 4 | Hook script (third-party shell snippet) does either #1 or #2             | Medium   | M3.5 sandbox wraps Bash; hooks bypass when invoked via /bin/sh directly |
-| 5 | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule | Medium   | escapeSbpl()             |
-| 6 | Untrusted project's AGENTS.md drives the agent into harmful action       | Low      | Trust store (`/trust`)   |
-| 7 | DNS exfiltration of secrets from sandboxed Bash                          | Acknowledged limitation | M3.5-ext userspace proxy |
+| #   | Threat                                                                   | Severity                | Where mitigated                                                         |
+| --- | ------------------------------------------------------------------------ | ----------------------- | ----------------------------------------------------------------------- |
+| 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call  | High                    | M3.5 sandbox + M5.1 env strip                                           |
+| 2   | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)    | High                    | M3.5 sandbox + permissions                                              |
+| 3   | Plugin (third-party code) does either #1 or #2                           | High                    | M5.1 subprocess + (M5.1-ext) OS sandbox                                 |
+| 4   | Hook script (third-party shell snippet) does either #1 or #2             | Medium                  | M3.5 sandbox wraps Bash; hooks bypass when invoked via /bin/sh directly |
+| 5   | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule | Medium                  | escapeSbpl()                                                            |
+| 6   | Untrusted project's AGENTS.md drives the agent into harmful action       | Low                     | Trust store (`/trust`)                                                  |
+| 7   | DNS exfiltration of secrets from sandboxed Bash                          | Acknowledged limitation | M3.5-ext userspace proxy                                                |
 
 ## Defence layers
 
@@ -41,6 +41,7 @@ Every tool call goes through:
 ```
 
 Modes (`default` | `acceptEdits` | `plan` | `auto` | `dontAsk` | `bypassPermissions`):
+
 - `plan` blocks all writes and exec (read/grep/glob only).
 - `default` prompts for risky operations.
 - `bypassPermissions` is gated behind the trust store.
@@ -107,6 +108,7 @@ Plugins run in their own `node` subprocess with:
   load fails open (drift detection).
 
 **Acknowledged gaps**:
+
 - The subprocess isn't itself sandbox-wrapped at the OS level yet. A
   malicious plugin can still exfil via DNS, can read other files the host
   process can read (e.g. `~/.deepcode/credentials.json`). M5.1-ext closes
@@ -163,14 +165,14 @@ etc.) as **untrusted**. We:
 
 ## What we do NOT yet protect against
 
-| Gap                                                | Tracking             |
-| -------------------------------------------------- | -------------------- |
-| DNS exfil from sandboxed Bash                      | M3.5-ext (UDP proxy) |
-| OS sandbox wrapping the plugin subprocess          | M5.1-ext             |
-| Pipeline analysis (`git ... && rm -rf /`)          | M5.2                 |
-| Domain whitelist enforcement (allowedDomains)      | M3.5-ext             |
-| Image input prompt injection (model multimodal)    | v1.1                 |
-| Side-channel timing leaks (e.g. via exec duration) | Out of scope         |
+| Gap                                                | Tracking                              |
+| -------------------------------------------------- | ------------------------------------- |
+| DNS exfil from sandboxed Bash                      | M3.5-ext (UDP proxy)                  |
+| OS sandbox wrapping the plugin subprocess          | M5.1-ext                              |
+| Pipeline analysis (`git ... && rm -rf /`)          | M5.2                                  |
+| Domain whitelist enforcement (allowedDomains)      | M3.5-ext                              |
+| Image input prompt injection (model multimodal)    | v1.1                                  |
+| Side-channel timing leaks (e.g. via exec duration) | Out of scope                          |
 | Local malicious binaries already on $PATH          | Out of scope (assume host is trusted) |
 
 ## How to file a security issue

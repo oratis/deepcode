@@ -121,7 +121,10 @@ describe('buildLinuxBwrapArgs', () => {
     const idx = args.indexOf('--ro-bind');
     // Walk forward through args looking for the resolv.conf binding
     const has = args.some(
-      (a, i) => a === '--ro-bind' && args[i + 1] === '/tmp/dc-resolv.conf' && args[i + 2] === '/etc/resolv.conf',
+      (a, i) =>
+        a === '--ro-bind' &&
+        args[i + 1] === '/tmp/dc-resolv.conf' &&
+        args[i + 2] === '/etc/resolv.conf',
     );
     expect(has).toBe(true);
     void idx;

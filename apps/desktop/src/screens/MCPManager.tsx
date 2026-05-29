@@ -12,10 +12,7 @@ interface McpServerStatus {
   error?: string;
 }
 
-const STATUS_BADGE: Record<
-  McpServerStatus['status'],
-  { kind: BadgeKind; label: string }
-> = {
+const STATUS_BADGE: Record<McpServerStatus['status'], { kind: BadgeKind; label: string }> = {
   connected: { kind: 'ok', label: '● connected' },
   failed: { kind: 'err', label: '✕ failed' },
   disabled: { kind: 'warn', label: '○ disabled' },
@@ -58,9 +55,7 @@ export function MCPManagerScreen(): JSX.Element {
     <Screen
       title="MCP servers"
       subtitle={
-        servers.length === 0
-          ? 'none configured'
-          : `${connected} of ${servers.length} connected`
+        servers.length === 0 ? 'none configured' : `${connected} of ${servers.length} connected`
       }
     >
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
@@ -76,8 +71,8 @@ export function MCPManagerScreen(): JSX.Element {
             >
               No MCP servers configured.
               <div style={{ marginTop: 10, fontSize: 11 }}>
-                Add the snippet below to <code>~/.deepcode/settings.json</code>{' '}
-                and relaunch DeepCode.
+                Add the snippet below to <code>~/.deepcode/settings.json</code> and relaunch
+                DeepCode.
               </div>
             </div>
           ) : (
@@ -90,9 +85,7 @@ export function MCPManagerScreen(): JSX.Element {
                     style={{
                       padding: '14px 16px',
                       borderBottom:
-                        i === servers.length - 1
-                          ? 'none'
-                          : '1px solid var(--line-soft)',
+                        i === servers.length - 1 ? 'none' : '1px solid var(--line-soft)',
                     }}
                   >
                     <div
@@ -163,10 +156,9 @@ export function MCPManagerScreen(): JSX.Element {
 
         <SectionTitle>About MCP</SectionTitle>
         <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
-          Model Context Protocol servers expose tools, resources, and prompts
-          that DeepCode can route into via JSON-RPC. Failures show their
-          stderr inline — most issues are a missing binary on $PATH or an
-          arg typo.
+          Model Context Protocol servers expose tools, resources, and prompts that DeepCode can
+          route into via JSON-RPC. Failures show their stderr inline — most issues are a missing
+          binary on $PATH or an arg typo.
         </div>
       </div>
     </Screen>

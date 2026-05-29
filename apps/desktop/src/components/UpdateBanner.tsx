@@ -36,10 +36,7 @@ export function UpdateBanner({ info }: BannerProps): JSX.Element | null {
         >
           {relaunching ? 'Relaunching…' : 'Relaunch now'}
         </button>
-        <button
-          className="rounded px-3 py-1 text-xs text-muted"
-          onClick={() => setDismissed(true)}
-        >
+        <button className="rounded px-3 py-1 text-xs text-muted" onClick={() => setDismissed(true)}>
           Later
         </button>
       </div>

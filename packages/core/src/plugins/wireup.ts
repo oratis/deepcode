@@ -21,16 +21,8 @@ import { homedir } from 'node:os';
 import type { Hooks } from '../config/types.js';
 import type { HookDispatcher } from '../hooks/dispatcher.js';
 import type { ToolHandler } from '../types.js';
-import {
-  discoverPlugins,
-  type DiscoverOptions,
-  type InstalledPlugin,
-} from './manifest.js';
-import {
-  PluginSubprocess,
-  shutdownAllPlugins,
-  spawnAllPlugins,
-} from './runtime/subprocess.js';
+import { discoverPlugins, type DiscoverOptions, type InstalledPlugin } from './manifest.js';
+import { PluginSubprocess, shutdownAllPlugins, spawnAllPlugins } from './runtime/subprocess.js';
 
 export interface PluginCapabilityBridge {
   fs_read: (path: string) => Promise<string>;

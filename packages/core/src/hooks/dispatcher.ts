@@ -166,8 +166,7 @@ export class HookDispatcher {
         if (!this.agentDispatcher) {
           return {
             stdout: '',
-            stderr:
-              'agent hook: no agentDispatcher wired (host CLI must pass one in to enable).',
+            stderr: 'agent hook: no agentDispatcher wired (host CLI must pass one in to enable).',
             exitCode: 0,
           };
         }

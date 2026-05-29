@@ -51,7 +51,16 @@ export class ErrorBoundary extends Component<Props, State> {
             boxShadow: 'var(--shadow)',
           }}
         >
-          <div style={{ fontSize: 12, color: 'var(--error)', marginBottom: 8, letterSpacing: 1, textTransform: 'uppercase', fontWeight: 700 }}>
+          <div
+            style={{
+              fontSize: 12,
+              color: 'var(--error)',
+              marginBottom: 8,
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              fontWeight: 700,
+            }}
+          >
             DeepCode crashed
           </div>
           <h2
@@ -64,9 +73,9 @@ export class ErrorBoundary extends Component<Props, State> {
             Something went wrong rendering this screen.
           </h2>
           <p style={{ fontSize: 13, color: 'var(--text-2)', marginBottom: 16, lineHeight: 1.6 }}>
-            This is a bug in DeepCode. The conversation, your settings, and
-            your project folder are intact — reload to recover. If it keeps
-            happening, please share the error below at github.com/oratis/deepcode/issues.
+            This is a bug in DeepCode. The conversation, your settings, and your project folder are
+            intact — reload to recover. If it keeps happening, please share the error below at
+            github.com/oratis/deepcode/issues.
           </p>
           <pre
             style={{

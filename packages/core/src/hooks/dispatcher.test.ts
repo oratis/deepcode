@@ -217,9 +217,7 @@ describe('HookDispatcher', () => {
     let captured: { server: string; tool: string } | null = null;
     const d = new HookDispatcher({
       hooks: {
-        PreToolUse: [
-          { hooks: [{ type: 'mcp_tool', server: 'slack', tool: 'notify' }] },
-        ],
+        PreToolUse: [{ hooks: [{ type: 'mcp_tool', server: 'slack', tool: 'notify' }] }],
       },
       mcpToolDispatcher: async (h) => {
         captured = { server: h.server, tool: h.tool };

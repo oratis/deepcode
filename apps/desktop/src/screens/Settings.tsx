@@ -5,11 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
 import { loadProjectPath } from '../lib/project.js';
-import {
-  getSettingsPath,
-  loadSettingsFile,
-  saveSettingsFile,
-} from '../lib/tauri-api.js';
+import { getSettingsPath, loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';
 
 export function SettingsScreen(): JSX.Element {
   const [settings, setSettings] = useState<Record<string, unknown> | null>(null);
@@ -159,10 +155,8 @@ export function SettingsScreen(): JSX.Element {
                 ? 'rgba(20, 228, 162, 0.12)'
                 : 'rgba(255, 84, 112, 0.12)',
               border:
-                '1px solid '
-                + (feedback.startsWith('✓')
-                  ? 'rgba(20, 228, 162, 0.3)'
-                  : 'rgba(255, 84, 112, 0.3)'),
+                '1px solid ' +
+                (feedback.startsWith('✓') ? 'rgba(20, 228, 162, 0.3)' : 'rgba(255, 84, 112, 0.3)'),
               color: feedback.startsWith('✓') ? 'var(--accent)' : 'var(--error)',
               borderRadius: 'var(--radius-sm)',
               fontSize: 12,
@@ -233,9 +227,7 @@ export function SettingsScreen(): JSX.Element {
                     fontSize: 12,
                   }}
                 >
-                  {flat.length === 0
-                    ? 'Settings file is empty.'
-                    : 'No matching keys.'}
+                  {flat.length === 0 ? 'Settings file is empty.' : 'No matching keys.'}
                 </div>
               ) : (
                 <table
@@ -277,10 +269,7 @@ export function SettingsScreen(): JSX.Element {
                   </thead>
                   <tbody>
                     {visibleFlat.map((e) => (
-                      <tr
-                        key={e.key}
-                        style={{ borderTop: '1px solid var(--line-soft)' }}
-                      >
+                      <tr key={e.key} style={{ borderTop: '1px solid var(--line-soft)' }}>
                         <td
                           style={{
                             padding: '8px 14px',
@@ -309,8 +298,8 @@ export function SettingsScreen(): JSX.Element {
 
             <SectionTitle>Tip</SectionTitle>
             <div style={{ fontSize: 11, color: 'var(--text-3)', lineHeight: 1.6 }}>
-              Use the JSON view (toggle in the header) to edit nested keys
-              and arrays directly. Save validates JSON before writing.
+              Use the JSON view (toggle in the header) to edit nested keys and arrays directly. Save
+              validates JSON before writing.
             </div>
           </>
         )}

@@ -16,15 +16,15 @@ code path the user asked about and confirm the observable behavior.
 
 ## What "verify" means concretely
 
-| Change type                  | Verify by                                                                    |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| New CLI flag / subcommand    | Run the binary with the flag; confirm exit code + stdout.                    |
-| Bug fix in a function        | Add (or run) a test that reproduces the bug + passes after the fix.          |
-| Refactor of internal API     | Run the full test suite + grep for remaining old-name callers.               |
-| Schema migration             | Apply forward + backward on a fresh DB; confirm `\d` matches.                |
-| HTTP endpoint added          | `curl localhost:<port>/<path>` and inspect the response.                     |
-| Background task / cron       | Trigger the entry point manually; check the log file or queue.               |
-| UI change                    | Take a screenshot via `mcp__computer-use__screenshot` OR ask the user.       |
+| Change type               | Verify by                                                              |
+| ------------------------- | ---------------------------------------------------------------------- |
+| New CLI flag / subcommand | Run the binary with the flag; confirm exit code + stdout.              |
+| Bug fix in a function     | Add (or run) a test that reproduces the bug + passes after the fix.    |
+| Refactor of internal API  | Run the full test suite + grep for remaining old-name callers.         |
+| Schema migration          | Apply forward + backward on a fresh DB; confirm `\d` matches.          |
+| HTTP endpoint added       | `curl localhost:<port>/<path>` and inspect the response.               |
+| Background task / cron    | Trigger the entry point manually; check the log file or queue.         |
+| UI change                 | Take a screenshot via `mcp__computer-use__screenshot` OR ask the user. |
 
 ## Anti-patterns
 

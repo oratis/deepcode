@@ -39,9 +39,7 @@ export function PluginsScreen(): JSX.Element {
           loadSettingsFile().catch(() => ({}) as Record<string, unknown>),
         ]);
         const disabled = new Set(
-          Array.isArray(settings.disabledPlugins)
-            ? (settings.disabledPlugins as string[])
-            : [],
+          Array.isArray(settings.disabledPlugins) ? (settings.disabledPlugins as string[]) : [],
         );
         const merged = (rows as PluginRow[]).map((p) => ({
           ...p,
@@ -62,9 +60,7 @@ export function PluginsScreen(): JSX.Element {
     try {
       const current = (await loadSettingsFile()) as Record<string, unknown>;
       const disabled = new Set(
-        Array.isArray(current.disabledPlugins)
-          ? (current.disabledPlugins as string[])
-          : [],
+        Array.isArray(current.disabledPlugins) ? (current.disabledPlugins as string[]) : [],
       );
       if (nextEnabled) disabled.delete(name);
       else disabled.add(name);
@@ -78,11 +74,7 @@ export function PluginsScreen(): JSX.Element {
     } catch (err) {
       // Revert
       setPlugins((ps) =>
-        ps
-          ? ps.map((p) =>
-              p.name === name ? { ...p, enabled: !nextEnabled } : p,
-            )
-          : ps,
+        ps ? ps.map((p) => (p.name === name ? { ...p, enabled: !nextEnabled } : p)) : ps,
       );
       setFeedback(`✕ Toggle failed: ${(err as Error).message}`);
     }
@@ -116,10 +108,7 @@ export function PluginsScreen(): JSX.Element {
   const enabled = plugins.filter((p) => p.enabled).length;
 
   return (
-    <Screen
-      title="Plugins"
-      subtitle={`${plugins.length} installed · ${enabled} enabled`}
-    >
+    <Screen title="Plugins" subtitle={`${plugins.length} installed · ${enabled} enabled`}>
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
         <Card title="Install new plugin">
           <div style={{ display: 'flex', gap: 8 }}>
@@ -183,9 +172,7 @@ export function PluginsScreen(): JSX.Element {
                     style={{
                       padding: '14px 16px',
                       borderBottom:
-                        i === plugins.length - 1
-                          ? 'none'
-                          : '1px solid var(--line-soft)',
+                        i === plugins.length - 1 ? 'none' : '1px solid var(--line-soft)',
                     }}
                   >
                     <div

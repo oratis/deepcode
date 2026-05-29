@@ -4,7 +4,9 @@ import { buildNxDomain, parseQName, startDnsProxy, type DnsProxyHandle } from '.
 
 /** Build a minimal DNS query packet for a single domain. */
 function buildQuery(domain: string, txnId = 0x1234): Buffer {
-  const labels = domain.split('.').map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l, 'utf8')]));
+  const labels = domain
+    .split('.')
+    .map((l) => Buffer.concat([Buffer.from([l.length]), Buffer.from(l, 'utf8')]));
   const qname = Buffer.concat([...labels, Buffer.from([0])]);
   // Header (12 bytes) + qname + qtype (2) + qclass (2)
   const header = Buffer.alloc(12);

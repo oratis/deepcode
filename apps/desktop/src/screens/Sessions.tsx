@@ -28,8 +28,8 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
     );
   }
 
-  const filtered = sessions.filter((s) =>
-    !filter || s.id.toLowerCase().includes(filter.toLowerCase()),
+  const filtered = sessions.filter(
+    (s) => !filter || s.id.toLowerCase().includes(filter.toLowerCase()),
   );
 
   return (
@@ -74,22 +74,15 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
                   onClick={() => onPick(s.id)}
                   style={{
                     padding: '12px 16px',
-                    borderBottom:
-                      i === filtered.length - 1
-                        ? 'none'
-                        : '1px solid var(--line-soft)',
+                    borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--line-soft)',
                     cursor: 'pointer',
                     display: 'grid',
                     gridTemplateColumns: '1fr auto',
                     gap: 12,
                     alignItems: 'baseline',
                   }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.background = 'var(--bg-3)')
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.background = 'transparent')
-                  }
+                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-3)')}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                 >
                   <div>
                     <div
@@ -129,8 +122,8 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
             marginTop: 16,
           }}
         >
-          Sessions are stored as JSONL under ~/.deepcode/sessions/. Resume to
-          continue any previous conversation.
+          Sessions are stored as JSONL under ~/.deepcode/sessions/. Resume to continue any previous
+          conversation.
         </p>
       </div>
     </Screen>

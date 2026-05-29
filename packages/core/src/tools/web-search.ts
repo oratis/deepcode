@@ -98,7 +98,10 @@ export const WebSearchTool: ToolHandler = {
     } catch (err) {
       const e = err as Error;
       if (e.name === 'AbortError') {
-        return { content: `Error: search aborted (timeout ${TIMEOUT_MS}ms or signal).`, isError: true };
+        return {
+          content: `Error: search aborted (timeout ${TIMEOUT_MS}ms or signal).`,
+          isError: true,
+        };
       }
       return { content: `Error: ${e.message}`, isError: true };
     } finally {

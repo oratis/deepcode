@@ -97,10 +97,7 @@ interface ExecuteCommandParams {
   arguments?: unknown[];
 }
 
-async function handleExecuteCommand(
-  params: ExecuteCommandParams,
-  send: SendFn,
-): Promise<unknown> {
+async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn): Promise<unknown> {
   switch (params.command) {
     case 'deepcode.runAgent':
       return handleRunAgent((params.arguments?.[0] ?? {}) as { prompt?: string }, send);
@@ -167,8 +164,7 @@ async function handleRunAgent(
       const result = await runAgent({
         provider,
         tools: new ToolRegistry(BUILTIN_TOOLS),
-        systemPrompt:
-          'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+        systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
         userMessage: args.prompt!,
         model: args.model ?? 'deepseek-chat',
         cwd: state.rootUri ? new URL(state.rootUri).pathname : process.cwd(),

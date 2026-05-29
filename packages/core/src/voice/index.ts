@@ -58,7 +58,13 @@ export class WhisperCppProvider implements VoiceProvider {
     if (opts.language) args.push('-l', opts.language);
     const bin = this.opts.binPath ?? 'whisper';
     const spawnFn = this.opts.exec ?? spawn;
-    const { stdout, stderr, code } = await runCommand(spawnFn, bin, args, this.opts.cwd, opts.signal);
+    const { stdout, stderr, code } = await runCommand(
+      spawnFn,
+      bin,
+      args,
+      this.opts.cwd,
+      opts.signal,
+    );
     const latency = Date.now() - t0;
     if (code !== 0) {
       throw new Error(`whisper.cpp exited ${code}: ${stderr.slice(0, 300)}`);

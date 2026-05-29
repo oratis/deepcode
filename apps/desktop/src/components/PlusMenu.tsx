@@ -92,8 +92,7 @@ export function PlusMenu({ items, disabled }: PlusMenuProps): JSX.Element {
                 cursor: item.disabled ? 'not-allowed' : 'pointer',
               }}
               onMouseEnter={(e) => {
-                if (!item.disabled)
-                  e.currentTarget.style.background = 'var(--bg-3)';
+                if (!item.disabled) e.currentTarget.style.background = 'var(--bg-3)';
               }}
               onMouseLeave={(e) => {
                 e.currentTarget.style.background = 'transparent';

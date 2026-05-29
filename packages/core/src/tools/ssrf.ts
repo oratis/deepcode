@@ -121,7 +121,10 @@ export async function ssrfCheckUrl(
     return `blocked internal hostname: ${host}`;
   }
   // localhost / *.local resolve to loopback — only block in hardened mode.
-  if (!allowPrivate && (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.local'))) {
+  if (
+    !allowPrivate &&
+    (lower === 'localhost' || lower.endsWith('.localhost') || lower.endsWith('.local'))
+  ) {
     return `blocked internal hostname: ${host}`;
   }
 

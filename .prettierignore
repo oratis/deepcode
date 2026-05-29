@@ -7,3 +7,6 @@ coverage
 pnpm-lock.yaml
 docs/VISUAL_DESIGN.html
 reference
+
+# Generated release artifacts (README/signing log/install script are produced by the release pipeline)
+release-artifacts

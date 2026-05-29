@@ -113,9 +113,9 @@ describe('createWorktree / removeWorktree', () => {
   it('errors when source is not a git repo', async () => {
     const notARepo = await canonicalMkdtemp('dc-not-repo-');
     try {
-      await expect(
-        createWorktree({ source: notARepo, parentDir: parent }),
-      ).rejects.toThrow(/not a git repository/);
+      await expect(createWorktree({ source: notARepo, parentDir: parent })).rejects.toThrow(
+        /not a git repository/,
+      );
     } finally {
       await rm(notARepo, { recursive: true, force: true });
     }
