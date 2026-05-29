@@ -12,6 +12,7 @@
 //   · No image / news verticals — just web links.
 
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
+import { fetchPolicyFromEnv, ssrfCheckUrl } from './ssrf.js';
 
 interface SearchInput {
   query: string;
@@ -51,6 +52,18 @@ export const WebSearchTool: ToolHandler = {
     const limit = Math.max(1, Math.min(DEFAULT_LIMIT, input.limit ?? DEFAULT_LIMIT));
     const template = process.env['DEEPCODE_WEBSEARCH_URL_TEMPLATE'] ?? DEFAULT_TEMPLATE;
     const url = template.replace('{q}', encodeURIComponent(input.query));
+
+    // Guard against a custom DEEPCODE_WEBSEARCH_URL_TEMPLATE pointed at an
+    // internal host (e.g. a self-hosted SearXNG on a private range that the
+    // model shouldn't be able to probe).
+    try {
+      const reason = await ssrfCheckUrl(new URL(url), fetchPolicyFromEnv());
+      if (reason) {
+        return { content: `Error: refusing to query ${url} — ${reason}.`, isError: true };
+      }
+    } catch {
+      return { content: `Error: invalid search backend URL: ${url}`, isError: true };
+    }
 
     const controller = new AbortController();
     const tid = setTimeout(() => controller.abort(), TIMEOUT_MS);
