@@ -47,3 +47,33 @@ pub fn write(creds: &Credentials) -> Result<(), String> {
     }
     Ok(())
 }
+
+// ── Serde contract ─────────────────────────────────────────────────────
+// tauri-api.ts#readCredentials reads `api_key`/`auth_token`/`base_url` (snake)
+// and maps them to camelCase itself. Lock that shape + the skip-if-None omission
+// the TS side relies on (missing field → undefined). See HANDOFF §8a.
+#[cfg(test)]
+mod contract_tests {
+    use super::*;
+
+    #[test]
+    fn serializes_snake_case_keys() {
+        let v = serde_json::to_value(Credentials {
+            api_key: Some("sk".into()),
+            auth_token: Some("tok".into()),
+            base_url: Some("https://h/v1".into()),
+        })
+        .unwrap();
+        let keys: Vec<String> = v.as_object().unwrap().keys().cloned().collect();
+        assert!(keys.contains(&"api_key".to_string()), "got {keys:?}");
+        assert!(keys.contains(&"auth_token".to_string()), "got {keys:?}");
+        assert!(keys.contains(&"base_url".to_string()), "got {keys:?}");
+        assert!(!keys.contains(&"apiKey".to_string()), "camelCase leaked: {keys:?}");
+    }
+
+    #[test]
+    fn omits_none_fields() {
+        let v = serde_json::to_value(Credentials::default()).unwrap();
+        assert_eq!(v.as_object().unwrap().len(), 0, "None fields must be skipped: {v}");
+    }
+}
