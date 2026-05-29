@@ -8,5 +8,11 @@ export type {
   ProviderUsage,
   ProviderStreamHandlers,
 } from './types.js';
-export { DeepSeekProvider, DEEPSEEK_MODELS, EFFORT_PARAMS } from './deepseek.js';
+export {
+  DeepSeekProvider,
+  DEEPSEEK_MODELS,
+  DEFAULT_CONTEXT_WINDOW,
+  EFFORT_PARAMS,
+  contextWindowFor,
+} from './deepseek.js';
 export type { DeepSeekProviderOpts } from './deepseek.js';

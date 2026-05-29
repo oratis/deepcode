@@ -29,6 +29,7 @@ import {
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
   connectAllMcpServers,
+  contextWindowFor,
   findStyle,
   loadMemory,
   loadOutputStyles,
@@ -239,7 +240,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       mode,
       permissions: settings.permissions,
       hooks,
-      autoCompact: { contextWindow: 128_000, threshold: 0.8 },
+      autoCompact: { contextWindow: contextWindowFor(model), threshold: 0.8 },
       autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
       // In headless mode there's no human to ask: auto-deny anything that
