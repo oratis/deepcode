@@ -102,6 +102,14 @@ export interface RunAgentResult {
 const DEFAULT_MAX_TURNS = 16;
 
 /**
+ * Tools with no side effects whose results don't depend on each other — safe to
+ * execute concurrently within a single turn. Everything else (Edit/Write/Bash/
+ * TodoWrite/AskUserQuestion/ExitPlanMode) runs sequentially to preserve snapshot
+ * ordering, mutation order, and one-at-a-time interactive prompts.
+ */
+const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']);
+
+/**
  * Runs the agent loop until the model produces an end_turn (no tool calls),
  * or `maxTurns` is reached, or the abort signal fires.
  */
@@ -233,14 +241,27 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { history, turnsUsed, usage: totalUsage, stopReason: 'end_turn', modeSignal };
     }
 
-    // Execute tool calls and append a single user-role message with tool_result blocks
-    const toolResults: ToolResultBlock[] = [];
-    for (const block of result.content) {
-      if (block.type !== 'tool_use') continue;
-      const toolUse = block as ToolUseBlock;
+    // Execute tool calls and append a single user-role message with tool_result
+    // blocks. Two phases:
+    //   1. (sequential) resolve handler + permission for each call. Approval
+    //      prompts must never overlap, so gating stays strictly ordered.
+    //   2. (mixed) execute. Side-effect-free reads run concurrently via
+    //      Promise.all (the common "model emits 3 Reads at once" case); tools
+    //      that mutate state / snapshot run sequentially to preserve ordering.
+    // tool_result blocks carry their tool_use_id, so the final array is
+    // re-assembled in the model's original order regardless of finish order.
+    const toolBlocks = result.content.filter(
+      (b): b is ToolUseBlock => b.type === 'tool_use',
+    );
+    const resultsById = new Map<string, ToolResultBlock>();
+    type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
+    const ready: Ready[] = [];
+
+    // Phase 1 — sequential gate + approval.
+    for (const toolUse of toolBlocks) {
       const handler = opts.tools.get(toolUse.name);
       if (!handler) {
-        toolResults.push({
+        resultsById.set(toolUse.id, {
           type: 'tool_result',
           tool_use_id: toolUse.id,
           content: `Error: tool not found: ${toolUse.name}`,
@@ -268,7 +289,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           allowed = decision === true || decision === 'always';
         }
         if (!allowed) {
-          toolResults.push({
+          resultsById.set(toolUse.id, {
             type: 'tool_result',
             tool_use_id: toolUse.id,
             content: `Tool call blocked: ${verdict.reason}`,
@@ -287,12 +308,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         }
       }
 
-      // Pre-execution snapshot (Edit/Write only)
-      if (
-        opts.enableSnapshots !== false &&
-        opts.session &&
-        (toolUse.name === 'Edit' || toolUse.name === 'Write')
-      ) {
+      ready.push({ toolUse, handler });
+    }
+
+    // Runs one approved tool end-to-end: pre-snapshot, execute, PostToolUse
+    // hook, post-snapshot, event + result. Side-effect-free tools call this
+    // concurrently; mutating tools call it one at a time (see partition below).
+    const execOne = async ({ toolUse, handler }: Ready): Promise<void> => {
+      const isFileMutation = toolUse.name === 'Edit' || toolUse.name === 'Write';
+
+      if (opts.enableSnapshots !== false && opts.session && isFileMutation) {
         const filePath = (toolUse.input as { file_path?: string }).file_path;
         if (filePath) {
           await opts.session.manager.snapshot({
@@ -327,13 +352,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         });
       }
 
-      // Post-execution snapshot
-      if (
-        opts.enableSnapshots !== false &&
-        opts.session &&
-        (toolUse.name === 'Edit' || toolUse.name === 'Write') &&
-        !tr.isError
-      ) {
+      if (opts.enableSnapshots !== false && opts.session && isFileMutation && !tr.isError) {
         const filePath = (toolUse.input as { file_path?: string }).file_path;
         if (filePath) {
           await opts.session.manager.snapshot({
@@ -347,13 +366,26 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       }
 
       opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result: tr });
-      toolResults.push({
+      resultsById.set(toolUse.id, {
         type: 'tool_result',
         tool_use_id: toolUse.id,
         content: tr.content,
         is_error: tr.isError,
       });
-    }
+    };
+
+    // Phase 2 — execute. Read-only tools have no side effects and don't touch
+    // snapshotSeq, so they're safe to run concurrently; everything else stays
+    // sequential to keep snapshot ordering deterministic.
+    const parallel = ready.filter((r) => READ_ONLY_TOOLS.has(r.toolUse.name));
+    const serial = ready.filter((r) => !READ_ONLY_TOOLS.has(r.toolUse.name));
+    await Promise.all(parallel.map(execOne));
+    for (const r of serial) await execOne(r);
+
+    // Re-assemble in the model's original tool-call order.
+    const toolResults: ToolResultBlock[] = toolBlocks
+      .map((b) => resultsById.get(b.id))
+      .filter((r): r is ToolResultBlock => r !== undefined);
 
     const resultMsg: StoredMessage = {
       role: 'user',
@@ -363,12 +395,22 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     history.push(resultMsg);
     if (opts.session) await opts.session.manager.append(opts.session.id, resultMsg);
 
-    // M3c: auto-compact if usage crossed threshold
+    // M3c: auto-compact if the *current* context crossed the threshold.
+    //
+    // Use this turn's usage (result.usage), NOT the cumulative totalUsage.
+    // `result.usage.inputTokens` is exactly the size of the history we just
+    // sent to the model, so it is the true current-context proxy. Cumulative
+    // usage is wrong on two counts: it sums every turn's input (each turn
+    // re-sends the whole history, so it inflates far past the real window and
+    // crosses the threshold too early), and it never shrinks after a compaction
+    // — meaning once over the line it would re-compact the already-compacted
+    // history on every subsequent turn. The next turn's inputTokens naturally
+    // reflects the freshly-compacted (smaller) context, so this self-corrects.
     if (
       opts.autoCompact &&
       shouldCompact({
-        inputTokens: totalUsage.inputTokens,
-        outputTokens: totalUsage.outputTokens,
+        inputTokens: result.usage.inputTokens,
+        outputTokens: result.usage.outputTokens,
         contextWindow: opts.autoCompact.contextWindow,
         threshold: opts.autoCompact.threshold,
       })

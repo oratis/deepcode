@@ -139,6 +139,72 @@ describe('DeepSeekProvider', () => {
       expect(result.content[0].input).toEqual({ file_path: 'src/a.ts' });
     }
   });
+
+  it('drops a tool call truncated by max_tokens instead of executing garbage', async () => {
+    // Model started a Write but the completion was cut off mid-arguments
+    // (finish_reason 'length'). The partial JSON won't parse.
+    const chunks = [
+      { choices: [{ delta: { content: 'Creating the file' } }] },
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'call_w', function: { name: 'Write', arguments: '{"file_path":"a.js","content":"cons' } },
+              ],
+            },
+          },
+        ],
+      },
+      {
+        choices: [{ delta: {}, finish_reason: 'length' }],
+        usage: { prompt_tokens: 10, completion_tokens: 3000 },
+      },
+    ];
+    const p = new DeepSeekProvider({ apiKey: 'sk-test', fetch: mockFetch(chunks) });
+    const result = await p.runTurn({
+      model: 'deepseek-chat',
+      systemPrompt: '',
+      tools: [{ name: 'Write', description: '', inputSchema: { type: 'object', properties: {} } }],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'write it' }] }],
+    });
+    // The malformed Write must NOT appear as an executable tool_use.
+    expect(result.content.some((b) => b.type === 'tool_use')).toBe(false);
+    // The partial text is preserved.
+    expect(result.content.some((b) => b.type === 'text')).toBe(true);
+    // The loop should stop, not try to execute the truncated call.
+    expect(result.stopReason).toBe('max_tokens');
+  });
+
+  it('keeps a valid call but drops a truncated sibling in the same turn', async () => {
+    const chunks = [
+      {
+        choices: [
+          {
+            delta: {
+              tool_calls: [
+                { index: 0, id: 'ok1', function: { name: 'Read', arguments: '{"file_path":"a.ts"}' } },
+                { index: 1, id: 'bad', function: { name: 'Write', arguments: '{"file_path":"b.ts","content":"x' } },
+              ],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'length' }], usage: { prompt_tokens: 5, completion_tokens: 8 } },
+    ];
+    const p = new DeepSeekProvider({ apiKey: 'sk-test', fetch: mockFetch(chunks) });
+    const result = await p.runTurn({
+      model: 'deepseek-chat',
+      systemPrompt: '',
+      tools: [],
+      messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }],
+    });
+    const toolUses = result.content.filter((b) => b.type === 'tool_use');
+    expect(toolUses).toHaveLength(1);
+    expect(toolUses[0]?.type === 'tool_use' && toolUses[0].name).toBe('Read');
+    // At least one valid call survived → still a tool_use turn.
+    expect(result.stopReason).toBe('tool_use');
+  });
 });
 
 describe('DeepSeekProvider message conversion', () => {
