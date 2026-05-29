@@ -25,6 +25,19 @@ export const DEEPSEEK_MODELS: Record<DeepSeekModel, { ctx: number; maxOutput: nu
   'deepseek-v4-pro': { ctx: 128_000, maxOutput: 8_192 },
 };
 
+/** Fallback context window for an unrecognized model id. */
+export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
+/**
+ * Context-window size (tokens) for a model id. Single source of truth for the
+ * context-bar + auto-compact threshold across CLI and desktop — avoids the
+ * 128_000 literal drifting out of sync with DEEPSEEK_MODELS. Falls back to
+ * DEFAULT_CONTEXT_WINDOW for unknown (e.g. user-typed) model ids.
+ */
+export function contextWindowFor(model: string): number {
+  return DEEPSEEK_MODELS[model as DeepSeekModel]?.ctx ?? DEFAULT_CONTEXT_WINDOW;
+}
+
 /**
  * Effort → DeepSeek API parameters.
  * Numbers from docs/design/effort-levels.md §3.2.

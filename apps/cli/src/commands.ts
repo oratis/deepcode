@@ -9,7 +9,7 @@ import type {
   SessionMeta,
   StoredMessage,
 } from '@deepcode/core';
-import { redact, type Credentials } from '@deepcode/core';
+import { contextWindowFor, redact, type Credentials } from '@deepcode/core';
 
 export interface SessionContext {
   cwd: string;
@@ -220,7 +220,7 @@ export const ContextCommand: SlashCommand = {
   description: 'Show context window usage.',
   run(_args, ctx) {
     const used = ctx.usage.inputTokens + ctx.usage.outputTokens;
-    const ctxMax = 128_000;
+    const ctxMax = contextWindowFor(ctx.model);
     const pct = ((used / ctxMax) * 100).toFixed(1);
     return [
       `Context: ${used.toLocaleString()} / ${ctxMax.toLocaleString()} (${pct}%)`,

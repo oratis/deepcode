@@ -12,7 +12,9 @@ export type * from './types.js';
 export {
   DeepSeekProvider,
   DEEPSEEK_MODELS,
+  DEFAULT_CONTEXT_WINDOW,
   EFFORT_PARAMS,
+  contextWindowFor,
   type DeepSeekProviderOpts,
   type Provider,
   type ProviderResult,

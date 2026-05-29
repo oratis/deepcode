@@ -24,6 +24,7 @@ import {
   type KeyBinding,
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
+import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
 import { PlusMenu } from '../components/PlusMenu.js';
@@ -476,7 +477,7 @@ export function ReplScreen({ projectPath, onTurnComplete }: ReplScreenProps): JS
   const activeAssistantIdx = lastAssistantIndex(messages);
 
   // ── Context bar fill ──
-  const contextWindow = 128_000;
+  const contextWindow = contextWindowFor(model);
   const usedTokens = usage.inputTokens + usage.outputTokens;
   const fillPct = Math.min(100, (usedTokens / contextWindow) * 100);
 

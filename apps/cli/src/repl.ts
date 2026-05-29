@@ -22,6 +22,7 @@ import {
   loadOutputStyles,
   loadSettings,
   loadSkills,
+  contextWindowFor,
   makeSkillTool,
   resolveCredentials,
   runAgent,
@@ -308,7 +309,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       mode: ctx.mode as Mode,
       permissions: settings.permissions,
       hooks,
-      autoCompact: { contextWindow: 128_000, threshold: 0.8 },
+      autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
       autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
       approval: async (toolName, _input, verdict) => {
