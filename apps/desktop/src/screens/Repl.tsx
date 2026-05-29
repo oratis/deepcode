@@ -149,7 +149,9 @@ export function ReplScreen({
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
-  const [effort, setEffort] = useState<Effort>('medium');
+  // 'high' (6k output) by default — 'medium' (3k) truncates multi-file writes.
+  // Overridden by a persisted effortLevel in settings on mount.
+  const [effort, setEffort] = useState<Effort>('high');
   const [model, setModel] = useState<string>('deepseek-chat');
   const [mode, setMode] = useState<
     'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'

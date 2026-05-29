@@ -94,7 +94,7 @@ export interface StartTurnArgs {
   userMessage: string;
   model?: string;
   mode?: Mode;
-  /** Effort tier — controls maxTokens + temperature. Default 'medium'. */
+  /** Effort tier — controls maxTokens + temperature. Default 'high'. */
   effort?: Effort;
   /** Project folder absolute path. Tools resolve relative paths against this.
    *  When undefined, tools error because the agent can't safely guess. */
@@ -154,7 +154,10 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
   // Run the agent loop in the background. Errors are surfaced via onEvent.
   (async () => {
     try {
-      const effortParams = EFFORT_PARAMS[args.effort ?? 'medium'];
+      // Default to 'high' (6k output budget): the desktop's primary use is
+      // writing/editing files, and 'medium' (3k) routinely truncates a single
+      // multi-file write mid-tool-call. Users can still dial it down per-turn.
+      const effortParams = EFFORT_PARAMS[args.effort ?? 'high'];
       const result = await runAgent({
         provider: prov,
         tools,
