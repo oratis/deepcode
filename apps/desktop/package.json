@@ -13,7 +13,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "tauri:build:universal": "tauri build --target universal-apple-darwin",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -b",
     "test": "vitest run --passWithNoTests",
     "lint": "echo 'lint: configured at repo root' && exit 0",
     "clean": "rm -rf dist src-tauri/target *.tsbuildinfo"

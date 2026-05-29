@@ -15,7 +15,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "tsc -b",
     "test": "echo 'no tests in shared-ui (types only)' && exit 0",
     "lint": "echo 'lint: configured in M1' && exit 0",
     "clean": "rm -rf dist *.tsbuildinfo"
