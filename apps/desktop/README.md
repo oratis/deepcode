@@ -38,12 +38,12 @@ mv apps/desktop/postcss.config.template.js apps/desktop/postcss.config.js
 
 之后：
 
-| 命令               | 作用                                                |
-| ------------------ | --------------------------------------------------- |
-| `pnpm dev`         | Vite dev server + electron 自动重载                 |
-| `pnpm build:all`   | 构建 renderer (dist/) + main process (dist-electron/) |
-| `pnpm pack`        | 打包未签名 .app（本地测试）                          |
-| `pnpm dist`        | 完整签名 + 公证 + .dmg（需要 Apple Developer ID）  |
+| 命令             | 作用                                                  |
+| ---------------- | ----------------------------------------------------- |
+| `pnpm dev`       | Vite dev server + electron 自动重载                   |
+| `pnpm build:all` | 构建 renderer (dist/) + main process (dist-electron/) |
+| `pnpm pack`      | 打包未签名 .app（本地测试）                           |
+| `pnpm dist`      | 完整签名 + 公证 + .dmg（需要 Apple Developer ID）     |
 
 ## 还没做（M6-rest 余下任务）
 

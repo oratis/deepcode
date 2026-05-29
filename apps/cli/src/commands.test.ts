@@ -266,10 +266,9 @@ describe('built-in command behavior', () => {
       // Modify the file after snapshot
       await fs.writeFile(file, 'changed');
       const ctx = makeContext({ sessions: sm, sessionId: meta.id });
-      const out = await reg.match(`/rewind ${snap!.seq} code`)!.cmd.run(
-        [String(snap!.seq), 'code'],
-        ctx,
-      );
+      const out = await reg
+        .match(`/rewind ${snap!.seq} code`)!
+        .cmd.run([String(snap!.seq), 'code'], ctx);
       expect(out.join('\n')).toMatch(/Restored/);
       const after = await fs.readFile(file, 'utf8');
       expect(after).toBe('original');
@@ -306,10 +305,9 @@ describe('built-in command behavior', () => {
         sessionId: meta.id,
         history: [before, after],
       });
-      const out = await reg.match(`/rewind ${snap!.seq} conversation`)!.cmd.run(
-        [String(snap!.seq), 'conversation'],
-        ctx,
-      );
+      const out = await reg
+        .match(`/rewind ${snap!.seq} conversation`)!
+        .cmd.run([String(snap!.seq), 'conversation'], ctx);
       expect(out.join('\n')).toMatch(/kept 1 of 2 messages/);
       expect(ctx.newHistory).toEqual([before]);
     });

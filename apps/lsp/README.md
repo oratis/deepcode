@@ -6,17 +6,20 @@ LSP plugin) can drive DeepCode via `workspace/executeCommand`.
 
 ## Custom commands
 
-| Command                | Args                     | Returns                                |
-| ---------------------- | ------------------------ | -------------------------------------- |
-| `deepcode.runAgent`    | `{ prompt: string }`     | `{ turnId: string }` + streams events  |
-| `deepcode.abort`       | `{ turnId: string }`     | `{ aborted: boolean }`                 |
-| `deepcode.listSkills`  | none                     | `{ skills: SkillRow[] }`               |
+| Command               | Args                 | Returns                               |
+| --------------------- | -------------------- | ------------------------------------- |
+| `deepcode.runAgent`   | `{ prompt: string }` | `{ turnId: string }` + streams events |
+| `deepcode.abort`      | `{ turnId: string }` | `{ aborted: boolean }`                |
+| `deepcode.listSkills` | none                 | `{ skills: SkillRow[] }`              |
 
 Streamed events are sent as `deepcode/agentEvent` notifications:
 
 ```json
-{ "jsonrpc": "2.0", "method": "deepcode/agentEvent",
-  "params": { "turnId": "lsp-...", "kind": "text_delta", "text": "..." } }
+{
+  "jsonrpc": "2.0",
+  "method": "deepcode/agentEvent",
+  "params": { "turnId": "lsp-...", "kind": "text_delta", "text": "..." }
+}
 ```
 
 The `kind` field mirrors the AgentStreamEvent union from

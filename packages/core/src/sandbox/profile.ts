@@ -175,8 +175,7 @@ export function buildLinuxBwrapArgs(
   //  3. allowedDomains: undefined → full network access (default)
   const explicitEmpty =
     (net.allowedDomains ?? []).length === 0 && (net.allowedDomains ?? null) !== null;
-  const whitelisted =
-    (net.allowedDomains ?? []).length > 0 && opts.dnsProxyPort !== undefined;
+  const whitelisted = (net.allowedDomains ?? []).length > 0 && opts.dnsProxyPort !== undefined;
   if (explicitEmpty) {
     args.push('--unshare-net');
   } else if (whitelisted) {

@@ -45,9 +45,7 @@ export function OnboardingScreen({ onComplete }: OnboardingProps): JSX.Element {
         </span>
 
         <h1>DeepSeek-powered coding agent.</h1>
-        <p className="tagline">
-          From this key to your first edit in under 90 seconds.
-        </p>
+        <p className="tagline">From this key to your first edit in under 90 seconds.</p>
 
         <form onSubmit={handleSubmit}>
           <label htmlFor="api-key">DeepSeek API Key</label>
@@ -73,8 +71,8 @@ export function OnboardingScreen({ onComplete }: OnboardingProps): JSX.Element {
             >
               platform.deepseek.com
             </a>
-            . Your key is stored locally in ~/.deepcode/credentials.json — it
-            never leaves your machine except to call api.deepseek.com.
+            . Your key is stored locally in ~/.deepcode/credentials.json — it never leaves your
+            machine except to call api.deepseek.com.
           </div>
 
           <div style={{ marginTop: 16 }}>

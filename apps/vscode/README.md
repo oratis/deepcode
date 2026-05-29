@@ -19,11 +19,11 @@ pnpm add -D --filter @deepcode/vscode @vscode/vsce @types/vscode
 
 Then:
 
-| Command                                       | Result                                              |
-| --------------------------------------------- | --------------------------------------------------- |
-| `pnpm --filter @deepcode/vscode build`        | Compile `src/extension.ts` → `dist/extension.cjs`    |
-| `pnpm --filter @deepcode/vscode package`      | Produce a `.vsix` file (vsce)                        |
-| Press F5 in VS Code with this folder open    | Launch Extension Development Host                    |
+| Command                                   | Result                                            |
+| ----------------------------------------- | ------------------------------------------------- |
+| `pnpm --filter @deepcode/vscode build`    | Compile `src/extension.ts` → `dist/extension.cjs` |
+| `pnpm --filter @deepcode/vscode package`  | Produce a `.vsix` file (vsce)                     |
+| Press F5 in VS Code with this folder open | Launch Extension Development Host                 |
 
 ## Architecture
 
@@ -35,19 +35,19 @@ Then:
 
 ## Commands
 
-| ID                   | Default keybinding         | What it does                                |
-| -------------------- | -------------------------- | ------------------------------------------- |
-| `deepcode.openPanel` | `Cmd/Ctrl+Shift+D`         | Reveal the DeepCode chat view               |
-| `deepcode.run`       | (palette)                  | Run agent on the selected text              |
-| `deepcode.review`    | (palette)                  | Run `code-review` skill on current diff     |
+| ID                   | Default keybinding | What it does                            |
+| -------------------- | ------------------ | --------------------------------------- |
+| `deepcode.openPanel` | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view           |
+| `deepcode.run`       | (palette)          | Run agent on the selected text          |
+| `deepcode.review`    | (palette)          | Run `code-review` skill on current diff |
 
 ## Settings
 
-| Key                | Type     | Default                | Notes                                     |
-| ------------------ | -------- | ---------------------- | ----------------------------------------- |
-| `deepcode.apiKey`  | string   | `""`                   | Falls back to `~/.deepcode/credentials.json` |
-| `deepcode.model`   | enum     | `"deepseek-chat"`      | Standard alias + concrete model names      |
-| `deepcode.effort`  | enum     | `"medium"`             | low / medium / high / xhigh / max         |
+| Key               | Type   | Default           | Notes                                        |
+| ----------------- | ------ | ----------------- | -------------------------------------------- |
+| `deepcode.apiKey` | string | `""`              | Falls back to `~/.deepcode/credentials.json` |
+| `deepcode.model`  | enum   | `"deepseek-chat"` | Standard alias + concrete model names        |
+| `deepcode.effort` | enum   | `"medium"`        | low / medium / high / xhigh / max            |
 
 ## Roadmap
 

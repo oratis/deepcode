@@ -50,6 +50,7 @@ reads this file, and dispatches due tasks.
 
 Standard 5-field cron: `min hour day-of-month month day-of-week`.
 Examples:
+
 - `0 9 * * 1-5` — 9am weekdays
 - `*/15 * * * *` — every 15 min
 - `0 0 1 * *` — first of the month

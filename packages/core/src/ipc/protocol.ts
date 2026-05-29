@@ -11,11 +11,7 @@
 // Channel naming convention: `<domain>:<verb>` for request/response invokes
 // and `<domain>:event` for streamed events.
 
-import type {
-  AgentEvent,
-  Mode,
-  StoredMessage,
-} from '../types.js';
+import type { AgentEvent, Mode, StoredMessage } from '../types.js';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Request/response channels (renderer → main → reply)
@@ -105,9 +101,27 @@ export type IpcChannel = keyof IpcRequestMap;
 
 export type AgentStreamEvent =
   | ({ kind: 'event' } & AgentEvent & { turnId: string })
-  | { kind: 'approval_request'; turnId: string; toolCallId: string; toolName: string; toolInput: Record<string, unknown>; reason: string }
-  | { kind: 'ask_user'; turnId: string; questionId: string; question: string; options: Array<{ label: string; description: string }>; multiSelect?: boolean }
-  | { kind: 'turn_done'; turnId: string; stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error' };
+  | {
+      kind: 'approval_request';
+      turnId: string;
+      toolCallId: string;
+      toolName: string;
+      toolInput: Record<string, unknown>;
+      reason: string;
+    }
+  | {
+      kind: 'ask_user';
+      turnId: string;
+      questionId: string;
+      question: string;
+      options: Array<{ label: string; description: string }>;
+      multiSelect?: boolean;
+    }
+  | {
+      kind: 'turn_done';
+      turnId: string;
+      stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
+    };
 
 export interface IpcEventMap {
   'agent:event': AgentStreamEvent;

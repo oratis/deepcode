@@ -31,10 +31,7 @@ export function Screen({ title, subtitle, actions, children }: ScreenProps): JSX
         </span>
         {actions && <div className="right">{actions}</div>}
       </div>
-      <div
-        className="chat-stream"
-        style={{ paddingBlock: '20px', display: 'block' }}
-      >
+      <div className="chat-stream" style={{ paddingBlock: '20px', display: 'block' }}>
         {children}
       </div>
     </>
@@ -54,13 +51,7 @@ interface CardProps {
   flush?: boolean;
 }
 
-export function Card({
-  title,
-  actions,
-  children,
-  padding = 16,
-  flush,
-}: CardProps): JSX.Element {
+export function Card({ title, actions, children, padding = 16, flush }: CardProps): JSX.Element {
   return (
     <div
       style={{
@@ -94,11 +85,7 @@ export function Card({
               {title}
             </div>
           )}
-          {actions && (
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-              {actions}
-            </div>
-          )}
+          {actions && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>{actions}</div>}
         </div>
       )}
       <div style={{ padding: flush ? 0 : padding }}>{children}</div>
@@ -128,15 +115,9 @@ export function Row({ label, hint, children }: RowProps): JSX.Element {
     >
       <div>
         <div style={{ fontSize: 13, color: 'var(--text-1)' }}>{label}</div>
-        {hint && (
-          <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>
-            {hint}
-          </div>
-        )}
+        {hint && <div style={{ fontSize: 11, color: 'var(--text-3)', marginTop: 2 }}>{hint}</div>}
       </div>
-      <div style={{ color: 'var(--text-0)', fontSize: 13, minWidth: 0 }}>
-        {children}
-      </div>
+      <div style={{ color: 'var(--text-0)', fontSize: 13, minWidth: 0 }}>{children}</div>
     </div>
   );
 }

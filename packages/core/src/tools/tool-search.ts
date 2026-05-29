@@ -97,9 +97,7 @@ export function makeToolSearchTool(store: DeferredToolStore): ToolHandler {
       if (ranked.length === 0) {
         return { content: `No deferred tools matched "${input.query}".`, data: { hits: [] } };
       }
-      const lines = ranked.map(
-        (r) => `${r.entry.name} — ${r.entry.description.slice(0, 120)}`,
-      );
+      const lines = ranked.map((r) => `${r.entry.name} — ${r.entry.description.slice(0, 120)}`);
       lines.push('');
       lines.push(`Use \`select:${ranked.map((r) => r.entry.name).join(',')}\` to load.`);
       return {
@@ -129,7 +127,10 @@ function score(entry: DeferredToolEntry, tokens: string[]): number {
 export class RegistryDeferredStore implements DeferredToolStore {
   private readonly entries = new Map<string, DeferredToolEntry>();
   constructor(
-    private readonly registry: { register: (h: ToolHandler) => void; get: (name: string) => ToolHandler | undefined },
+    private readonly registry: {
+      register: (h: ToolHandler) => void;
+      get: (name: string) => ToolHandler | undefined;
+    },
     entries: DeferredToolEntry[],
   ) {
     for (const e of entries) this.entries.set(e.name, e);

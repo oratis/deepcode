@@ -14,14 +14,14 @@ Drive the project's own dev/test/build scripts. Detect toolchain from manifest.
 
 ## Toolchain detection
 
-| Manifest         | Typical commands                                       |
-| ---------------- | ------------------------------------------------------ |
-| `package.json`   | `pnpm dev` / `pnpm test` / `pnpm build` (or npm/yarn)  |
-| `pyproject.toml` | `pytest`, `uv run pytest`, `python -m <pkg>`           |
-| `Cargo.toml`     | `cargo test`, `cargo run`, `cargo build --release`     |
-| `go.mod`         | `go test ./...`, `go run ./cmd/<name>`                 |
-| `Gemfile`        | `bundle exec rspec`, `bundle exec rails s`             |
-| `Makefile`       | Prefer `make test` / `make dev` — usually canonical    |
+| Manifest         | Typical commands                                      |
+| ---------------- | ----------------------------------------------------- |
+| `package.json`   | `pnpm dev` / `pnpm test` / `pnpm build` (or npm/yarn) |
+| `pyproject.toml` | `pytest`, `uv run pytest`, `python -m <pkg>`          |
+| `Cargo.toml`     | `cargo test`, `cargo run`, `cargo build --release`    |
+| `go.mod`         | `go test ./...`, `go run ./cmd/<name>`                |
+| `Gemfile`        | `bundle exec rspec`, `bundle exec rails s`            |
+| `Makefile`       | Prefer `make test` / `make dev` — usually canonical   |
 
 Read `packageManager` in package.json (or `.tool-versions`) for the pinned
 package manager — don't guess.

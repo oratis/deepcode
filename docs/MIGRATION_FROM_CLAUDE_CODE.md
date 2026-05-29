@@ -34,27 +34,29 @@ deepcode
 
 ## Field-by-field mapping
 
-| Claude Code                          | DeepCode                                  | Notes |
-| ------------------------------------ | ----------------------------------------- | ----- |
-| `~/.claude/credentials.json`         | `~/.deepcode/credentials.json`            | Same shape; just rename. |
-| `~/.claude/settings.json`            | `~/.deepcode/settings.json`               | Schema mostly identical; see Settings table below. |
-| `<proj>/.claude/settings.json`       | `<proj>/.deepcode/settings.json`          | Same. |
-| `~/.claude/skills/<name>/SKILL.md`   | `~/.deepcode/skills/<name>/SKILL.md`      | Same frontmatter format. |
-| `~/.claude/agents/*.md`              | `~/.deepcode/agents/*.md`                 | Same shape. |
-| `~/.claude/plugins/`                 | `~/.deepcode/plugins/`                    | Plugin manifest is identical (plugin.json). |
-| `CLAUDE.md` (project root)           | `AGENTS.md` (project root)                | Or `DEEPCODE.md`. Both names recognized; AGENTS.md preferred. |
-| `claude` CLI                         | `deepcode` CLI                            | Most flags identical (-p, --mode, --model, --effort). |
-| `claude doctor`                      | `deepcode doctor`                         | Same. |
-| `/login`                             | n/a — re-onboard via `deepcode` no-args   | We don't have separate login state. |
+| Claude Code                        | DeepCode                                | Notes                                                         |
+| ---------------------------------- | --------------------------------------- | ------------------------------------------------------------- |
+| `~/.claude/credentials.json`       | `~/.deepcode/credentials.json`          | Same shape; just rename.                                      |
+| `~/.claude/settings.json`          | `~/.deepcode/settings.json`             | Schema mostly identical; see Settings table below.            |
+| `<proj>/.claude/settings.json`     | `<proj>/.deepcode/settings.json`        | Same.                                                         |
+| `~/.claude/skills/<name>/SKILL.md` | `~/.deepcode/skills/<name>/SKILL.md`    | Same frontmatter format.                                      |
+| `~/.claude/agents/*.md`            | `~/.deepcode/agents/*.md`               | Same shape.                                                   |
+| `~/.claude/plugins/`               | `~/.deepcode/plugins/`                  | Plugin manifest is identical (plugin.json).                   |
+| `CLAUDE.md` (project root)         | `AGENTS.md` (project root)              | Or `DEEPCODE.md`. Both names recognized; AGENTS.md preferred. |
+| `claude` CLI                       | `deepcode` CLI                          | Most flags identical (-p, --mode, --model, --effort).         |
+| `claude doctor`                    | `deepcode doctor`                       | Same.                                                         |
+| `/login`                           | n/a — re-onboard via `deepcode` no-args | We don't have separate login state.                           |
 
 ## Settings.json — model field
 
 Claude Code:
+
 ```json
 { "model": "claude-sonnet-4-5" }
 ```
 
 DeepCode:
+
 ```json
 { "model": "deepseek-chat" }
 ```
@@ -66,22 +68,22 @@ Valid values: `deepseek-chat` (general/tool-use) · `deepseek-reasoner`
 
 Most commands are identical:
 
-| Command            | Claude Code | DeepCode |
-| ------------------ | ----------- | -------- |
-| `/help`, `/?`      | ✓           | ✓        |
-| `/clear`           | ✓           | ✓        |
-| `/exit`, `/quit`   | ✓           | ✓        |
-| `/model`           | ✓           | ✓ (constrained to DeepSeek) |
-| `/mode`            | ✓           | ✓        |
-| `/effort`          | ✓           | ✓        |
-| `/cost`            | ✓           | ✓        |
-| `/context`         | ✓           | ✓        |
-| `/init`            | ✓           | ✓        |
-| `/mcp`             | ✓           | ✓        |
-| `/todos`           | ✓           | ✓        |
-| `/plugins`         | ✓           | ✓        |
-| `/keybindings`     | ✓           | ✓        |
-| `/vim`             | ✓           | ✓        |
+| Command          | Claude Code | DeepCode                    |
+| ---------------- | ----------- | --------------------------- |
+| `/help`, `/?`    | ✓           | ✓                           |
+| `/clear`         | ✓           | ✓                           |
+| `/exit`, `/quit` | ✓           | ✓                           |
+| `/model`         | ✓           | ✓ (constrained to DeepSeek) |
+| `/mode`          | ✓           | ✓                           |
+| `/effort`        | ✓           | ✓                           |
+| `/cost`          | ✓           | ✓                           |
+| `/context`       | ✓           | ✓                           |
+| `/init`          | ✓           | ✓                           |
+| `/mcp`           | ✓           | ✓                           |
+| `/todos`         | ✓           | ✓                           |
+| `/plugins`       | ✓           | ✓                           |
+| `/keybindings`   | ✓           | ✓                           |
+| `/vim`           | ✓           | ✓                           |
 
 See `docs/BEHAVIOR_PARITY.md` for the full comparison.
 
@@ -101,10 +103,10 @@ prefix, domain) work the same way:
 ```jsonc
 {
   "permissions": {
-    "deny":  ["Bash(rm -rf /:*)", "WebFetch(domain:internal.corp)"],
-    "ask":   ["Bash(npm install:*)"],
-    "allow": ["Read", "Bash(git diff:*)"]
-  }
+    "deny": ["Bash(rm -rf /:*)", "WebFetch(domain:internal.corp)"],
+    "ask": ["Bash(npm install:*)"],
+    "allow": ["Read", "Bash(git diff:*)"],
+  },
 }
 ```
 

@@ -34,10 +34,7 @@ function emitEvent(e: unknown): void {
 // a `permission_request` event carrying a unique requestId and stash the
 // resolver here. The UI calls api.agent.approve({ requestId, decision })
 // which pops the resolver and resolves the original promise.
-const pendingApprovals = new Map<
-  string,
-  (decision: 'allow' | 'deny' | 'always') => void
->();
+const pendingApprovals = new Map<string, (decision: 'allow' | 'deny' | 'always') => void>();
 
 function nextRequestId(): string {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -111,15 +108,8 @@ export function installTauriShim(): void {
           model,
           mode: mode as Mode | undefined,
           cwd,
-          effort: effort as
-            | 'low'
-            | 'medium'
-            | 'high'
-            | 'xhigh'
-            | 'max'
-            | undefined,
-          onEvent: (e: AgentEvent) =>
-            emitEvent({ kind: 'event', turnId: pendingTurnId, ...e }),
+          effort: effort as 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined,
+          onEvent: (e: AgentEvent) => emitEvent({ kind: 'event', turnId: pendingTurnId, ...e }),
           onDone: (reason) =>
             emitEvent({ kind: 'turn_done', turnId: pendingTurnId, stopReason: reason }),
           onApproval: (toolName, reason) => {

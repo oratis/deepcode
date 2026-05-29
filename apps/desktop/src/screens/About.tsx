@@ -72,9 +72,7 @@ export function AboutScreen(): JSX.Element {
           <p style={{ color: 'var(--text-2)', fontSize: 14, margin: 0 }}>
             DeepSeek-powered AI coding agent · Claude Code parity
           </p>
-          <p style={{ color: 'var(--text-3)', fontSize: 12, marginTop: 6 }}>
-            v{diag.version}
-          </p>
+          <p style={{ color: 'var(--text-3)', fontSize: 12, marginTop: 6 }}>v{diag.version}</p>
         </div>
 
         {/* Diagnostics */}
@@ -102,24 +100,16 @@ export function AboutScreen(): JSX.Element {
 
           <SectionTitle>Paths</SectionTitle>
           <Row label="Credentials" hint="0600 perms — never readable by other users">
-            <code style={{ background: 'transparent' }}>
-              ~/.deepcode/credentials.json
-            </code>
+            <code style={{ background: 'transparent' }}>~/.deepcode/credentials.json</code>
           </Row>
           <Row label="Settings">
-            <code style={{ background: 'transparent' }}>
-              ~/.deepcode/settings.json
-            </code>
+            <code style={{ background: 'transparent' }}>~/.deepcode/settings.json</code>
           </Row>
           <Row label="Sessions">
-            <code style={{ background: 'transparent' }}>
-              ~/.deepcode/sessions/
-            </code>
+            <code style={{ background: 'transparent' }}>~/.deepcode/sessions/</code>
           </Row>
           <Row label="Keybindings">
-            <code style={{ background: 'transparent' }}>
-              ~/.deepcode/keybindings.json
-            </code>
+            <code style={{ background: 'transparent' }}>~/.deepcode/keybindings.json</code>
           </Row>
         </Card>
 
@@ -136,10 +126,7 @@ export function AboutScreen(): JSX.Element {
                 'Behavior parity vs Claude Code',
                 'https://github.com/oratis/deepcode/blob/main/docs/BEHAVIOR_PARITY.md',
               ],
-              [
-                'CHANGELOG',
-                'https://github.com/oratis/deepcode/blob/main/CHANGELOG.md',
-              ],
+              ['CHANGELOG', 'https://github.com/oratis/deepcode/blob/main/CHANGELOG.md'],
             ].map(([label, href]) => (
               <a
                 key={href}

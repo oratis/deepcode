@@ -36,9 +36,7 @@ export async function installFromGithub(
   if (!m) throw new Error(`Invalid GitHub spec: ${spec} (expected gh:owner/repo[@ref])`);
   const [, owner, repo, ref] = m;
   const url = `https://github.com/${owner}/${repo}.git`;
-  const staging = await fs.mkdtemp(
-    join(opts.stagingDir ?? tmpdir(), `dc-plug-staging-${repo}-`),
-  );
+  const staging = await fs.mkdtemp(join(opts.stagingDir ?? tmpdir(), `dc-plug-staging-${repo}-`));
   try {
     const args = ['clone', '--depth', '1'];
     if (ref) args.push('--branch', ref);

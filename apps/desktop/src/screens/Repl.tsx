@@ -58,15 +58,45 @@ type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
-  { value: 'low', label: 'Low', meta: '4k', description: 'Cheap & quick — short answers, simple edits.' },
-  { value: 'medium', label: 'Medium', meta: '8k', description: 'Balanced default. Good for most coding tasks.' },
-  { value: 'high', label: 'High', meta: '16k', description: 'Longer context — multi-file refactors.' },
-  { value: 'xhigh', label: 'Extra High', meta: '24k', description: 'Deep reasoning for architecture changes.' },
-  { value: 'max', label: 'Max', meta: '32k', description: 'Max tokens. Slow & expensive — use sparingly.' },
+  {
+    value: 'low',
+    label: 'Low',
+    meta: '4k',
+    description: 'Cheap & quick — short answers, simple edits.',
+  },
+  {
+    value: 'medium',
+    label: 'Medium',
+    meta: '8k',
+    description: 'Balanced default. Good for most coding tasks.',
+  },
+  {
+    value: 'high',
+    label: 'High',
+    meta: '16k',
+    description: 'Longer context — multi-file refactors.',
+  },
+  {
+    value: 'xhigh',
+    label: 'Extra High',
+    meta: '24k',
+    description: 'Deep reasoning for architecture changes.',
+  },
+  {
+    value: 'max',
+    label: 'Max',
+    meta: '32k',
+    description: 'Max tokens. Slow & expensive — use sparingly.',
+  },
 ];
 
 const MODEL_OPTIONS: DropdownOption<'deepseek-chat' | 'deepseek-reasoner'>[] = [
-  { value: 'deepseek-chat', label: 'DeepSeek-Chat', meta: '128k', description: 'Faster, cheaper. Best default.' },
+  {
+    value: 'deepseek-chat',
+    label: 'DeepSeek-Chat',
+    meta: '128k',
+    description: 'Faster, cheaper. Best default.',
+  },
   {
     value: 'deepseek-reasoner',
     label: 'DeepSeek-Reasoner (R1)',
@@ -78,7 +108,12 @@ const MODEL_OPTIONS: DropdownOption<'deepseek-chat' | 'deepseek-reasoner'>[] = [
 const MODE_OPTIONS: DropdownOption<
   'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
 >[] = [
-  { value: 'default', label: 'Default', meta: '●', description: 'Ask before every tool call that needs approval.' },
+  {
+    value: 'default',
+    label: 'Default',
+    meta: '●',
+    description: 'Ask before every tool call that needs approval.',
+  },
   {
     value: 'acceptEdits',
     label: 'Accept edits',
@@ -135,10 +170,7 @@ interface PendingApproval {
 
 // ─── Component ────────────────────────────────────────────────────────
 
-export function ReplScreen({
-  projectPath,
-  onTurnComplete,
-}: ReplScreenProps): JSX.Element {
+export function ReplScreen({ projectPath, onTurnComplete }: ReplScreenProps): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>([
     {
       role: 'system',
@@ -370,9 +402,7 @@ export function ReplScreen({
   }
 
   // ── Approval ──
-  async function handleApproval(
-    decision: 'allow' | 'deny' | 'always',
-  ): Promise<void> {
+  async function handleApproval(decision: 'allow' | 'deny' | 'always'): Promise<void> {
     if (!pendingApproval) return;
     const req = pendingApproval;
     setPendingApproval(null);
@@ -571,13 +601,13 @@ export function ReplScreen({
                 disabled={controlsLocked}
                 triggerClass={
                   'mode-badge ' +
-                  (mode === 'bypassPermissions'
-                    ? 'bypass'
-                    : mode === 'plan'
-                      ? 'plan'
-                      : 'default')
+                  (mode === 'bypassPermissions' ? 'bypass' : mode === 'plan' ? 'plan' : 'default')
                 }
-                renderTrigger={(opt) => <span>{opt.meta} {opt.label}</span>}
+                renderTrigger={(opt) => (
+                  <span>
+                    {opt.meta} {opt.label}
+                  </span>
+                )}
                 title="Mode controls how tool calls are approved"
                 panelWidth={300}
                 options={MODE_OPTIONS}
@@ -587,11 +617,7 @@ export function ReplScreen({
                 <span
                   className={
                     'vim-chip ' +
-                    (vimMode === 'NORMAL'
-                      ? 'normal'
-                      : vimMode === 'VISUAL'
-                        ? 'visual'
-                        : '')
+                    (vimMode === 'NORMAL' ? 'normal' : vimMode === 'VISUAL' ? 'visual' : '')
                   }
                   title="Vim mode is on"
                 >
@@ -701,10 +727,7 @@ function renderMessage(
           textAlign: 'center',
           padding: '6px 12px',
           fontFamily: m.level === 'error' ? 'JetBrains Mono, monospace' : 'inherit',
-          background:
-            m.level === 'error'
-              ? 'rgba(255, 84, 112, 0.06)'
-              : 'transparent',
+          background: m.level === 'error' ? 'rgba(255, 84, 112, 0.06)' : 'transparent',
           borderRadius: 'var(--radius-sm)',
           lineHeight: 1.5,
         }}
@@ -730,11 +753,7 @@ function renderMessage(
                 status={{
                   kind: t.status === 'running' ? 'info' : t.status === 'ok' ? 'ok' : 'err',
                   label:
-                    t.status === 'running'
-                      ? '… running'
-                      : t.status === 'ok'
-                        ? '✓ done'
-                        : '✕ error',
+                    t.status === 'running' ? '… running' : t.status === 'ok' ? '✓ done' : '✕ error',
                 }}
                 body={t.resultText ? truncate(t.resultText, 1500) : undefined}
               />
@@ -787,4 +806,3 @@ function abbreviatePath(p: string): string {
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…\n[truncated]' : s;
 }
-

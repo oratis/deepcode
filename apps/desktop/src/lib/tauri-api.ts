@@ -131,10 +131,7 @@ export async function sessionCreate(cwd: string): Promise<string> {
 }
 
 /** Append one JSON message line to a session's JSONL file. */
-export async function sessionAppend(
-  id: string,
-  message: Record<string, unknown>,
-): Promise<void> {
+export async function sessionAppend(id: string, message: Record<string, unknown>): Promise<void> {
   await invoke('session_append', { id, message });
 }
 

@@ -87,9 +87,7 @@ export function Dropdown<T extends string>({
             {selected.meta && <span className="meta">{selected.meta}</span>}
           </>
         )}
-        <span style={{ color: 'var(--text-3)', fontSize: 11, marginLeft: 2 }}>
-          ⌄
-        </span>
+        <span style={{ color: 'var(--text-3)', fontSize: 11, marginLeft: 2 }}>⌄</span>
       </button>
 
       {open && (

@@ -24,14 +24,14 @@ require an Apple Developer ID or a real device.
 
 In the repo's GitHub Actions secrets, add:
 
-| Name                                  | Value                                          |
-| ------------------------------------- | ---------------------------------------------- |
-| `APPLE_ID`                            | Your Apple Developer login email               |
-| `APPLE_APP_SPECIFIC_PASSWORD`         | The app-specific password from step 4          |
-| `APPLE_TEAM_ID`                       | 10-char team ID (Membership tab in dev portal) |
-| `CSC_LINK`                            | Base64-encoded `.p12` of the Developer ID cert |
-| `CSC_KEY_PASSWORD`                    | Password used when exporting the `.p12`        |
-| `GH_TOKEN`                            | The PAT from step 5                            |
+| Name                          | Value                                          |
+| ----------------------------- | ---------------------------------------------- |
+| `APPLE_ID`                    | Your Apple Developer login email               |
+| `APPLE_APP_SPECIFIC_PASSWORD` | The app-specific password from step 4          |
+| `APPLE_TEAM_ID`               | 10-char team ID (Membership tab in dev portal) |
+| `CSC_LINK`                    | Base64-encoded `.p12` of the Developer ID cert |
+| `CSC_KEY_PASSWORD`            | Password used when exporting the `.p12`        |
+| `GH_TOKEN`                    | The PAT from step 5                            |
 
 To export the `.p12`:
 
@@ -82,6 +82,7 @@ git push origin v1.0.0
 ```
 
 The `.github/workflows/release.yml` workflow:
+
 1. Runs the test/build matrix.
 2. Publishes `deepcode-cli` to npm.
 3. Builds + signs + notarizes the Mac `.dmg`.

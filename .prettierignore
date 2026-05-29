@@ -7,3 +7,6 @@ coverage
 pnpm-lock.yaml
 docs/VISUAL_DESIGN.html
 reference
+.claude
+release-artifacts
+target

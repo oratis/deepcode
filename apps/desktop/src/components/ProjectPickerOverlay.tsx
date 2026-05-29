@@ -41,9 +41,8 @@ export function ProjectPickerOverlay({ onPicked }: Props): JSX.Element {
 
         <h1>Pick a project folder.</h1>
         <p className="tagline">
-          Everything DeepCode reads, writes, runs, or remembers happens inside
-          one folder you choose. You can switch projects anytime from the
-          sidebar.
+          Everything DeepCode reads, writes, runs, or remembers happens inside one folder you
+          choose. You can switch projects anytime from the sidebar.
         </p>
 
         <div
@@ -73,9 +72,8 @@ export function ProjectPickerOverlay({ onPicked }: Props): JSX.Element {
               lineHeight: 1.6,
             }}
           >
-            Common picks: a git repo, a single project root, or a sandboxed
-            scratch directory. DeepCode will never read or write outside the
-            folder you pick.
+            Common picks: a git repo, a single project root, or a sandboxed scratch directory.
+            DeepCode will never read or write outside the folder you pick.
           </div>
 
           <button
@@ -114,8 +112,8 @@ export function ProjectPickerOverlay({ onPicked }: Props): JSX.Element {
             textAlign: 'center',
           }}
         >
-          The path is saved to ~/.deepcode/settings.json so you don't have to
-          pick again on next launch.
+          The path is saved to ~/.deepcode/settings.json so you don't have to pick again on next
+          launch.
         </div>
       </div>
     </div>

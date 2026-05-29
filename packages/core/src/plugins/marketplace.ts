@@ -78,9 +78,7 @@ export function verifyEntrySignature(entry: MarketplaceEntry): boolean {
 export function isRevoked(entry: MarketplaceEntry, revoked: RevokedList): boolean {
   return revoked.entries.some(
     (r) =>
-      r.name === entry.name &&
-      r.version === entry.version &&
-      r.sourceHash === entry.sourceHash,
+      r.name === entry.name && r.version === entry.version && r.sourceHash === entry.sourceHash,
   );
 }
 
@@ -92,7 +90,8 @@ export async function fetchIndex(url: string): Promise<MarketplaceIndex> {
   const res = await fetch(url, { method: 'GET' });
   if (!res.ok) throw new Error(`marketplace index ${url}: HTTP ${res.status}`);
   const json = (await res.json()) as MarketplaceIndex;
-  if (json.version !== '1') throw new Error(`unsupported marketplace index version: ${json.version}`);
+  if (json.version !== '1')
+    throw new Error(`unsupported marketplace index version: ${json.version}`);
   return json;
 }
 
@@ -130,12 +129,17 @@ export async function resolveEntry(args: {
     .filter((e) => e.name === args.name)
     .filter((e) => !args.version || e.version === args.version)
     .sort((a, b) => versionCompare(b.version, a.version))[0];
-  if (!candidate) throw new Error(`No entry "${args.name}"${args.version ? `@${args.version}` : ''} in ${args.marketplaceUrl}`);
+  if (!candidate)
+    throw new Error(
+      `No entry "${args.name}"${args.version ? `@${args.version}` : ''} in ${args.marketplaceUrl}`,
+    );
   if (!verifyEntrySignature(candidate))
     throw new Error(`Signature verification failed for ${args.name}@${candidate.version}`);
   const revoked = await fetchRevoked(args.marketplaceUrl);
   if (isRevoked(candidate, revoked))
-    throw new Error(`${args.name}@${candidate.version} is in the revocation list — refusing to install`);
+    throw new Error(
+      `${args.name}@${candidate.version} is in the revocation list — refusing to install`,
+    );
   return candidate;
 }
 
@@ -154,9 +158,7 @@ function versionCompare(a: string, b: string): number {
  * Load the user's marketplace registry (~/.deepcode/marketplaces.json).
  * Returns { marketplaces: {} } if missing.
  */
-export async function loadMarketplaceConfig(
-  home: string = homedir(),
-): Promise<MarketplaceConfig> {
+export async function loadMarketplaceConfig(home: string = homedir()): Promise<MarketplaceConfig> {
   try {
     const raw = await fs.readFile(marketplacesPath(home), 'utf8');
     return JSON.parse(raw) as MarketplaceConfig;

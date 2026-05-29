@@ -19,30 +19,21 @@ import type { ToolHandler, ToolResult } from '@deepcode/core/dist/types.js';
  * exact name in the schema, the value is undefined and the Tauri call
  * fails with "missing required key …". This helper lets us accept both.
  */
-function pickStr(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): string | undefined {
+function pickStr(input: Record<string, unknown>, ...keys: string[]): string | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'string') return v;
   }
   return undefined;
 }
-function pickNum(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): number | undefined {
+function pickNum(input: Record<string, unknown>, ...keys: string[]): number | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'number') return v;
   }
   return undefined;
 }
-function pickBool(
-  input: Record<string, unknown>,
-  ...keys: string[]
-): boolean | undefined {
+function pickBool(input: Record<string, unknown>, ...keys: string[]): boolean | undefined {
   for (const k of keys) {
     const v = input[k];
     if (typeof v === 'boolean') return v;
@@ -218,8 +209,7 @@ export const MacBashTool: ToolHandler = {
           timeout_ms: pickNum(input, 'timeout_ms', 'timeoutMs', 'timeout'),
         },
       })) as { stdout: string; stderr: string; exitCode: number; timedOut: boolean };
-      const combined =
-        (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '');
+      const combined = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '');
       return {
         content: combined || `(no output, exit ${r.exitCode})`,
         data: { exitCode: r.exitCode, timedOut: r.timedOut },

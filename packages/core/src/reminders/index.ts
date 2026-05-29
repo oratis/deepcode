@@ -154,9 +154,7 @@ export async function todosPendingReminder(ctx: ReminderContext): Promise<string
   return lines.join('\n');
 }
 
-export async function externalFileModifiedReminder(
-  ctx: ReminderContext,
-): Promise<string | null> {
+export async function externalFileModifiedReminder(ctx: ReminderContext): Promise<string | null> {
   if (!ctx.knownFiles || ctx.knownFiles.size === 0) return null;
   const drifted: Array<{ path: string; was: number; now: number }> = [];
   for (const [path, was] of ctx.knownFiles) {
@@ -170,7 +168,10 @@ export async function externalFileModifiedReminder(
     }
   }
   if (drifted.length === 0) return null;
-  const list = drifted.slice(0, 5).map((d) => `  - ${d.path}`).join('\n');
+  const list = drifted
+    .slice(0, 5)
+    .map((d) => `  - ${d.path}`)
+    .join('\n');
   const more = drifted.length > 5 ? `\n  ... and ${drifted.length - 5} more` : '';
   return `Files modified externally since you last read them:\n${list}${more}\nRe-read them with the Read tool before editing.`;
 }

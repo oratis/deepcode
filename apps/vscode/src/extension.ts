@@ -92,8 +92,7 @@ async function runAgent(
     await core.runAgent({
       provider,
       tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-      systemPrompt:
-        'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+      systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
       userMessage,
       model: 'deepseek-chat',
       cwd,
@@ -101,9 +100,7 @@ async function runAgent(
         if (e.type === 'text_delta') out.append(e.text);
         else if (e.type === 'tool_use') out.appendLine(`\n[${e.name}] ${formatInput(e.input)}`);
         else if (e.type === 'tool_result')
-          out.appendLine(
-            `  ${e.result.isError ? '✕' : '✓'} ${truncate(e.result.content, 200)}`,
-          );
+          out.appendLine(`  ${e.result.isError ? '✕' : '✓'} ${truncate(e.result.content, 200)}`);
         else if (e.type === 'error') out.appendLine(`\n✕ ${e.error}`);
       },
     });
@@ -161,8 +158,7 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
       await core.runAgent({
         provider,
         tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-        systemPrompt:
-          'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+        systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
         userMessage: msg.text,
         model: 'deepseek-chat',
         cwd: this.vscodeMod.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
@@ -178,8 +174,7 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
           } else if (e.type === 'tool_result') {
             view.webview.postMessage({
               kind: 'tool',
-              text:
-                (e.result.isError ? '✕ ' : '✓ ') + truncate(e.result.content, 200),
+              text: (e.result.isError ? '✕ ' : '✓ ') + truncate(e.result.content, 200),
             });
           } else if (e.type === 'error') {
             view.webview.postMessage({ kind: 'assistant', text: `✕ ${e.error}` });
