@@ -135,6 +135,19 @@ export async function sessionAppend(id: string, message: Record<string, unknown>
   await invoke('session_append', { id, message });
 }
 
+/** A stored message line as written to a session's JSONL. */
+export interface StoredMessageLine {
+  type?: string;
+  role: 'user' | 'assistant';
+  content: Array<Record<string, unknown>>;
+  timestamp?: string;
+}
+
+/** Read a session's message lines (meta header + unparseable lines skipped). */
+export async function sessionRead(id: string): Promise<StoredMessageLine[]> {
+  return (await invoke('session_read', { id })) as StoredMessageLine[];
+}
+
 export async function cliPath(): Promise<string | null> {
   return (await invoke('cli_path')) as string | null;
 }

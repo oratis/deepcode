@@ -171,6 +171,40 @@ pub fn session_append(id: String, message: serde_json::Value) -> Result<(), Stri
         .map_err(|e| format!("write {}: {}", path.display(), e))
 }
 
+/// Read a session's JSONL and return its message lines (skipping the
+/// `session_meta` header and any unparseable lines). Each returned value is the
+/// stored message object as written by session_append: `{ type, role, content,
+/// timestamp }`. Returns an empty vec if the file doesn't exist.
+#[tauri::command]
+pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let path = home
+        .join(".deepcode")
+        .join("sessions")
+        .join(format!("{}.jsonl", id));
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
+        Err(e) => return Err(format!("read {}: {}", path.display(), e)),
+    };
+    let mut out = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue; // tolerate a partial trailing line
+        };
+        if v.get("type").and_then(|t| t.as_str()) == Some("message") {
+            out.push(v);
+        }
+    }
+    Ok(out)
+}
+
 fn format_date(secs: u64) -> String {
     // Simple YYYY-MM-DD; days since epoch math is enough for filename use.
     let days = secs / 86_400;

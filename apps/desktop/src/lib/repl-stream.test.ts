@@ -6,6 +6,7 @@ import {
   finalizeStreaming,
   lastAssistantIndex,
   pickTarget,
+  storedToMsgs,
   type Msg,
   type ToolInvocation,
 } from './repl-stream.js';
@@ -85,6 +86,55 @@ describe('repl-stream mutators', () => {
     ];
     expect(lastAssistantIndex(m)).toBe(0);
     expect(lastAssistantIndex([{ role: 'system', text: 'only' }])).toBe(-1);
+  });
+
+  it('storedToMsgs reconstructs a resumed conversation (text + tool cards + results)', () => {
+    const stored = [
+      { role: 'user' as const, content: [{ type: 'text', text: 'read a.txt' }] },
+      {
+        role: 'assistant' as const,
+        content: [
+          { type: 'thinking', text: 'internal — should be dropped' },
+          { type: 'text', text: 'Reading it.' },
+          { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'a.txt' } },
+        ],
+      },
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'tool_result', tool_use_id: 't1', content: 'file body', is_error: false },
+        ],
+      },
+      { role: 'assistant' as const, content: [{ type: 'text', text: 'Done.' }] },
+    ];
+    const msgs = storedToMsgs(stored);
+    expect(msgs).toHaveLength(3); // user, assistant(+tool), assistant
+    expect(msgs[0]).toEqual({ role: 'user', text: 'read a.txt' });
+    const a1 = msgs[1];
+    if (a1?.role !== 'assistant') throw new Error('expected assistant');
+    expect(a1.turn.text).toBe('Reading it.'); // thinking dropped
+    expect(a1.turn.streaming).toBe(false);
+    expect(a1.turn.tools[0]).toMatchObject({
+      toolId: 't1',
+      name: 'Read',
+      target: 'a.txt',
+      status: 'ok',
+      resultText: 'file body',
+    });
+    expect(msgs[2]).toMatchObject({ role: 'assistant', turn: { text: 'Done.' } });
+  });
+
+  it('storedToMsgs marks errored tool results', () => {
+    const msgs = storedToMsgs([
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'x', name: 'Bash', input: {} }] },
+      {
+        role: 'user',
+        content: [{ type: 'tool_result', tool_use_id: 'x', content: 'boom', is_error: true }],
+      },
+    ]);
+    const a = msgs[0];
+    if (a?.role !== 'assistant') throw new Error('expected assistant');
+    expect(a.turn.tools[0]).toMatchObject({ status: 'err', resultText: 'boom' });
   });
 
   it('pickTarget surfaces the most relevant field', () => {
