@@ -11,7 +11,10 @@ echo "▎ pre-commit: lint"
 pnpm lint
 
 echo "▎ pre-commit: typecheck"
-pnpm -r typecheck
+# Root `tsc -b` builds the whole workspace graph once in dependency order
+# (core's .d.ts before its consumers), rather than `pnpm -r typecheck` running
+# each package's build independently. Same result, fewer redundant compiles.
+pnpm typecheck
 
 echo "▎ pre-commit: tests"
 pnpm -r test
