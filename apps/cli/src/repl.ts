@@ -17,11 +17,14 @@ import {
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
   connectAllMcpServers,
+  expandCommandBody,
+  findCustomCommand,
   findStyle,
   loadMemory,
   loadOutputStyles,
   loadSettings,
   loadSkills,
+  loadSlashCommands,
   contextWindowFor,
   makeSkillTool,
   resolveCredentials,
@@ -125,6 +128,8 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     tools = new ToolRegistry();
   }
   const commands = new CommandRegistry();
+  // Custom prompt-template commands from .deepcode/commands/*.md (user + project).
+  const customCommands = await loadSlashCommands({ cwd, home: opts.home });
 
   // M5: load memory, skills, output style — assemble final system prompt
   const memory = await loadMemory({
@@ -291,6 +296,17 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       }
       if (ctx.exitRequested) break;
       continue;
+    }
+
+    // Custom prompt-template command (.deepcode/commands/<name>.md)? Expand its
+    // body with the args and submit it to the agent as the user prompt.
+    if (userInput.trim().startsWith('/')) {
+      const parts = userInput.trim().split(/\s+/);
+      const custom = findCustomCommand(customCommands, parts[0]!);
+      if (custom) {
+        userInput = expandCommandBody(custom.body, parts.slice(1));
+        output.write(`  ▸ ${custom.name} (${custom.source} command)\n\n`);
+      }
     }
 
     // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
