@@ -2,7 +2,9 @@
 // Spec: docs/VISUAL_DESIGN.html
 // Milestone: 0.1.2 — adds project-folder flow + inspector wiring + session refresh.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { InspectorPanel } from './components/InspectorPanel.js';
 import { InspectorRail } from './components/InspectorRail.js';
 import { ProjectPickerOverlay } from './components/ProjectPickerOverlay.js';
 import { Sidebar } from './components/Sidebar.js';
@@ -23,6 +25,7 @@ import { SettingsScreen } from './screens/Settings.js';
 import { SkillsScreen } from './screens/Skills.js';
 import type { ScreenName } from './types/screens.js';
 import type { UpdateInfo } from './types/global.js';
+import { emptyInspectorData, type InspectorData } from './types/inspector.js';
 
 export function App(): JSX.Element {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -34,6 +37,15 @@ export function App(): JSX.Element {
   // Reconstructed messages for a resumed session; seeded into ReplScreen on its
   // next remount. Cleared when starting a fresh session.
   const [resumedMessages, setResumedMessages] = useState<Msg[] | undefined>(undefined);
+  // Right inspector: 48 px rail by default, 320 px panel when expanded.
+  const [inspectorExpanded, setInspectorExpanded] = useState(false);
+  const [inspector, setInspector] = useState<InspectorData>(() => emptyInspectorData());
+
+  // Merge the slice ReplScreen lifts up (usage / model / mode / files / todos).
+  // Stable identity so ReplScreen's sync effect doesn't refire every render.
+  const handleInspector = useCallback((patch: Partial<InspectorData>) => {
+    setInspector((prev) => ({ ...prev, ...patch }));
+  }, []);
 
   useEffect(() => {
     void window.deepcode.creds.load().then((c) => setHasKey(c.hasKey));
@@ -52,6 +64,7 @@ export function App(): JSX.Element {
     });
     const offComma = registerShortcut('meta+,', () => setScreen('settings'));
     const offSlash = registerShortcut('meta+/', () => setScreen('about'));
+    const offBackslash = registerShortcut('meta+\\', () => setInspectorExpanded((v) => !v));
 
     return () => {
       offShim();
@@ -59,6 +72,7 @@ export function App(): JSX.Element {
       offN();
       offComma();
       offSlash();
+      offBackslash();
     };
   }, []);
 
@@ -95,9 +109,15 @@ export function App(): JSX.Element {
     return <ProjectPickerOverlay onPicked={handlePickProject} />;
   }
 
-  // Main shell: 3-column grid.
+  // Main shell: 3-column grid. The right column is a 48 px rail by default and
+  // a 320 px panel when expanded — the `inspector-open` modifier widens the
+  // grid track so the panel squeezes the chat stream rather than overlaying it.
+  const planCount = inspector.todos.filter((t) => t.status !== 'completed').length;
+  const usedTokens = inspector.usage.inputTokens + inspector.usage.outputTokens;
+  const contextFill = usedTokens > 0 ? usedTokens / contextWindowFor(inspector.model) : undefined;
+
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (inspectorExpanded ? ' inspector-open' : '')}>
       {update && <UpdateBanner info={update} />}
       <Sidebar
         key={`sb-${sessionEpoch}`}
@@ -141,10 +161,25 @@ export function App(): JSX.Element {
           setScreen,
           projectPath,
           () => setSessionEpoch((k) => k + 1),
+          handleInspector,
           resumedMessages,
         )}
       </main>
-      <InspectorRail activeScreen={screen} onChange={(s) => setScreen(s)} contextFill={undefined} />
+      {inspectorExpanded ? (
+        <InspectorPanel
+          projectPath={projectPath}
+          data={inspector}
+          onCollapse={() => setInspectorExpanded(false)}
+        />
+      ) : (
+        <InspectorRail
+          activeScreen={screen}
+          onChange={(s) => setScreen(s)}
+          onExpand={() => setInspectorExpanded(true)}
+          planCount={planCount}
+          contextFill={contextFill}
+        />
+      )}
     </div>
   );
 }
@@ -154,6 +189,7 @@ function renderScreen(
   setScreen: (s: ScreenName) => void,
   projectPath: string,
   onTurnComplete: () => void,
+  onInspector: (patch: Partial<InspectorData>) => void,
   initialMessages?: Msg[],
 ): JSX.Element {
   switch (screen) {
@@ -164,6 +200,7 @@ function renderScreen(
           projectPath={projectPath}
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
+          onInspector={onInspector}
         />
       );
     case 'sessions':
@@ -187,6 +224,7 @@ function renderScreen(
           projectPath={projectPath}
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
+          onInspector={onInspector}
         />
       );
   }
