@@ -15,6 +15,7 @@ export default [
       '**/node_modules/**',
       '**/target/**', // Rust/Cargo build output (generated JS in src-tauri/target)
       '**/.tsbuildinfo',
+      '.claude/**', // sibling agent worktrees — not part of this checkout's lint surface
       'release-artifacts/**',
       'apps/desktop/electron/**', // requires electron types — pending M6-rest
     ],
