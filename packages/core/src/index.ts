@@ -346,6 +346,15 @@ export {
   type LoadSubAgentsOpts,
 } from './sub-agents/index.js';
 
+// Custom slash commands (.deepcode/commands/*.md — prompt templates)
+export {
+  loadSlashCommands,
+  findCustomCommand,
+  expandCommandBody,
+  type CustomCommand,
+  type LoadSlashCommandsOpts,
+} from './slash-commands/index.js';
+
 // Output styles (M4 — 4 built-in + custom)
 export {
   loadOutputStyles,
