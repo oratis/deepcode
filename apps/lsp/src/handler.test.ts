@@ -28,6 +28,24 @@ describe('handleMessage — initialize', () => {
 describe('handleMessage — executeCommand', () => {
   it('returns a turnId for deepcode.runAgent and streams events', async () => {
     const out: LspMessage[] = [];
+    // Resolve as soon as the real completion signal (turn_done) is emitted,
+    // rather than polling on a fixed timer — the agent run streams events
+    // asynchronously after lazily importing @deepcode/core, which can take
+    // arbitrarily long on a loaded CI runner.
+    let signalDone!: () => void;
+    const done = new Promise<void>((resolve) => {
+      signalDone = resolve;
+    });
+    const send = (m: LspMessage) => {
+      out.push(m);
+      if (
+        m.method === 'deepcode/agentEvent' &&
+        (m.params as { kind: string }).kind === 'turn_done'
+      ) {
+        signalDone();
+      }
+    };
+
     await handleMessage(
       {
         jsonrpc: '2.0',
@@ -35,29 +53,25 @@ describe('handleMessage — executeCommand', () => {
         method: 'workspace/executeCommand',
         params: { command: 'deepcode.runAgent', arguments: [{ prompt: 'hi' }] },
       },
-      (m) => out.push(m),
+      send,
     );
     // Synchronous: started event + reply
     expect(out.some((m) => m.method === 'deepcode/agentEvent')).toBe(true);
     const reply = out.find((m) => m.id === 2);
     expect(reply).toBeDefined();
     expect((reply!.result as { turnId: string }).turnId).toMatch(/^lsp-/);
+
     // Async: wait for the agent run to finish (will error in test env
-    // because no DEEPSEEK_API_KEY is set — that's the expected path).
-    // Poll for turn_done with a timeout.
-    for (let i = 0; i < 50; i++) {
-      const done = out.find(
-        (m) =>
-          m.method === 'deepcode/agentEvent' && (m.params as { kind: string }).kind === 'turn_done',
-      );
-      if (done) break;
-      await new Promise((r) => setTimeout(r, 20));
-    }
+    // because no DEEPSEEK_API_KEY is set — that's the expected path, which
+    // still emits turn_done). Wait on the real signal, bounded only by the
+    // test timeout below.
+    await done;
+
     const events = out.filter((m) => m.method === 'deepcode/agentEvent');
     const kinds = events.map((e) => (e.params as { kind: string }).kind);
     expect(kinds).toContain('started');
     expect(kinds).toContain('turn_done');
-  }, 5000);
+  }, 15000);
 
   it('errors on missing prompt', async () => {
     const out: LspMessage[] = [];
