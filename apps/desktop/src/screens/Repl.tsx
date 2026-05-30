@@ -51,6 +51,12 @@ interface ReplScreenProps {
   projectPath: string;
   /** Called after each turn ends so the parent can refresh the sidebar. */
   onTurnComplete?: () => void;
+  /**
+   * Pre-seed the chat with a resumed session's reconstructed messages. The
+   * parent remounts ReplScreen (via key) when this changes, so it's only read
+   * on mount.
+   */
+  initialMessages?: Msg[];
 }
 
 // ─── Types ────────────────────────────────────────────────────────────
@@ -171,13 +177,27 @@ interface PendingApproval {
 
 // ─── Component ────────────────────────────────────────────────────────
 
-export function ReplScreen({ projectPath, onTurnComplete }: ReplScreenProps): JSX.Element {
-  const [messages, setMessages] = useState<Msg[]>([
-    {
-      role: 'system',
-      text: `DeepCode is ready in ${projectPath}. Ask anything about your codebase — I can Read / Write / Edit / Bash / Grep / Glob your files.`,
-    },
-  ]);
+export function ReplScreen({
+  projectPath,
+  onTurnComplete,
+  initialMessages,
+}: ReplScreenProps): JSX.Element {
+  const [messages, setMessages] = useState<Msg[]>(() =>
+    initialMessages && initialMessages.length > 0
+      ? [
+          {
+            role: 'system',
+            text: 'Resumed session — earlier conversation loaded below.',
+          },
+          ...initialMessages,
+        ]
+      : [
+          {
+            role: 'system',
+            text: `DeepCode is ready in ${projectPath}. Ask anything about your codebase — I can Read / Write / Edit / Bash / Grep / Glob your files.`,
+          },
+        ],
+  );
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);

@@ -10,6 +10,7 @@ import { UpdateBanner } from './components/UpdateBanner.js';
 import { registerShortcut } from './lib/keyboard.js';
 import { clearHistory as clearAgentHistory } from './lib/mac-agent.js';
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
+import { storedToMsgs, type Msg } from './lib/repl-stream.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
 import { AboutScreen } from './screens/About.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
@@ -30,6 +31,9 @@ export function App(): JSX.Element {
   const [screen, setScreen] = useState<ScreenName>('repl');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [sessionEpoch, setSessionEpoch] = useState(0);
+  // Reconstructed messages for a resumed session; seeded into ReplScreen on its
+  // next remount. Cleared when starting a fresh session.
+  const [resumedMessages, setResumedMessages] = useState<Msg[] | undefined>(undefined);
 
   useEffect(() => {
     void window.deepcode.creds.load().then((c) => setHasKey(c.hasKey));
@@ -41,6 +45,7 @@ export function App(): JSX.Element {
     // Global keyboard shortcuts that mirror the sidebar hints.
     const offN = registerShortcut('meta+n', () => {
       clearAgentHistory();
+      setResumedMessages(undefined);
       setActiveSessionId(null);
       setScreen('repl');
       setSessionEpoch((k) => k + 1);
@@ -98,12 +103,22 @@ export function App(): JSX.Element {
         key={`sb-${sessionEpoch}`}
         projectPath={projectPath}
         activeSessionId={activeSessionId}
-        onPickSession={(id) => {
+        onPickSession={async (id) => {
+          // Load the session's stored messages, adopt them into the agent, and
+          // remount ReplScreen seeded with the reconstructed conversation.
+          try {
+            const { history } = await window.deepcode.sessions.resume({ id });
+            setResumedMessages(storedToMsgs(history as Parameters<typeof storedToMsgs>[0]));
+          } catch {
+            setResumedMessages(undefined); // fall back to a fresh view
+          }
           setActiveSessionId(id);
           setScreen('repl');
+          setSessionEpoch((k) => k + 1);
         }}
         onNewSession={() => {
           clearAgentHistory();
+          setResumedMessages(undefined);
           setActiveSessionId(null);
           setScreen('repl');
           // Force ReplScreen to remount with a clean message history
@@ -114,13 +129,20 @@ export function App(): JSX.Element {
           // the in-memory conversation so the next session starts
           // fresh in the new project's cwd.
           clearAgentHistory();
+          setResumedMessages(undefined);
           setProjectPath(null);
           setActiveSessionId(null);
           setSessionEpoch((k) => k + 1);
         }}
       />
       <main className="chat-main" key={`main-${sessionEpoch}`}>
-        {renderScreen(screen, setScreen, projectPath, () => setSessionEpoch((k) => k + 1))}
+        {renderScreen(
+          screen,
+          setScreen,
+          projectPath,
+          () => setSessionEpoch((k) => k + 1),
+          resumedMessages,
+        )}
       </main>
       <InspectorRail activeScreen={screen} onChange={(s) => setScreen(s)} contextFill={undefined} />
     </div>
@@ -132,11 +154,18 @@ function renderScreen(
   setScreen: (s: ScreenName) => void,
   projectPath: string,
   onTurnComplete: () => void,
+  initialMessages?: Msg[],
 ): JSX.Element {
   switch (screen) {
     case 'chat':
       // 'chat' folded into 'repl' — the new shell has only the REPL surface.
-      return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
+      return (
+        <ReplScreen
+          projectPath={projectPath}
+          onTurnComplete={onTurnComplete}
+          initialMessages={initialMessages}
+        />
+      );
     case 'sessions':
       return <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />;
     case 'plugins':
@@ -153,6 +182,12 @@ function renderScreen(
       return <AboutScreen />;
     case 'repl':
     default:
-      return <ReplScreen projectPath={projectPath} onTurnComplete={onTurnComplete} />;
+      return (
+        <ReplScreen
+          projectPath={projectPath}
+          onTurnComplete={onTurnComplete}
+          initialMessages={initialMessages}
+        />
+      );
   }
 }

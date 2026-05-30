@@ -66,6 +66,19 @@ export function clearSession(): void {
   history = [];
 }
 
+/**
+ * Resume an existing session: adopt its id + loaded history so the next turn
+ * continues that conversation (with full context) and appends to its JSONL
+ * rather than starting a new file.
+ */
+export function resumeSession(
+  sessionId: string,
+  loadedHistory: import('@deepcode/core/dist/types.js').StoredMessage[],
+): void {
+  currentSessionId = sessionId;
+  history = loadedHistory;
+}
+
 async function ensureProvider(): Promise<DeepSeekProvider> {
   if (provider) return provider;
   const creds = await readCredentials();

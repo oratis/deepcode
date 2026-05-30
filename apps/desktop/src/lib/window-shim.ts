@@ -4,7 +4,7 @@
 
 import type { AgentEvent, Mode } from '@deepcode/core/dist/types.js';
 import type { DeepCodeAPI } from '../types/global.js';
-import { abortAgentTurn, clearHistory, startAgentTurn } from './mac-agent.js';
+import { abortAgentTurn, clearHistory, resumeSession, startAgentTurn } from './mac-agent.js';
 import {
   appendAllowMatcher,
   getAppInfo,
@@ -13,6 +13,7 @@ import {
   openUrl,
   readCredentials,
   saveCredentials,
+  sessionRead,
 } from './tauri-api.js';
 
 // In-memory event bus: every agent.start() call ID maps to an array of
@@ -70,8 +71,17 @@ export function installTauriShim(): void {
           updatedAt: new Date(r.updated_at_secs * 1000).toISOString(),
         }));
       },
-      async resume() {
-        return { history: [], sessionId: '' };
+      async resume({ id }) {
+        // Read the session's stored messages and adopt them into the agent so
+        // the conversation continues with full context + appends to this file.
+        const lines = await sessionRead(id);
+        const history = lines.map((l) => ({
+          role: l.role,
+          content: l.content,
+          timestamp: l.timestamp ?? '',
+        })) as unknown as import('@deepcode/core/dist/types.js').StoredMessage[];
+        resumeSession(id, history);
+        return { history, sessionId: id };
       },
     },
     plugins: {

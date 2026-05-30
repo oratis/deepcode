@@ -117,6 +117,57 @@ export function finalizeStreaming(msgs: Msg[]): Msg[] {
   );
 }
 
+/** A stored message line (role + content blocks) as persisted to a session. */
+export interface StoredLine {
+  role: 'user' | 'assistant';
+  content: Array<Record<string, unknown>>;
+}
+
+/**
+ * Reconstruct the chat view (Msg[]) from a session's stored messages, so picking
+ * a past session re-renders its conversation. Mirrors the live stream reducers
+ * in batch: assistant text + tool_use become a turn; the following user message's
+ * tool_result blocks attach to those cards by tool_use_id. Thinking blocks are
+ * dropped (they were streaming-only). All turns are non-streaming (finalized).
+ */
+export function storedToMsgs(stored: StoredLine[]): Msg[] {
+  let msgs: Msg[] = [];
+  for (const m of stored) {
+    if (m.role === 'assistant') {
+      const texts: string[] = [];
+      const tools: ToolInvocation[] = [];
+      for (const b of m.content) {
+        if (b.type === 'text' && typeof b.text === 'string') {
+          texts.push(b.text);
+        } else if (b.type === 'tool_use') {
+          const input = (b.input as Record<string, unknown>) ?? {};
+          tools.push({
+            toolId: String(b.id ?? ''),
+            name: String(b.name ?? '?'),
+            input,
+            target: pickTarget(input),
+            status: 'running',
+          });
+        }
+      }
+      msgs.push({ role: 'assistant', turn: { text: texts.join('\n'), tools, streaming: false } });
+    } else {
+      const texts: string[] = [];
+      for (const b of m.content) {
+        if (b.type === 'text' && typeof b.text === 'string') {
+          texts.push(b.text);
+        } else if (b.type === 'tool_result') {
+          const id = String(b.tool_use_id ?? '');
+          const content = typeof b.content === 'string' ? b.content : '';
+          msgs = attachToolResult(msgs, id, content, b.is_error ? 'err' : 'ok');
+        }
+      }
+      if (texts.length > 0) msgs.push({ role: 'user', text: texts.join('\n') });
+    }
+  }
+  return msgs;
+}
+
 /** Pick a human-readable target from a tool's input for the card header. */
 export function pickTarget(input: Record<string, unknown>): string | undefined {
   for (const k of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
