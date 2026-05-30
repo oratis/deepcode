@@ -127,10 +127,11 @@ export interface ToolContext {
     multiSelect?: boolean;
   }) => Promise<string>;
   /**
-   * Mutable host state that the ExitPlanMode tool flips. The agent loop reads
-   * this between turns and changes its mode accordingly.
+   * Mutable host state that the EnterPlanMode / ExitPlanMode tools flip. The
+   * agent-loop owner reads this after the run and changes the active mode
+   * accordingly (plan ⇄ default).
    */
-  modeSignal?: { exitPlanMode?: boolean };
+  modeSignal?: { exitPlanMode?: boolean; enterPlanMode?: boolean };
 }
 
 export interface ToolResult {
