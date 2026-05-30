@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 100 100">
-  <!-- DeepCode logo: white cat silhouette on brand-blue gradient square -->
+  <!-- DeepCode logo, macOS icon grid: white cat on brand-blue squircle.
+       The squircle is inset to ~80% of the canvas with a transparent margin
+       (macOS Big Sur+ grid: 824/1024 ≈ 80%, corner radius ≈ 22.5% of the
+       square), so the icon sits the same visual size as its Dock neighbours
+       instead of bleeding edge-to-edge. The cat is inset inside the squircle
+       so it reads as a mark, not a full-bleed silhouette. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+    <linearGradient id="bg" x1="10" y1="10" x2="90" y2="90" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4D6BFE"/>
       <stop offset="1" stop-color="#2238A8"/>
     </linearGradient>
   </defs>
-  <rect width="100" height="100" rx="22" fill="url(#bg)"/>
-  <!-- White cat silhouette: two pointy ears + round head -->
-  <path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z" fill="#ffffff"/>
+  <!-- Squircle: 80×80 centred in the 100 canvas → ~10% transparent margin. -->
+  <rect x="10" y="10" width="80" height="80" rx="18" fill="url(#bg)"/>
+  <!-- White cat silhouette, scaled to ~58% and centred inside the squircle. -->
+  <g transform="translate(21 21) scale(0.58)">
+    <path d="M18 36 L24 10 L42 30 Q50 28 58 30 L76 10 L82 36 Q90 52 86 70 Q76 88 50 88 Q24 88 14 70 Q10 52 18 36 Z" fill="#ffffff"/>
+  </g>
 </svg>
