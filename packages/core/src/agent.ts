@@ -84,7 +84,24 @@ export interface RunAgentOptions {
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
+  /** Internal: sub-agent recursion depth (the Task tool). 0 = top-level agent.
+   *  Sub-agents run at depth 1 and are NOT given a runSubAgent, so they can't
+   *  spawn further sub-agents. */
+  subAgentDepth?: number;
 }
+
+/** Max sub-agent recursion: top-level (0) may spawn sub-agents (depth 1); those
+ *  cannot spawn more. */
+const MAX_SUBAGENT_DEPTH = 1;
+/** Tools a sub-agent never gets (would let it mutate the parent's control flow). */
+const SUBAGENT_TOOL_DENYLIST = new Set([
+  'Task',
+  'EnterPlanMode',
+  'ExitPlanMode',
+  'AskUserQuestion',
+]);
+/** Default turn cap for a sub-agent run when its frontmatter doesn't set one. */
+const DEFAULT_SUBAGENT_MAX_TURNS = 12;
 
 export interface RunAgentResult {
   /** Final history (input history + everything appended this run). */
@@ -166,6 +183,90 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     askUser: opts.askUser,
     modeSignal,
   };
+
+  // Wire the Task tool's sub-agent runner — but only below the recursion cap,
+  // so a sub-agent can't spawn further sub-agents (it also never gets the Task
+  // tool, see the denylist below; this is belt-and-suspenders).
+  const depth = opts.subAgentDepth ?? 0;
+  if (depth < MAX_SUBAGENT_DEPTH) {
+    toolCtx.runSubAgent = async ({ prompt, agentType }) => {
+      // Resolve a named sub-agent from disk (lazy import keeps node:fs out of
+      // browser bundles; failures degrade to a generic sub-agent prompt).
+      let systemPrompt =
+        'You are a focused sub-agent. Complete the task below using the available tools, then reply with a concise summary of your findings or result. You have no memory of any other conversation.';
+      let model = opts.model;
+      let subMaxTurns = DEFAULT_SUBAGENT_MAX_TURNS;
+      let allow: Set<string> | null = null;
+      try {
+        const mod = /* @vite-ignore */ './sub-agents/index.js';
+        const { loadSubAgents, findSubAgent } = (await import(
+          mod
+        )) as typeof import('./sub-agents/index.js');
+        const agents = await loadSubAgents({ cwd: opts.cwd });
+        const found = agentType ? findSubAgent(agents, agentType) : undefined;
+        if (agentType && !found) {
+          const names = agents.map((a) => a.qualifiedName).join(', ') || '(none)';
+          throw new Error(`unknown subagent_type "${agentType}". Available: ${names}`);
+        }
+        if (found) {
+          systemPrompt = found.body.trim() || systemPrompt;
+          if (found.frontmatter.model) model = found.frontmatter.model;
+          if (found.frontmatter.maxTurns) subMaxTurns = found.frontmatter.maxTurns;
+          if (found.frontmatter.tools?.length) allow = new Set(found.frontmatter.tools);
+        }
+      } catch (err) {
+        if (agentType) throw err; // explicit agent requested but not found/loadable
+        // else: no agent named — proceed with the generic sub-agent prompt
+      }
+
+      // A registry view exposing only the sub-agent's allowed tools (its
+      // frontmatter whitelist, if any) minus the control/recursion tools.
+      // Built inline so agent.ts never imports ToolRegistry/BUILTIN_TOOLS
+      // (which would drag node:fs into the renderer bundle).
+      const subTools = {
+        definitions: () =>
+          opts.tools
+            .definitions()
+            .filter((d) => !SUBAGENT_TOOL_DENYLIST.has(d.name) && (!allow || allow.has(d.name))),
+        get: (name: string) =>
+          SUBAGENT_TOOL_DENYLIST.has(name) || (allow && !allow.has(name))
+            ? undefined
+            : opts.tools.get(name),
+        list: () =>
+          opts.tools
+            .list()
+            .filter((t) => !SUBAGENT_TOOL_DENYLIST.has(t.name) && (!allow || allow.has(t.name))),
+      } as typeof opts.tools;
+
+      const sub = await runAgent({
+        provider: opts.provider,
+        tools: subTools,
+        systemPrompt,
+        userMessage: prompt,
+        model,
+        maxTokens: opts.maxTokens,
+        temperature: opts.temperature,
+        maxTurns: subMaxTurns,
+        cwd: opts.cwd,
+        signal: opts.signal,
+        mode: opts.mode,
+        permissions: opts.permissions,
+        hooks: opts.hooks,
+        sandboxConfig: opts.sandboxConfig,
+        autoMode: opts.autoMode,
+        systemReminders: false, // sub-agent gets a clean context
+        subAgentDepth: depth + 1,
+      });
+      const text = sub.history
+        .filter((m) => m.role === 'assistant')
+        .flatMap((m) => m.content)
+        .filter((b): b is import('./types.js').TextBlock => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim();
+      return { text, turnsUsed: sub.turnsUsed, agentType: agentType ?? 'general' };
+    };
+  }
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;
 
