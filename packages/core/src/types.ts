@@ -132,6 +132,17 @@ export interface ToolContext {
    * accordingly (plan ⇄ default).
    */
   modeSignal?: { exitPlanMode?: boolean; enterPlanMode?: boolean };
+  /**
+   * Run a sub-agent (the Task tool). Supplied by the agent loop when sub-agent
+   * recursion depth allows; absent in the renderer or at max depth (so a
+   * sub-agent can't spawn further sub-agents). Resolves to the sub-agent's
+   * final assistant text.
+   */
+  runSubAgent?: (opts: {
+    prompt: string;
+    agentType?: string;
+    description?: string;
+  }) => Promise<{ text: string; turnsUsed: number; agentType: string }>;
 }
 
 export interface ToolResult {

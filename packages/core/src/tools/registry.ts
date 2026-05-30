@@ -10,6 +10,7 @@ import { ExitPlanModeTool } from './exit-plan.js';
 import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 import { ReadTool } from './read.js';
+import { TaskTool } from './task.js';
 import { TodoWriteTool } from './todo.js';
 import { WebFetchTool } from './web-fetch.js';
 import { WebSearchTool } from './web-search.js';
@@ -34,6 +35,7 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   AskUserQuestionTool,
   EnterPlanModeTool,
   ExitPlanModeTool,
+  TaskTool,
 ];
 
 export class ToolRegistry {

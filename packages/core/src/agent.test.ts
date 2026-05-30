@@ -333,6 +333,70 @@ describe('runAgent', () => {
     expect(ids).toEqual(['g1', 'g2']);
   });
 
+  it('Task tool runs a sub-agent and feeds its output back', async () => {
+    // Top-level agent calls Task; the sub-agent runs (same provider queue) and
+    // its final text comes back as the Task tool_result.
+    const provider = new MockProvider([
+      toolUse('delegating', {
+        type: 'tool_use',
+        id: 'task1',
+        name: 'Task',
+        input: { prompt: 'explore the routes' },
+      }),
+      endTurn('Found 3 routes.'), // ← the sub-agent's run
+      endTurn('Summary: 3 routes exist.'), // ← back in the top-level agent
+    ]);
+    const result = await runAgent({
+      provider,
+      tools: new ToolRegistry(), // includes TaskTool
+      systemPrompt: '',
+      userMessage: 'how many routes?',
+      model: 'deepseek-chat',
+      cwd,
+    });
+    expect(result.stopReason).toBe('end_turn');
+    // The Task tool_result (in the user msg after the assistant Task call)
+    // should carry the sub-agent's output.
+    const toolResultMsg = result.history[2]!;
+    const block = toolResultMsg.content[0];
+    expect(block?.type).toBe('tool_result');
+    if (block?.type === 'tool_result') {
+      expect(block.content).toContain('Found 3 routes.');
+    }
+    // 3 provider calls total: top turn1, sub-agent turn, top turn2.
+    expect(provider.received).toHaveLength(3);
+  });
+
+  it('a sub-agent cannot spawn further sub-agents (depth guard)', async () => {
+    // At subAgentDepth=1, runSubAgent is not wired, so Task fails gracefully.
+    const provider = new MockProvider([
+      toolUse('trying to recurse', {
+        type: 'tool_use',
+        id: 't',
+        name: 'Task',
+        input: { prompt: 'recurse forever' },
+      }),
+      endTurn('gave up recursing'),
+    ]);
+    const result = await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'go',
+      model: 'deepseek-chat',
+      cwd,
+      subAgentDepth: 1,
+    });
+    const toolResultMsg = result.history[2]!;
+    const block = toolResultMsg.content[0];
+    if (block?.type === 'tool_result') {
+      expect(block.is_error).toBe(true);
+      expect(block.content).toMatch(/not available/);
+    } else {
+      expect.fail('expected a tool_result');
+    }
+  });
+
   it('does not auto-compact on cumulative usage when each turn is below threshold', async () => {
     // Regression: shouldCompact must use the *current* turn's input tokens, not
     // the cumulative sum across turns. contextWindow 100, threshold 0.8 → trigger
