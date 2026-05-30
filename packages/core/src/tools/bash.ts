@@ -3,6 +3,9 @@
 // M3.5: optionally wrapped under platform sandbox via ctx.sandboxConfig
 
 import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { wrapBashCommand } from '../sandbox/index.js';
 import type { SandboxConfig } from '../config/types.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
@@ -11,11 +14,15 @@ interface BashInput {
   command: string;
   timeout?: number; // ms
   description?: string; // shown in approval UI
-  run_in_background?: boolean; // M1 stub — full background impl in M3.15.3
+  run_in_background?: boolean; // detach + stream output to a log file
 }
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 const MAX_OUTPUT_BYTES = 30_000;
+
+// Monotonic suffix so two background spawns in the same millisecond from the
+// same pid don't collide on a log filename.
+let bgSeq = 0;
 
 export const BashTool: ToolHandler = {
   name: 'Bash',
@@ -34,7 +41,8 @@ export const BashTool: ToolHandler = {
         },
         run_in_background: {
           type: 'boolean',
-          description: 'Run in background; agent reads output later via Read (M3.15.3).',
+          description:
+            'Run detached and return immediately. Output streams to a log file whose path is in the result — Read that file to see progress/results. Use for long-running or watch processes (dev servers, tail -f, test watchers).',
         },
       },
       required: ['command'],
@@ -44,13 +52,6 @@ export const BashTool: ToolHandler = {
     const input = rawInput as unknown as BashInput;
     if (!input?.command || typeof input.command !== 'string') {
       return { content: 'Error: command is required (string).', isError: true };
-    }
-    if (input.run_in_background) {
-      return {
-        content:
-          'Error: run_in_background is wired in M3.15.3 (background task subsystem). Use foreground for now.',
-        isError: true,
-      };
     }
     const timeoutMs = Math.max(1_000, input.timeout ?? DEFAULT_TIMEOUT_MS);
 
@@ -62,6 +63,40 @@ export const BashTool: ToolHandler = {
       cwd: ctx.cwd,
       config: sandboxCfg,
     });
+
+    // Background: spawn detached, stream stdout+stderr into a log file, and
+    // return immediately. The agent reads the log path later (via Read) to see
+    // progress/output. The process survives this turn (own process group).
+    if (input.run_in_background) {
+      const dir = join(ctx.sessionDir ?? tmpdir(), 'bg');
+      const id = `bg-${Date.now().toString(36)}-${process.pid}-${bgSeq++}`;
+      const logPath = join(dir, `${id}.log`);
+      try {
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(logPath, `$ ${input.command}\n`, 'utf8');
+        const fh = await fs.open(logPath, 'a');
+        try {
+          const child = spawn(wrapped.command, wrapped.args, {
+            cwd: ctx.cwd,
+            detached: true,
+            stdio: ['ignore', fh.fd, fh.fd],
+          });
+          const pid = child.pid;
+          child.unref();
+          return {
+            content: `Started in background (pid ${pid ?? 'unknown'}). Output streams to:\n${logPath}\nRead that file to check progress or results.`,
+            data: { background: true, pid, logPath, id },
+          };
+        } finally {
+          await fh.close(); // child holds its own dup of the fd
+        }
+      } catch (err) {
+        return {
+          content: `Error starting background command: ${(err as Error).message}`,
+          isError: true,
+        };
+      }
+    }
 
     return new Promise((resolvePromise) => {
       const child = spawn(wrapped.command, wrapped.args, {

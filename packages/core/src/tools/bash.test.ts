@@ -34,11 +34,26 @@ describe('BashTool', () => {
     expect(r.content).toMatch(/killed by timeout/i);
   }, 5000);
 
-  it('rejects run_in_background (deferred to M3.15.3)', async () => {
-    const r = await BashTool.execute({ command: 'true', run_in_background: true }, { cwd: tmp });
-    expect(r.isError).toBe(true);
-    expect(r.content).toMatch(/M3\.15\.3/);
-  });
+  it('run_in_background returns immediately with a log path that fills in', async () => {
+    const r = await BashTool.execute(
+      { command: 'echo bg-output-here', run_in_background: true },
+      { cwd: tmp, sessionDir: tmp },
+    );
+    expect(r.isError).toBeFalsy();
+    const logPath = (r.data as { logPath?: string }).logPath;
+    expect(typeof logPath).toBe('string');
+    expect(r.content).toContain(logPath!);
+    // The process is detached; poll the log until the echo lands (or time out).
+    const { readFile } = await import('node:fs/promises');
+    let body = '';
+    for (let i = 0; i < 50; i++) {
+      body = await readFile(logPath!, 'utf8').catch(() => '');
+      if (body.includes('bg-output-here')) break;
+      await new Promise((res) => setTimeout(res, 50));
+    }
+    expect(body).toContain('bg-output-here');
+    expect(body).toContain('$ echo bg-output-here'); // command header
+  }, 5000);
 
   it('runs in the given cwd', async () => {
     const r = await BashTool.execute({ command: 'pwd' }, { cwd: tmp });
