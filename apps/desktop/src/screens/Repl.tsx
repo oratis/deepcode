@@ -76,35 +76,38 @@ type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
+  // `meta` is the per-turn output-token budget (maxTokens) the effort maps to in
+  // core's EFFORT_PARAMS — NOT a context size. DeepSeek caps output at 8192, so
+  // these top out at ~8k (they previously showed 4k–32k, which was impossible).
   {
     value: 'low',
     label: 'Low',
-    meta: '4k',
-    description: 'Cheap & quick — short answers, simple edits.',
+    meta: '1.5k',
+    description: 'Cheap & quick — short answers, simple edits (1.5k output).',
   },
   {
     value: 'medium',
     label: 'Medium',
-    meta: '8k',
-    description: 'Balanced default. Good for most coding tasks.',
+    meta: '3k',
+    description: 'Balanced (3k output). Can truncate multi-file writes.',
   },
   {
     value: 'high',
     label: 'High',
-    meta: '16k',
-    description: 'Longer context — multi-file refactors.',
+    meta: '6k',
+    description: 'Default — longer output for multi-file edits (6k).',
   },
   {
     value: 'xhigh',
     label: 'Extra High',
-    meta: '24k',
-    description: 'Deep reasoning for architecture changes.',
+    meta: '8k',
+    description: 'Deep reasoning, near max output (8k).',
   },
   {
     value: 'max',
     label: 'Max',
-    meta: '32k',
-    description: 'Max tokens. Slow & expensive — use sparingly.',
+    meta: '8.2k',
+    description: "Max output (8192 — DeepSeek's hard cap). Slow & expensive.",
   },
 ];
 
