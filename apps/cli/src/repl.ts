@@ -358,6 +358,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       ctx.mode = 'default';
       output.write('\n  ▶ Exited plan mode (agent will now execute).\n');
     }
+    // Honor EnterPlanMode tool signal — flip into plan mode (writes blocked).
+    if (result.modeSignal?.enterPlanMode && ctx.mode !== 'plan') {
+      ctx.mode = 'plan';
+      output.write('\n  ◐ Entered plan mode (write tools blocked until you exit).\n');
+    }
     output.write('\n');
     if (result.stopReason === 'error') {
       output.write('  ✕ Error during agent loop. Try again or /status to inspect.\n\n');

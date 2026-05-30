@@ -96,7 +96,7 @@ export interface RunAgentResult {
   /** Reason the loop terminated. */
   stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
   /** Mode-control signals flipped by tools during this run (M3c-rest). */
-  modeSignal?: { exitPlanMode?: boolean };
+  modeSignal?: { exitPlanMode?: boolean; enterPlanMode?: boolean };
 }
 
 const DEFAULT_MAX_TURNS = 16;
@@ -155,9 +155,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (opts.session) await opts.session.manager.append(opts.session.id, userMsg);
   }
 
-  // modeSignal is mutable — ExitPlanMode flips exitPlanMode = true; the agent
-  // loop owner reads this between turns to switch mode plan → default.
-  const modeSignal: { exitPlanMode?: boolean } = {};
+  // modeSignal is mutable — EnterPlanMode / ExitPlanMode flip these; the agent
+  // loop owner reads them after the run to switch mode (default ⇄ plan).
+  const modeSignal: { exitPlanMode?: boolean; enterPlanMode?: boolean } = {};
   const toolCtx: ToolContext = {
     cwd: opts.cwd,
     signal: opts.signal,
