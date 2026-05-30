@@ -1,65 +1,64 @@
 # @deepcode/desktop
 
-DeepCode Mac 客户端（Electron + React + Tailwind + xterm + monaco）。
+DeepCode Mac 客户端（**Tauri 2 + React 18 + Vite**）。
 
-## 当前状态 — M6 skeleton + M6-rest build pipeline
+> M6 从 Electron 切到了 Tauri（见 #58）。如果你看到任何提到 Electron /
+> Tailwind / `*.template.*` 的旧资料，那是历史包袱，以本文为准。
 
-骨架 + 构建配置已就位（type-check 通过）：
+## 架构
 
-- `electron/main.ts` — BrowserWindow + IPC（version / creds / settings）+
-  懒加载 electron-updater 钩子
-- `electron/preload.ts` — `contextBridge` 暴露 `window.deepcode` 给 renderer
-- `src/main.tsx` + `src/App.tsx` — React 入口 + Onboarding gate + 更新 banner
-- `src/screens/Onboarding.tsx` / `src/screens/Repl.tsx`
-- `src/components/UpdateBanner.tsx`
-- `src/index.html` + `src/index.css`（含 Tailwind directives）
-- `vite.config.ts` — renderer 构建（dev server 5173 + prod build → dist/）
-- `tailwind.config.ts` + `postcss.config.js`
-- `tsconfig.json`（renderer）+ `tsconfig.electron.json`（main process）
-- `electron-builder.yml` — universal .dmg + Apple 公证 + GitHub Releases
-- `build-resources/entitlements.mac.plist` — hardened-runtime entitlements
-
-## 装实际依赖（M6-rest 启动）
-
-构建配置以 `*.template.{ts,js}` 后缀存在（避免没装依赖时被 vitest/postcss
-自动加载报错）。要真正能 dev + ship 还需要装这些 ~250 MB 二进制依赖：
-
-```bash
-pnpm add -D --filter @deepcode/desktop \
-  electron electron-builder electron-updater \
-  vite @vitejs/plugin-react \
-  tailwindcss postcss autoprefixer \
-  concurrently wait-on
-
-# 然后把 template 后缀去掉激活
-mv apps/desktop/vite.config.template.ts apps/desktop/vite.config.ts
-mv apps/desktop/postcss.config.template.js apps/desktop/postcss.config.js
+```
+src/                 renderer（React + Vite，无 Tailwind，手写设计系统）
+  main.tsx           入口
+  App.tsx            Onboarding gate + 屏幕路由 + 更新 banner
+  index.css          设计系统（tokens + 组件样式，镜像 docs/VISUAL_DESIGN.html）
+  screens/           About / MCPManager / Onboarding / Permissions /
+                     Plugins / Repl / Sessions / Settings / Skills
+  components/        Sidebar / InspectorRail / ToolCard / UpdateBanner …
+  lib/               tauri-api（renderer↔Rust IPC 封装）· mac-agent ·
+                     mac-tools · repl-stream · updater …
+src-tauri/           Rust 主进程
+  src/commands.rs    #[tauri::command] —— renderer 通过 invoke() 调用
+  src/credentials.rs 凭据读写（原子写入）
+  src/settings.rs    设置持久化
+  src/tools.rs       工具实现
+  src/lib.rs         Tauri builder / 插件注册
+  tauri.conf.json    窗口 + 构建 + 打包配置
+  capabilities/      权限能力声明
+  Entitlements.plist hardened-runtime entitlements（公证用）
 ```
 
-之后：
+renderer ↔ Rust 的 IPC 边界由 `src/lib/tauri-api.ts` 封装，契约测试见
+`src/lib/tauri-api.test.ts`（#84）。
 
-| 命令             | 作用                                                  |
-| ---------------- | ----------------------------------------------------- |
-| `pnpm dev`       | Vite dev server + electron 自动重载                   |
-| `pnpm build:all` | 构建 renderer (dist/) + main process (dist-electron/) |
-| `pnpm pack`      | 打包未签名 .app（本地测试）                           |
-| `pnpm dist`      | 完整签名 + 公证 + .dmg（需要 Apple Developer ID）     |
+## 开发
 
-## 还没做（M6-rest 余下任务）
+依赖在 monorepo 根 `pnpm install` 一次装好；Rust 工具链 + Tauri CLI 见下。
 
-- xterm.js + node-pty 嵌入终端
-- Monaco 编辑器嵌入
-- 余下 8 个屏幕（Chat / Sessions / Settings / MCPManager / FilePanel 等 ·
-  Onboarding + REPL 已有）
-- Renderer ↔ main process 的 agent loop 流式桥（让 chat 真能跑）
-- Apple Developer ID 证书 + APPLE_ID/APPLE_APP_SPECIFIC_PASSWORD 写入 CI secrets
-- .github/workflows/release.yml 的 mac build step 解开 `if: false`
-- `electron-updater` 真接 GitHub Releases feed（main.ts 已经有钩子）
-- 11 屏的视觉稿落地（参考 docs/VISUAL_DESIGN.html）
+| 命令                         | 作用                                               |
+| ---------------------------- | -------------------------------------------------- |
+| `pnpm dev`                   | 仅 Vite dev server（5173）—— 一般由 Tauri 自动拉起 |
+| `pnpm tauri:dev`             | 完整 app：Tauri 启 dev server + 原生窗口，热重载   |
+| `pnpm build`                 | `tsc -b` + `vite build` → `dist/`（renderer 产物） |
+| `pnpm tauri:build`           | 当前架构的 .app / .dmg                             |
+| `pnpm tauri:build:universal` | universal-apple-darwin 通用二进制                  |
+| `pnpm typecheck`             | `tsc -b`                                           |
+| `pnpm test`                  | `vitest run`（lib 单测 + IPC 契约测试）            |
 
-## 为什么 skeleton 故意留小
+`tauri.conf.json` 里 `beforeDevCommand` / `beforeBuildCommand` 分别接
+`pnpm dev` / `pnpm build`，所以平时只跑 `pnpm tauri:dev` 即可。
 
-Electron 二进制装下来 ~250 MB，CI 装包会变慢。把这个负担留给真正开始
-做 M6-rest 的 PR（这一个！）—— 你可以一次安装所有依赖，开始迭代 UI。
+### 前置工具
 
-详见 `docs/DEVELOPMENT_PLAN.md` §4 + §4a + §4b。
+- Node ≥ 22、pnpm
+- Rust 工具链（`rustup`）—— Tauri 主进程是 Rust
+- 通用构建需 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
+
+## 打包 / 签名
+
+- 产物配置在 `src-tauri/tauri.conf.json`，公证 entitlements 在
+  `src-tauri/Entitlements.plist`。
+- 签名 + 公证需要 Apple Developer ID 证书，以及 `APPLE_ID` /
+  `APPLE_APP_SPECIFIC_PASSWORD` 等环境变量（CI 走 secrets）。
+
+详见 `docs/DEVELOPMENT_PLAN.md` §4 / §4a / §4b。
