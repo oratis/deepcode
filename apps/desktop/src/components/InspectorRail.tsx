@@ -3,8 +3,8 @@
 //
 // Each rail button routes to a screen so users can reach Plan / Files /
 // Info / Settings without scrolling for a hidden menu. The ‹ expand
-// chevron is still deferred (the full-width inspector panel lands in
-// the next phase) — we leave it disabled with a tooltip.
+// chevron opens the full-width inspector panel (InspectorPanel) — App
+// owns the collapsed↔expanded state and passes it down via onExpand.
 
 import type { ScreenName } from '../types/screens.js';
 
@@ -17,6 +17,8 @@ interface InspectorRailProps {
   activeScreen: ScreenName;
   /** Switch screen. */
   onChange: (screen: ScreenName) => void;
+  /** Expand the rail into the 320 px inspector panel (‹ / ⌘\). */
+  onExpand: () => void;
 }
 
 export function InspectorRail({
@@ -24,6 +26,7 @@ export function InspectorRail({
   contextFill,
   activeScreen,
   onChange,
+  onExpand,
 }: InspectorRailProps): JSX.Element {
   const ctxColor =
     contextFill === undefined
@@ -38,9 +41,9 @@ export function InspectorRail({
     <aside className="inspector-rail">
       <button
         type="button"
-        className="rail-btn"
-        title="Expand inspector (⌘\\) — coming in next phase"
-        disabled
+        className="rail-btn expand"
+        title="Expand inspector (⌘\\)"
+        onClick={onExpand}
       >
         ‹
       </button>

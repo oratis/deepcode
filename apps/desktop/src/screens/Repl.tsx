@@ -46,6 +46,7 @@ import {
   pickFile,
   saveSettingsFile,
 } from '../lib/tauri-api.js';
+import type { InspectorData, TodoItem } from '../types/inspector.js';
 
 interface ReplScreenProps {
   projectPath: string;
@@ -57,7 +58,17 @@ interface ReplScreenProps {
    * on mount.
    */
   initialMessages?: Msg[];
+  /**
+   * Lift inspector-relevant state to the parent (App), which owns the
+   * right-hand inspector panel. Called with a full snapshot whenever usage,
+   * model, mode, recent files, or the todo list change.
+   */
+  onInspector?: (patch: Partial<InspectorData>) => void;
 }
+
+/** Tools whose file_path we surface in the inspector's Recent files section. */
+const FILE_WRITE_TOOLS = new Set(['Write', 'Edit', 'MultiEdit']);
+const MAX_RECENT_FILES = 8;
 
 // ─── Types ────────────────────────────────────────────────────────────
 
@@ -181,6 +192,7 @@ export function ReplScreen({
   projectPath,
   onTurnComplete,
   initialMessages,
+  onInspector,
 }: ReplScreenProps): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>(() =>
     initialMessages && initialMessages.length > 0
@@ -217,6 +229,9 @@ export function ReplScreen({
   // from `usage` because the context bar wants the latest snapshot while cost
   // must sum every billed turn.
   const [costYuan, setCostYuan] = useState(0);
+  // Inspector-only state — files touched (Write/Edit) + the agent's todo list.
+  const [recentFiles, setRecentFiles] = useState<string[]>([]);
+  const [todos, setTodos] = useState<TodoItem[]>([]);
   const [vimEnabled, setVimEnabled] = useState(false);
   const [vimMode, setVimMode] = useState<VimMode>('INSERT');
   const vimStateRef = useRef<VimState | null>(null);
@@ -269,17 +284,31 @@ export function ReplScreen({
         case 'text_delta':
           setMessages((m) => appendTextDelta(m, e.text ?? ''));
           break;
-        case 'tool_use':
+        case 'tool_use': {
+          const name = e.name ?? '?';
+          const input = e.input ?? {};
           setMessages((m) =>
             appendToolUse(m, {
               toolId: e.id ?? `tu-${Date.now()}`,
-              name: e.name ?? '?',
-              input: e.input ?? {},
-              target: pickTarget(e.input ?? {}),
+              name,
+              input,
+              target: pickTarget(input),
               status: 'running',
             }),
           );
+          // Inspector: Recent files — dedupe, most-recent-first, capped.
+          if (FILE_WRITE_TOOLS.has(name) && typeof input.file_path === 'string') {
+            const fp = input.file_path;
+            setRecentFiles((prev) =>
+              [fp, ...prev.filter((f) => f !== fp)].slice(0, MAX_RECENT_FILES),
+            );
+          }
+          // Inspector: Plan — TodoWrite carries the full list in its input.
+          if (name === 'TodoWrite' && Array.isArray((input as { todos?: unknown }).todos)) {
+            setTodos((input as { todos: TodoItem[] }).todos);
+          }
           break;
+        }
         case 'tool_result':
           setMessages((m) =>
             attachToolResult(
@@ -330,6 +359,14 @@ export function ReplScreen({
       behavior: 'smooth',
     });
   }, [messages]);
+
+  // ── Lift inspector state to App ──
+  // Push a full snapshot whenever any inspector-relevant slice changes so the
+  // right-hand panel + rail badges stay in sync. onInspector is memoized by the
+  // parent, so this only fires on real state changes (not every render).
+  useEffect(() => {
+    onInspector?.({ usage, costYuan, model, mode, recentFiles, todos });
+  }, [onInspector, usage, costYuan, model, mode, recentFiles, todos]);
 
   // ── Effort persist ──
   async function handleEffortChange(next: Effort): Promise<void> {
