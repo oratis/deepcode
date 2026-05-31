@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ToolRegistry } from './registry.js';
 import {
+  installToolSearch,
   makeToolSearchTool,
   RegistryDeferredStore,
   type DeferredToolEntry,
@@ -94,5 +95,33 @@ describe('ToolSearch select: query', () => {
     const search = makeToolSearchTool(store);
     const r = await search.execute({ query: '' }, { cwd: '/x' });
     expect(r.isError).toBe(true);
+  });
+});
+
+describe('installToolSearch', () => {
+  it('registers ToolSearch + defers tools that load on select:', async () => {
+    const reg = new ToolRegistry([]);
+    const names = installToolSearch(reg, [
+      {
+        name: 'mcp__db__query',
+        description: 'run a SQL query',
+        expand: () => fakeHandler('mcp__db__query'),
+      },
+    ]);
+    expect(names).toEqual(['mcp__db__query']);
+    // ToolSearch is registered; the deferred tool is NOT yet callable.
+    expect(reg.get('ToolSearch')).toBeDefined();
+    expect(reg.get('mcp__db__query')).toBeUndefined();
+    // Load it via the tool, then it's callable.
+    const ts = reg.get('ToolSearch')!;
+    const r = await ts.execute({ query: 'select:mcp__db__query' }, { cwd: '/x' });
+    expect((r.data as { loaded: string[] }).loaded).toEqual(['mcp__db__query']);
+    expect(reg.get('mcp__db__query')).toBeDefined();
+  });
+
+  it('is a no-op (no ToolSearch) when there are no deferred tools', () => {
+    const reg = new ToolRegistry([]);
+    expect(installToolSearch(reg, [])).toEqual([]);
+    expect(reg.get('ToolSearch')).toBeUndefined();
   });
 });

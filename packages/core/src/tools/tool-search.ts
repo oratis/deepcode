@@ -124,6 +124,29 @@ function score(entry: DeferredToolEntry, tokens: string[]): number {
  * Default DeferredToolStore backed by a ToolRegistry. Builds an internal map
  * of name → entry on construction; expand() calls registry.register().
  */
+/** Minimal registry surface installToolSearch needs. */
+export interface ToolSearchRegistry {
+  register: (h: ToolHandler) => void;
+  get: (name: string) => ToolHandler | undefined;
+}
+
+/**
+ * Wire a set of deferred tools behind a ToolSearch tool registered into
+ * `registry`. The deferred tools are NOT in the registry until the agent loads
+ * them via ToolSearch (`select:Name` or keyword search). No-op (returns []) when
+ * `deferred` is empty — there's nothing to search, so ToolSearch isn't added.
+ * Returns the deferred tool names (for surfacing to the user/model).
+ */
+export function installToolSearch(
+  registry: ToolSearchRegistry,
+  deferred: DeferredToolEntry[],
+): string[] {
+  if (deferred.length === 0) return [];
+  const store = new RegistryDeferredStore(registry, deferred);
+  registry.register(makeToolSearchTool(store));
+  return deferred.map((e) => e.name);
+}
+
 export class RegistryDeferredStore implements DeferredToolStore {
   private readonly entries = new Map<string, DeferredToolEntry>();
   constructor(

@@ -37,6 +37,7 @@ export {
   AskUserQuestionTool,
   ExitPlanModeTool,
   makeToolSearchTool,
+  installToolSearch,
   RegistryDeferredStore,
   type DeferredToolEntry,
   type DeferredToolStore,

@@ -20,6 +20,7 @@ import {
   expandCommandBody,
   findCustomCommand,
   findStyle,
+  installToolSearch,
   loadMemory,
   loadOutputStyles,
   loadSettings,
@@ -165,13 +166,33 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     });
     mcpServers = result.handles;
     mcpErrors = result.errors;
-    // Register every MCP-tool handler into the live registry
+    // Register MCP tools. Servers default to eager; a server with
+    // `alwaysLoad: false` (the opt-out) has its tools deferred behind ToolSearch
+    // so a large toolkit doesn't bloat the tool list — the agent loads them on
+    // demand. The servers are already connected, so expand() just returns the
+    // already-built handler.
+    const deferredMcpTools = [];
     for (const handle of mcpServers) {
-      for (const tool of handle.tools) tools.register(tool);
+      const defer = settings.mcpServers?.[handle.serverName]?.alwaysLoad === false;
+      for (const tool of handle.tools) {
+        if (defer) {
+          deferredMcpTools.push({
+            name: tool.name,
+            description: tool.definition.description,
+            expand: () => tool,
+          });
+        } else {
+          tools.register(tool);
+        }
+      }
     }
+    const deferredNames = installToolSearch(tools, deferredMcpTools);
     if (mcpServers.length > 0) {
+      const eager = mcpServers.reduce((n, h) => n + h.tools.length, 0) - deferredNames.length;
       output.write(
-        `  ⊞ MCP: ${mcpServers.length} server(s) connected (${mcpServers.reduce((n, h) => n + h.tools.length, 0)} tools)\n`,
+        `  ⊞ MCP: ${mcpServers.length} server(s) connected (${eager} tools` +
+          (deferredNames.length > 0 ? `, ${deferredNames.length} deferred behind ToolSearch` : '') +
+          `)\n`,
       );
     }
     if (mcpErrors.length > 0) {
