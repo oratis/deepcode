@@ -678,6 +678,27 @@ export const ExportCommand: SlashCommand = {
   },
 };
 
+export const CompactCommand: SlashCommand = {
+  name: '/compact',
+  description: 'Summarize the conversation so far to free up context.',
+  async run(_args, ctx) {
+    if (!ctx.provider) return ['(/compact needs a provider — none configured.)'];
+    const history = ctx.history ?? [];
+    if (history.length === 0) return ['Nothing to compact yet.'];
+    try {
+      const { compact } = await import('@deepcode/core');
+      const result = await compact(history, { provider: ctx.provider });
+      if (result.messagesRemoved === 0) {
+        return ['Conversation is already short enough — nothing to compact.'];
+      }
+      ctx.newHistory = result.history;
+      return [`✓ Compacted ${result.messagesRemoved} messages → ${result.history.length} kept.`];
+    } catch (err) {
+      return [`(Compaction failed: ${(err as Error).message})`];
+    }
+  },
+};
+
 /** Render a conversation as readable markdown (text + tool calls). */
 function historyToMarkdown(history: StoredMessage[]): string {
   const out: string[] = ['# DeepCode conversation export', ''];
@@ -732,6 +753,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   AgentsCommand,
   SkillsCommand,
   ExportCommand,
+  CompactCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────

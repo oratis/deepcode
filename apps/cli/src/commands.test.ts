@@ -419,4 +419,19 @@ describe('inspector + export commands', () => {
     const out = await reg.match('/export')!.cmd.run([], makeContext({ history: [] }));
     expect(out.join('\n')).toMatch(/Nothing to export/);
   });
+
+  it('/compact needs a provider', async () => {
+    const ctx = makeContext({
+      history: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+    });
+    const out = await reg.match('/compact')!.cmd.run([], ctx);
+    expect(out.join('\n')).toMatch(/needs a provider/);
+  });
+
+  it('/compact reports nothing with empty history', async () => {
+    const out = await reg
+      .match('/compact')!
+      .cmd.run([], makeContext({ provider: { name: 'm', runTurn: async () => ({}) } as never }));
+    expect(out.join('\n')).toMatch(/Nothing to compact/);
+  });
 });
