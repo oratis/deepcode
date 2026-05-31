@@ -192,11 +192,17 @@ export {
   serveMcpOverStdio,
   mcpServableTools,
   MCP_SERVE_EXCLUDE,
+  readMcpResource,
+  parseResourceRefs,
+  expandMcpResourceRefs,
   type McpClientHandle,
   type McpToolMeta,
+  type McpResourceMeta,
   type ConnectAllResult,
   type BuildMcpServerOpts,
   type ServeMcpStdioOpts,
+  type ResourceRef,
+  type ExpandResourcesResult,
 } from './mcp/index.js';
 
 // Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge;

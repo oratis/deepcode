@@ -17,6 +17,7 @@ import {
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
   connectAllMcpServers,
+  expandMcpResourceRefs,
   expandCommandBody,
   findCustomCommand,
   findStyle,
@@ -327,6 +328,17 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       if (custom) {
         userInput = expandCommandBody(custom.body, parts.slice(1));
         output.write(`  ▸ ${custom.name} (${custom.source} command)\n\n`);
+      }
+    }
+
+    // Expand `@server:scheme://path` MCP resource references — read each resource
+    // and append its content as a tagged block the model can use.
+    if (mcpServers.length > 0) {
+      const { text, resolved, errors } = await expandMcpResourceRefs(userInput, mcpServers);
+      userInput = text;
+      for (const r of resolved) output.write(`  ⊞ resource @${r.server}:${r.uri}\n`);
+      for (const e of errors) {
+        output.write(`  ⚠ resource @${e.ref.server}:${e.ref.uri} — ${e.error}\n`);
       }
     }
 

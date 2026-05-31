@@ -13,8 +13,11 @@ import { join } from 'node:path';
 import {
   connectAllMcpServers,
   connectMcpServer,
+  expandMcpResourceRefs,
   parseHelperOutput,
+  parseResourceRefs,
   pickTransportKind,
+  readMcpResource,
 } from './client.js';
 
 const require_ = createRequire(import.meta.url);
@@ -32,8 +35,28 @@ const TYPES_INDEX = join(SDK_PKG_PATH, 'dist/esm/types.js');
  * We import the SDK by absolute path so the spawned script doesn't have to
  * resolve `@modelcontextprotocol/sdk` from /tmp (which lacks node_modules).
  */
-async function writeFakeServer(dir: string, name: string, tools: object[]): Promise<string> {
+async function writeFakeServer(
+  dir: string,
+  name: string,
+  tools: object[],
+  resources?: Array<{ uri: string; name?: string; text: string; mimeType?: string }>,
+): Promise<string> {
   const serverPath = join(dir, `${name}.mjs`);
+  const caps = resources ? '{ tools: {}, resources: {} }' : '{ tools: {} }';
+  const resourceBlock = resources
+    ? `
+import { ListResourcesRequestSchema, ReadResourceRequestSchema } from '${TYPES_INDEX}';
+const RESOURCES = ${JSON.stringify(resources)};
+server.setRequestHandler(ListResourcesRequestSchema, async () => ({
+  resources: RESOURCES.map((r) => ({ uri: r.uri, name: r.name, mimeType: r.mimeType })),
+}));
+server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
+  const found = RESOURCES.find((r) => r.uri === req.params.uri);
+  if (!found) throw new Error('no such resource: ' + req.params.uri);
+  return { contents: [{ uri: found.uri, mimeType: found.mimeType ?? 'text/plain', text: found.text }] };
+});
+`
+    : '';
   await fs.writeFile(
     serverPath,
     `
@@ -43,7 +66,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema } from '${TYPES_INDEX}';
 
 const server = new Server(
   { name: '${name}', version: '0.0.1' },
-  { capabilities: { tools: {} } },
+  { capabilities: ${caps} },
 );
 
 const TOOLS = ${JSON.stringify(tools)};
@@ -55,7 +78,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
     content: [{ type: 'text', text: 'called: ' + req.params.name + ' args: ' + argsStr }],
   };
 });
-
+${resourceBlock}
 await server.connect(new StdioServerTransport());
 `,
     'utf8',
@@ -192,6 +215,47 @@ describe('MCP client', () => {
   it('rejects a server config with neither command nor url', async () => {
     await expect(connectMcpServer('bad', {})).rejects.toThrow(/command.*url|url.*command/);
   });
+
+  it('lists resources on connect, reads them, and expands @server:uri refs', async () => {
+    const serverScript = await writeFakeServer(
+      tmp,
+      'docs',
+      [{ name: 'noop', description: 'd', inputSchema: { type: 'object', properties: {} } }],
+      [
+        { uri: 'file:///readme.md', name: 'readme', text: '# Hello\nbody text' },
+        { uri: 'mem://note', name: 'note', text: 'a short note' },
+      ],
+    );
+    const handle = await connectMcpServer('docs', { command: 'node', args: [serverScript] });
+    try {
+      // resources/list populated the handle
+      expect(handle.resources.map((r) => r.uri).sort()).toEqual([
+        'file:///readme.md',
+        'mem://note',
+      ]);
+
+      // readMcpResource flattens contents to text
+      expect(await readMcpResource(handle, 'file:///readme.md')).toContain('# Hello');
+
+      // expandMcpResourceRefs appends a tagged block, keeps the original token
+      const { text, resolved, errors } = await expandMcpResourceRefs(
+        'please summarize @docs:file:///readme.md now',
+        [handle],
+      );
+      expect(resolved).toHaveLength(1);
+      expect(errors).toHaveLength(0);
+      expect(text).toContain('@docs:file:///readme.md'); // original kept
+      expect(text).toContain('<mcp-resource server="docs" uri="file:///readme.md">');
+      expect(text).toContain('body text');
+
+      // unknown server + bad uri surface as errors, not throws
+      const r2 = await expandMcpResourceRefs('@nope:file:///x and @docs:mem://missing', [handle]);
+      expect(r2.errors).toHaveLength(2);
+      expect(r2.resolved).toHaveLength(0);
+    } finally {
+      await handle.close();
+    }
+  }, 20_000);
 });
 
 describe('pickTransportKind', () => {
@@ -223,6 +287,31 @@ describe('parseHelperOutput', () => {
   });
   it('returns {} for empty output', () => {
     expect(parseHelperOutput('   \n')).toEqual({});
+  });
+});
+
+describe('parseResourceRefs', () => {
+  it('finds @server:scheme://path references', () => {
+    const refs = parseResourceRefs(
+      'look at @files:file:///etc/hosts and @db:postgres://h/t please',
+    );
+    expect(refs).toEqual([
+      { raw: '@files:file:///etc/hosts', server: 'files', uri: 'file:///etc/hosts' },
+      { raw: '@db:postgres://h/t', server: 'db', uri: 'postgres://h/t' },
+    ]);
+  });
+
+  it('ignores @user:pass and emails (no scheme://)', () => {
+    expect(parseResourceRefs('email me@host.com or @user:secret')).toEqual([]);
+  });
+
+  it('dedupes repeated references', () => {
+    const refs = parseResourceRefs('@a:x://1 then again @a:x://1');
+    expect(refs).toHaveLength(1);
+  });
+
+  it('returns [] when there are no references', () => {
+    expect(parseResourceRefs('just plain text')).toEqual([]);
   });
 });
 

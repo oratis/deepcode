@@ -28,6 +28,14 @@ export interface McpToolMeta {
 
 export type McpTransportKind = 'stdio' | 'http' | 'sse';
 
+/** A resource a server exposes (from resources/list). */
+export interface McpResourceMeta {
+  uri: string;
+  name?: string;
+  description?: string;
+  mimeType?: string;
+}
+
 export interface McpClientHandle {
   serverName: string;
   client: Client;
@@ -35,6 +43,8 @@ export interface McpClientHandle {
   /** Which transport this connection uses. */
   transportKind: McpTransportKind;
   tools: ToolHandler[];
+  /** Resources the server advertised (empty if it has no `resources` capability). */
+  resources: McpResourceMeta[];
   close(): Promise<void>;
 }
 
@@ -176,16 +186,120 @@ export async function connectMcpServer(
     };
   });
 
+  // Resources (best-effort, capability-gated). A server without the `resources`
+  // capability — or one that errors on resources/list — just yields [].
+  let resources: McpResourceMeta[] = [];
+  if (client.getServerCapabilities()?.resources) {
+    try {
+      const r = await client.listResources();
+      resources = (r.resources ?? []).map((res) => ({
+        uri: res.uri,
+        name: res.name,
+        description: res.description,
+        mimeType: res.mimeType,
+      }));
+    } catch {
+      /* server advertised resources but list failed — degrade to none */
+    }
+  }
+
   return {
     serverName,
     client,
     transport,
     transportKind: kind,
     tools,
+    resources,
     async close() {
       await client.close();
     },
   };
+}
+
+/**
+ * Read an MCP resource by URI and flatten its contents to text. Binary blobs are
+ * rendered as a `[binary …]` placeholder (the model can't use raw base64).
+ */
+export async function readMcpResource(handle: McpClientHandle, uri: string): Promise<string> {
+  const result = await handle.client.readResource({ uri });
+  const parts = (result.contents ?? []).map((c) => {
+    if ('text' in c && typeof c.text === 'string') return c.text;
+    if ('blob' in c && typeof c.blob === 'string') {
+      return `[binary ${c.mimeType ?? 'application/octet-stream'} ${c.uri}]`;
+    }
+    return '';
+  });
+  return parts.filter(Boolean).join('\n');
+}
+
+/** A parsed `@server:scheme://path` resource reference found in user text. */
+export interface ResourceRef {
+  /** The full matched token, e.g. `@files:file:///etc/hosts`. */
+  raw: string;
+  server: string;
+  uri: string;
+}
+
+// `@<server>:<scheme>://<rest>` — requires `://` so it can't match `@user:pass`
+// or an email. Server names are the settings.mcpServers keys (word chars + `-`).
+const RESOURCE_REF_RE = /@([A-Za-z0-9_-]+):([A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s]+)/g;
+
+/** Find all `@server:scheme://path` references in `text` (deduped by raw token). */
+export function parseResourceRefs(text: string): ResourceRef[] {
+  const out: ResourceRef[] = [];
+  const seen = new Set<string>();
+  for (const m of text.matchAll(RESOURCE_REF_RE)) {
+    const raw = m[0];
+    if (seen.has(raw)) continue;
+    seen.add(raw);
+    out.push({ raw, server: m[1]!, uri: m[2]! });
+  }
+  return out;
+}
+
+export interface ExpandResourcesResult {
+  /** Original text with resolved resource contents appended as tagged blocks. */
+  text: string;
+  resolved: ResourceRef[];
+  errors: Array<{ ref: ResourceRef; error: string }>;
+}
+
+/**
+ * Expand `@server:scheme://path` references by reading each resource and
+ * appending its content as a `<mcp-resource>` block after the user's text. The
+ * original tokens are left in place so the model sees what was referenced.
+ */
+export async function expandMcpResourceRefs(
+  text: string,
+  handles: McpClientHandle[],
+): Promise<ExpandResourcesResult> {
+  const refs = parseResourceRefs(text);
+  if (refs.length === 0) return { text, resolved: [], errors: [] };
+
+  const byName = new Map(handles.map((h) => [h.serverName, h]));
+  const blocks: string[] = [];
+  const resolved: ResourceRef[] = [];
+  const errors: Array<{ ref: ResourceRef; error: string }> = [];
+
+  for (const ref of refs) {
+    const handle = byName.get(ref.server);
+    if (!handle) {
+      errors.push({ ref, error: `unknown MCP server "${ref.server}"` });
+      continue;
+    }
+    try {
+      const content = await readMcpResource(handle, ref.uri);
+      blocks.push(
+        `<mcp-resource server="${ref.server}" uri="${ref.uri}">\n${content}\n</mcp-resource>`,
+      );
+      resolved.push(ref);
+    } catch (err) {
+      errors.push({ ref, error: (err as Error).message });
+    }
+  }
+
+  const expanded = blocks.length > 0 ? `${text}\n\n${blocks.join('\n\n')}` : text;
+  return { text: expanded, resolved, errors };
 }
 
 /**
