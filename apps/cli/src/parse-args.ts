@@ -269,6 +269,7 @@ USAGE
   deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
   deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
   deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
+  deepcode trust [--plan-only]          Trust this directory's project config (hooks/MCP/...)
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions

@@ -30,6 +30,7 @@ import {
   closeAllMcpServers,
   connectAllMcpServers,
   expandMcpResourceRefs,
+  gateUntrustedSettings,
   contextWindowFor,
   findStyle,
   loadMemory,
@@ -41,13 +42,13 @@ import {
   runAgent,
   wirePlugins,
   type AgentEvent,
-  type DeepCodeSettings,
   type Effort,
   type McpClientHandle,
   type Mode,
   type WireResult,
 } from '@deepcode/core';
 import type { Writable } from 'node:stream';
+import { TrustStore } from './trust.js';
 
 export interface HeadlessOpts {
   output: Writable;
@@ -83,8 +84,19 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   const { output, errOutput, cwd, prompt, outputFormat } = opts;
 
   // ─── load config + credentials ───────────────────────────────────────
+  // Trust-gate: a headless run against an untrusted checkout (e.g. a PR branch)
+  // must not execute that project's hooks/mcpServers/apiKeyHelper/statusLine.
+  // The user-global layer stays trusted. Pre-trust with `deepcode trust`.
   const loaded = await loadSettings({ cwd, home: opts.home });
-  const settings: DeepCodeSettings = loaded.merged;
+  const trustStore = new TrustStore({ home: opts.home });
+  const trustStatus = await trustStore.statusFor(cwd);
+  const { settings, gated } = gateUntrustedSettings(loaded, trustStatus);
+  if (gated.length > 0) {
+    errOutput.write(
+      `Untrusted directory — ignoring project ${gated.join(', ')} (can execute code). ` +
+        `Run \`deepcode trust\` to enable.\n`,
+    );
+  }
   const credsStore = new CredentialsStore({ home: opts.home });
   const creds = await resolveCredentials({
     store: credsStore,

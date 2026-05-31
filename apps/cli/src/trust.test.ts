@@ -46,4 +46,20 @@ describe('TrustStore', () => {
     await s.trust(process.cwd(), 'full');
     expect(await s.statusFor('.')).toBe('trusted');
   });
+
+  it('does not leak state across stores with separate homes (no shared empty)', async () => {
+    // Regression: load() used to return a shallow copy of a module-level EMPTY
+    // whose `dirs` was shared, so trust() on one store polluted later loads of
+    // a not-yet-created store file under a different home.
+    const otherHome = await mkdtemp(join(tmpdir(), 'dc-trust-other-'));
+    try {
+      await new TrustStore({ home }).trust('/proj/a', 'full');
+      // A brand-new store at a different home must see an EMPTY state.
+      const fresh = await new TrustStore({ home: otherHome }).load();
+      expect(fresh.dirs).toEqual({});
+      expect(await new TrustStore({ home: otherHome }).statusFor('/proj/a')).toBe('untrusted');
+    } finally {
+      await rm(otherHome, { recursive: true, force: true });
+    }
+  });
 });

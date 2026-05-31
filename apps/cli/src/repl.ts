@@ -29,6 +29,7 @@ import {
   loadMemory,
   loadOutputStyles,
   loadSettings,
+  gateUntrustedSettings,
   loadSkills,
   loadSlashCommands,
   contextWindowFor,
@@ -37,7 +38,6 @@ import {
   runAgent,
   settingsPaths,
   wirePlugins,
-  type DeepCodeSettings,
   type Effort,
   type McpClientHandle,
   type Mode,
@@ -49,6 +49,7 @@ import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
 import { CommandRegistry, type SessionContext } from './commands.js';
 import { resolveEffort } from './parse-args.js';
+import { TrustStore } from './trust.js';
 
 export interface ReplOpts {
   input: Readable;
@@ -82,9 +83,19 @@ const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered 
 export async function startRepl(opts: ReplOpts): Promise<number> {
   const { output, cwd } = opts;
 
-  // Load config + creds
+  // Load config + creds. Trust-gate first: in an untrusted directory, project
+  // /local hooks·mcpServers·apiKeyHelper·statusLine are stripped (the user-global
+  // layer is always trusted) so a freshly-cloned repo can't run code on launch.
   const loaded = await loadSettings({ cwd, home: opts.home });
-  const settings: DeepCodeSettings = loaded.merged;
+  const trustStore = new TrustStore({ home: opts.home });
+  const trustStatus = await trustStore.statusFor(cwd);
+  const { settings, gated } = gateUntrustedSettings(loaded, trustStatus);
+  if (gated.length > 0) {
+    output.write(
+      `  ⚠ Untrusted directory — ignoring project ${gated.join(', ')} (can execute code).\n` +
+        `    Run \`deepcode trust\` here to enable them.\n`,
+    );
+  }
   const credsStore = new CredentialsStore({ home: opts.home });
   const creds = await resolveCredentials({
     store: credsStore,
