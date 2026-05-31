@@ -91,6 +91,54 @@ Tag format determines the channel + publish target:
 The `+security.X` suffix sets `is_mandatory=true` in the release output
 so the Tauri updater can show a red "must update" banner.
 
+## Auto-update feed (NOT yet wired — do this before relying on in-app updates)
+
+`tauri.conf.json` already has `plugins.updater.active: true` with a committed
+**public** key and an endpoint at the release's `latest.json`. Three pieces are
+still missing, so **in-app auto-update will not work until they're done** (users
+must download the DMG manually):
+
+1. **Tauri updater signing key.** `tauri.conf.json#plugins.updater.pubkey` is the
+   public half. The matching **private key** must exist and be added as a GitHub
+   secret. If you have it, store it; if not, regenerate the pair (this changes the
+   pubkey, so the first build after is a clean break for existing installs):
+
+   ```bash
+   pnpm --filter @deepcode/desktop exec tauri signer generate -w deepcode-updater.key
+   # → paste the PUBLIC key into tauri.conf.json#plugins.updater.pubkey
+   # → add the PRIVATE key file contents as the secret below (never commit it)
+   ```
+
+   Add two secrets: `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+
+2. **Enable updater artifacts.** Set `bundle.createUpdaterArtifacts: true` in
+   `tauri.conf.json`. ⚠️ Only flip this together with step 1 — `tauri build` will
+   **fail** if `createUpdaterArtifacts` is true but no signing key is present in
+   the env. (This is why it's left off today: the plain DMG build works without a
+   key.)
+
+3. **Generate + upload `latest.json`.** Add a step to `.github/workflows/release.yml`
+   (build-mac job) that, after signing, writes `latest.json` matching Tauri v2's
+   schema and uploads it to the release:
+   ```json
+   {
+     "version": "<tag>",
+     "notes": "...",
+     "pub_date": "<ISO>",
+     "platforms": {
+       "darwin-aarch64": {
+         "signature": "<contents of DeepCode_<v>_aarch64.dmg.sig>",
+         "url": "https://github.com/oratis/deepcode/releases/download/v<v>/DeepCode_<v>_aarch64.dmg"
+       }
+     }
+   }
+   ```
+   The `.sig` is produced by the signed build (step 2). The build env must export
+   `TAURI_SIGNING_PRIVATE_KEY` + `..._PASSWORD` so the artifact is signed.
+
+Until all three land, ship the DMG (notarized, works today) and tell users to
+download manually; the "Relaunch to update" flow lights up once the feed exists.
+
 ## After a release
 
 - Verify: `npm view deepcode-cli@<version>` shows the new version
