@@ -123,11 +123,11 @@ Specific deviations:
 - ✅ `/mcp` slash + auto-connect from settings + per-server enabled/disabled
 - ✅ `alwaysLoad: false` opt-out defers a server's tools behind ToolSearch
 - ✅ static `headers` + dynamic `headersHelper` auth
+- ✅ OAuth 2.0 (authorization-code + PKCE, dynamic client registration) via `oauth: true`; tokens persist under `~/.deepcode/mcp-auth/` + auto-refresh
 - ✅ Elicitation (form mode) — server-initiated structured input → host prompt
 - ✅ `deepcode mcp serve` — expose DeepCode's stateless tools as an MCP server (stdio)
 - ✅ MCP resources — listed on connect; `@server:scheme://path` refs expanded in prompts
 - ✅ MCP prompts as slash commands — `/mcp__<server>__<prompt> [args]`
-- 🔄 OAuth (authorization-code browser flow) — static bearer / `headersHelper` cover token auth today
 
 ## Tools
 
