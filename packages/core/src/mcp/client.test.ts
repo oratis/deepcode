@@ -10,7 +10,12 @@ import { promises as fs } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { connectAllMcpServers, connectMcpServer } from './client.js';
+import {
+  connectAllMcpServers,
+  connectMcpServer,
+  parseHelperOutput,
+  pickTransportKind,
+} from './client.js';
 
 const require_ = createRequire(import.meta.url);
 // Resolve a known sub-export (CJS shim file) to find the package root,
@@ -184,8 +189,40 @@ describe('MCP client', () => {
     await result.handles[0]?.close();
   }, 20_000);
 
-  it('rejects a server config missing `command`', async () => {
-    await expect(connectMcpServer('bad', {})).rejects.toThrow(/command/);
+  it('rejects a server config with neither command nor url', async () => {
+    await expect(connectMcpServer('bad', {})).rejects.toThrow(/command.*url|url.*command/);
+  });
+});
+
+describe('pickTransportKind', () => {
+  it('explicit transport wins', () => {
+    expect(pickTransportKind({ transport: 'sse', url: 'https://x' })).toBe('sse');
+    expect(pickTransportKind({ transport: 'stdio', command: 'x' })).toBe('stdio');
+  });
+  it('infers stdio from command, http from url', () => {
+    expect(pickTransportKind({ command: 'node' })).toBe('stdio');
+    expect(pickTransportKind({ url: 'https://mcp.example.com' })).toBe('http');
+  });
+  it('returns null when neither is set', () => {
+    expect(pickTransportKind({})).toBeNull();
+  });
+});
+
+describe('parseHelperOutput', () => {
+  it('parses a JSON object', () => {
+    expect(parseHelperOutput('{"Authorization":"Bearer abc","X-Tenant":"acme"}')).toEqual({
+      Authorization: 'Bearer abc',
+      'X-Tenant': 'acme',
+    });
+  });
+  it('parses Key: Value lines', () => {
+    expect(parseHelperOutput('Authorization: Bearer xyz\nX-Env: prod')).toEqual({
+      Authorization: 'Bearer xyz',
+      'X-Env': 'prod',
+    });
+  });
+  it('returns {} for empty output', () => {
+    expect(parseHelperOutput('   \n')).toEqual({});
   });
 });
 
