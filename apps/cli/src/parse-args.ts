@@ -268,6 +268,7 @@ USAGE
   deepcode upgrade                      Self-update (CLI; Mac client auto-updates)
   deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
   deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
+  deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions
