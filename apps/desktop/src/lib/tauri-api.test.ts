@@ -12,6 +12,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
   appendAllowMatcher,
   getAppInfo,
+  listPlugins,
   loadSettingsFile,
   readCredentials,
   saveCredentials,
@@ -109,5 +110,24 @@ describe('command name + argument contracts', () => {
     const msg = { type: 'message', role: 'user', content: [] };
     await sessionAppend('sess-abc', msg);
     expect(invokeMock).toHaveBeenCalledWith('session_append', { id: 'sess-abc', message: msg });
+  });
+});
+
+describe('listPlugins', () => {
+  it('invokes list_plugins and returns the camelCase rows verbatim', async () => {
+    const rows = [
+      {
+        name: 'demo',
+        version: '1.0.0',
+        enabled: true,
+        contributedHookEvents: ['PreToolUse'],
+        sourceHash: 'abc',
+        trustedBy: 'user',
+      },
+    ];
+    invokeMock.mockResolvedValue(rows);
+    const result = await listPlugins();
+    expect(invokeMock).toHaveBeenCalledWith('list_plugins');
+    expect(result).toEqual(rows);
   });
 });

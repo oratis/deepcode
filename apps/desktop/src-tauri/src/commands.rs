@@ -400,6 +400,119 @@ pub fn open_url(_url: String) -> Result<(), String> {
     Ok(())
 }
 
+// ── Plugins listing ────────────────────────────────────────────────────
+// The renderer can't run @deepcode/core's discoverPlugins (it needs node:fs),
+// so the Plugins screen reads ~/.deepcode/plugins/*/plugin.json here. Mirrors
+// the CLI `plugins list`: a plugin is only `enabled` (loaded by the agent) when
+// it's in the trust manifest AND not in settings.disabledPlugins.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginInfo {
+    pub name: String,
+    pub version: String,
+    pub enabled: bool,
+    /// Hook event names the plugin contributes (manifest.contributes.hooks keys).
+    pub contributed_hook_events: Vec<String>,
+    /// Recorded source hash from the trust manifest ('' if untrusted).
+    pub source_hash: String,
+    /// 'user' | 'marketplace' | 'official' — always valid so the UI badge map
+    /// resolves; defaults to 'user' for an untrusted plugin.
+    pub trusted_by: String,
+    /// Set when the plugin is installed but won't load (e.g. untrusted).
+    pub warning: Option<String>,
+}
+
+fn read_json(path: &std::path::Path) -> serde_json::Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(serde_json::Value::Null)
+}
+
+fn string_set(v: &serde_json::Value) -> std::collections::HashSet<String> {
+    v.as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Collect installed plugins under `<home>/.deepcode/plugins`. Pure (takes home)
+/// so it's unit-testable; `list_plugins` wraps it with the real home dir.
+pub fn collect_plugins(home: &std::path::Path) -> Vec<PluginInfo> {
+    let dc = home.join(".deepcode");
+    let trusted = read_json(&dc.join("plugins-trust.json"));
+    let trusted_names: std::collections::HashSet<String> = trusted
+        .get("plugins")
+        .and_then(|p| p.as_object())
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let disabled = string_set(read_json(&dc.join("settings.json")).get("disabledPlugins").unwrap_or(&serde_json::Value::Null));
+
+    let mut out: Vec<PluginInfo> = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dc.join("plugins")) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let dir = entry.path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let dir_name = entry.file_name().to_string_lossy().to_string();
+        if dir_name.starts_with('.') {
+            continue;
+        }
+        let manifest = read_json(&dir.join("plugin.json"));
+        let name = manifest.get("name").and_then(|v| v.as_str());
+        let version = manifest.get("version").and_then(|v| v.as_str());
+        // Mirror readManifest: require name + version.
+        let (Some(name), Some(version)) = (name, version) else {
+            continue;
+        };
+        let trust_entry = trusted.get("plugins").and_then(|p| p.get(name));
+        let is_trusted = trusted_names.contains(name);
+        let hook_events = manifest
+            .get("contributes")
+            .and_then(|c| c.get("hooks"))
+            .and_then(|h| h.as_object())
+            .map(|o| o.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
+        out.push(PluginInfo {
+            name: name.to_string(),
+            version: version.to_string(),
+            enabled: is_trusted && !disabled.contains(name),
+            contributed_hook_events: hook_events,
+            source_hash: trust_entry
+                .and_then(|e| e.get("sourceHash"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string(),
+            trusted_by: trust_entry
+                .and_then(|e| e.get("trustedBy"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("user")
+                .to_string(),
+            warning: if is_trusted {
+                None
+            } else {
+                Some("Installed but not trusted — load it once via the CLI to trust it.".into())
+            },
+        });
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+#[tauri::command]
+pub fn list_plugins() -> Vec<PluginInfo> {
+    match dirs::home_dir() {
+        Some(home) => collect_plugins(&home),
+        None => Vec::new(),
+    }
+}
+
 // ── Serde contract ─────────────────────────────────────────────────────
 // AppInfo + SessionMeta are read by tauri-api.ts using snake_case keys
 // (home_dir, size_bytes, updated_at_secs). They intentionally do NOT use
@@ -424,6 +537,73 @@ mod contract_tests {
         let k = keys(&v);
         assert!(k.contains(&"home_dir".to_string()), "got {k:?}");
         assert!(!k.contains(&"homeDir".to_string()), "camelCase leaked: {k:?}");
+    }
+
+    #[test]
+    fn plugin_info_serializes_camel_case() {
+        // PluginInfo IS a tool-style output struct → camelCase (unlike AppInfo).
+        let v = serde_json::to_value(PluginInfo {
+            name: "p".into(),
+            version: "1.0.0".into(),
+            enabled: false,
+            contributed_hook_events: vec!["PreToolUse".into()],
+            source_hash: "abc".into(),
+            trusted_by: "user".into(),
+            warning: None,
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"contributedHookEvents".to_string()), "got {k:?}");
+        assert!(k.contains(&"sourceHash".to_string()), "got {k:?}");
+        assert!(k.contains(&"trustedBy".to_string()), "got {k:?}");
+        assert!(!k.contains(&"source_hash".to_string()), "snake leaked: {k:?}");
+    }
+
+    #[test]
+    fn collect_plugins_reads_manifests_and_trust() {
+        let dir = std::env::temp_dir().join(format!("dc-plug-{}", std::process::id()));
+        let plugins = dir.join(".deepcode").join("plugins");
+        std::fs::create_dir_all(plugins.join("alpha")).unwrap();
+        std::fs::create_dir_all(plugins.join("beta")).unwrap();
+        std::fs::write(
+            plugins.join("alpha").join("plugin.json"),
+            r#"{"name":"alpha","version":"1.0.0","description":"A"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            plugins.join("beta").join("plugin.json"),
+            r#"{"name":"beta","version":"2.0.0"}"#,
+        )
+        .unwrap();
+        // Only alpha is trusted; beta is disabled-by-settings would be moot (untrusted).
+        std::fs::write(
+            dir.join(".deepcode").join("plugins-trust.json"),
+            r#"{"plugins":{"alpha":{"sourceHash":"x"}}}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join(".deepcode").join("settings.json"),
+            r#"{"disabledPlugins":[]}"#,
+        )
+        .unwrap();
+
+        let rows = collect_plugins(&dir);
+        std::fs::remove_dir_all(&dir).ok();
+
+        assert_eq!(rows.len(), 2);
+        // sorted by name → alpha, beta
+        assert_eq!(rows[0].name, "alpha");
+        assert!(rows[0].enabled, "alpha trusted → enabled");
+        assert!(rows[0].warning.is_none(), "alpha trusted → no warning");
+        assert_eq!(rows[1].name, "beta");
+        assert!(!rows[1].enabled, "beta untrusted → not enabled");
+        assert!(rows[1].warning.is_some(), "beta untrusted → warning");
+    }
+
+    #[test]
+    fn collect_plugins_empty_without_dir() {
+        let dir = std::env::temp_dir().join(format!("dc-plug-none-{}", std::process::id()));
+        assert!(collect_plugins(&dir).is_empty());
     }
 
     #[test]

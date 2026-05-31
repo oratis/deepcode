@@ -15,7 +15,7 @@ mod settings;
 mod tools;
 
 use commands::{
-    append_allow_matcher, cli_path, get_app_info, get_settings_path, list_sessions,
+    append_allow_matcher, cli_path, get_app_info, get_settings_path, list_plugins, list_sessions,
     load_keybindings, load_settings_file, open_url, read_credentials, save_credentials,
     save_keybindings, save_settings_file, session_append, session_create, session_read,
     session_set_title,
@@ -47,6 +47,7 @@ pub fn run() {
             session_read,
             session_set_title,
             list_sessions,
+            list_plugins,
             cli_path,
             open_url,
             tool_read,

@@ -8,6 +8,7 @@ import { abortAgentTurn, clearHistory, resumeSession, startAgentTurn } from './m
 import {
   appendAllowMatcher,
   getAppInfo,
+  listPlugins,
   listSessions,
   loadSettingsFile,
   openUrl,
@@ -90,7 +91,13 @@ export function installTauriShim(): void {
     },
     plugins: {
       async list() {
-        return [];
+        // Reads ~/.deepcode/plugins via the list_plugins Rust command (the
+        // renderer can't run core's node:fs discoverPlugins).
+        try {
+          return await listPlugins();
+        } catch {
+          return [];
+        }
       },
       async install() {
         return { name: '', version: '' };
