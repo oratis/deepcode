@@ -15,6 +15,7 @@ export { WebSearchTool, parseDuckDuckGoHtml } from './web-search.js';
 export type { SearchHit } from './web-search.js';
 export { AskUserQuestionTool } from './ask-user.js';
 export { ExitPlanModeTool } from './exit-plan.js';
+export { CronCreateTool, CronListTool, CronDeleteTool } from './cron-tools.js';
 export {
   makeToolSearchTool,
   installToolSearch,
