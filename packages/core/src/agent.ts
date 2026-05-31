@@ -482,6 +482,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         }
       }
 
+      // Bash can mutate arbitrary files we can't name ahead of time, so capture
+      // a git working-tree checkpoint instead (no-op outside a git repo). This
+      // lets `/rewind <seq> code` revert what the command changed.
+      if (opts.enableSnapshots !== false && opts.session && toolUse.name === 'Bash') {
+        await opts.session.manager.gitCheckpoint({
+          sessionId: opts.session.id,
+          cwd: opts.cwd,
+          reason: 'pre-Bash',
+          seq: ++snapshotSeq,
+        });
+      }
+
       let tr;
       try {
         tr = await handler.execute(toolUse.input, toolCtx);

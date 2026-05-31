@@ -57,6 +57,7 @@ export {
   defaultSessionsDir,
   newSessionId,
   captureSnapshot,
+  captureGitCheckpoint,
   listSnapshots,
   restoreSnapshot,
   type SessionMeta,

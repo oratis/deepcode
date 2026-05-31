@@ -430,7 +430,7 @@ export const RewindCommand: SlashCommand = {
     if (snaps.length === 0) {
       return [
         'No snapshots in this session yet.',
-        'Snapshots are captured automatically before Edit / Write tool calls.',
+        'Snapshots are captured automatically before Edit / Write (per file) and Bash (git checkpoint) tool calls.',
       ];
     }
 
@@ -470,8 +470,8 @@ export const RewindCommand: SlashCommand = {
 
     switch (action) {
       case 'code': {
-        await restoreSnapshot(target);
-        return [`✓ Restored ${target.filePath} from snapshot #${target.seq}`];
+        const restored = await restoreSnapshot(target);
+        return [restoreCodeMessage(target, restored)];
       }
       case 'conversation': {
         const kept = trimHistoryBefore(currentHistory, cutoffMs);
@@ -481,11 +481,11 @@ export const RewindCommand: SlashCommand = {
         ];
       }
       case 'both': {
-        await restoreSnapshot(target);
+        const restored = await restoreSnapshot(target);
         const kept = trimHistoryBefore(currentHistory, cutoffMs);
         ctx.newHistory = kept;
         return [
-          `✓ Restored ${target.filePath} from snapshot #${target.seq}`,
+          restoreCodeMessage(target, restored),
           `✓ Rewound conversation (kept ${kept.length} of ${currentHistory.length} messages).`,
         ];
       }
@@ -549,6 +549,22 @@ function trimMiddle(s: string, maxLen: number): string {
   if (s.length <= maxLen) return s;
   const keep = Math.floor((maxLen - 1) / 2);
   return s.slice(0, keep) + '…' + s.slice(s.length - keep);
+}
+
+/** Human-readable result line for a `/rewind … code` restore. */
+function restoreCodeMessage(
+  target: { kind?: string; filePath: string; seq: number },
+  restored: string[],
+): string {
+  if (target.kind === 'git') {
+    if (restored.length === 0) {
+      return `✓ Checkpoint #${target.seq}: nothing to revert (no tracked changes since).`;
+    }
+    const shown = restored.slice(0, 4).join(', ');
+    const more = restored.length > 4 ? ` (+${restored.length - 4} more)` : '';
+    return `✓ Reverted ${restored.length} file(s) to git checkpoint #${target.seq}: ${shown}${more}`;
+  }
+  return `✓ Restored ${target.filePath} from snapshot #${target.seq}`;
 }
 
 export const BUILTIN_COMMANDS: SlashCommand[] = [
