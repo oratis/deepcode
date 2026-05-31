@@ -9,10 +9,16 @@ export {
   closeAllMcpServers,
   pickTransportKind,
   parseHelperOutput,
+  readMcpResource,
+  parseResourceRefs,
+  expandMcpResourceRefs,
   type McpClientHandle,
   type McpToolMeta,
+  type McpResourceMeta,
   type McpTransportKind,
   type ConnectAllResult,
+  type ResourceRef,
+  type ExpandResourcesResult,
 } from './client.js';
 
 export {

@@ -29,6 +29,7 @@ import {
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
   connectAllMcpServers,
+  expandMcpResourceRefs,
   contextWindowFor,
   findStyle,
   loadMemory,
@@ -152,6 +153,16 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     for (const handle of mcpServers) for (const t of handle.tools) tools.register(t);
   }
 
+  // Expand `@server:scheme://path` MCP resource references in the prompt.
+  let userMessage = prompt;
+  if (mcpServers.length > 0) {
+    const { text, errors } = await expandMcpResourceRefs(prompt, mcpServers);
+    userMessage = text;
+    for (const e of errors) {
+      errOutput.write(`MCP resource @${e.ref.server}:${e.ref.uri} — ${e.error}\n`);
+    }
+  }
+
   // ─── system prompt assembly ─────────────────────────────────────────
   let systemPrompt = opts.systemPromptOverride ?? DEFAULT_SYSTEM_PROMPT;
   if (memory.text) systemPrompt += '\n\n' + memory.text;
@@ -229,7 +240,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       provider,
       tools,
       systemPrompt,
-      userMessage: prompt,
+      userMessage,
       history: [],
       model,
       maxTokens,
