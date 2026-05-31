@@ -214,6 +214,7 @@ export {
   type McpClientHandle,
   type McpToolMeta,
   type McpResourceMeta,
+  type McpResourceTemplateMeta,
   type McpPromptMeta,
   type ConnectAllResult,
   type BuildMcpServerOpts,

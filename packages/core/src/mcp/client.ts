@@ -39,6 +39,15 @@ export interface McpResourceMeta {
   mimeType?: string;
 }
 
+/** A parameterized resource a server exposes (from resources/templates/list). */
+export interface McpResourceTemplateMeta {
+  /** RFC 6570 URI template, e.g. `file:///{path}`. */
+  uriTemplate: string;
+  name: string;
+  description?: string;
+  mimeType?: string;
+}
+
 /** A prompt a server exposes (from prompts/list). */
 export interface McpPromptMeta {
   name: string;
@@ -88,6 +97,8 @@ export interface McpClientHandle {
   tools: ToolHandler[];
   /** Resources the server advertised (empty if it has no `resources` capability). */
   resources: McpResourceMeta[];
+  /** Parameterized resource templates the server advertised. */
+  resourceTemplates: McpResourceTemplateMeta[];
   /** Prompts the server advertised (empty if it has no `prompts` capability). */
   prompts: McpPromptMeta[];
   close(): Promise<void>;
@@ -295,6 +306,7 @@ export async function connectMcpServer(
   // Resources (best-effort, capability-gated). A server without the `resources`
   // capability — or one that errors on resources/list — just yields [].
   let resources: McpResourceMeta[] = [];
+  let resourceTemplates: McpResourceTemplateMeta[] = [];
   if (client.getServerCapabilities()?.resources) {
     try {
       const r = await client.listResources();
@@ -306,6 +318,17 @@ export async function connectMcpServer(
       }));
     } catch {
       /* server advertised resources but list failed — degrade to none */
+    }
+    try {
+      const rt = await client.listResourceTemplates();
+      resourceTemplates = (rt.resourceTemplates ?? []).map((t) => ({
+        uriTemplate: t.uriTemplate,
+        name: t.name,
+        description: t.description,
+        mimeType: t.mimeType,
+      }));
+    } catch {
+      /* templates are optional even within the resources capability */
     }
   }
 
@@ -331,6 +354,7 @@ export async function connectMcpServer(
     transportKind: kind,
     tools,
     resources,
+    resourceTemplates,
     prompts,
     async close() {
       await client.close();
