@@ -61,7 +61,63 @@ describe('runPluginsCommand', () => {
     const out = sink();
     const code = await runPluginsCommand(['frob'], { cwd, home, output: out.stream });
     expect(code).toBe(2);
-    expect(out.text()).toMatch(/Usage: deepcode plugins list/);
+    expect(out.text()).toMatch(/Usage: deepcode plugins/);
+  });
+
+  it('installs a local plugin and then lists it as trusted', async () => {
+    // A local plugin source dir.
+    const src = join(cwd, 'my-plugin');
+    await fs.mkdir(src, { recursive: true });
+    await fs.writeFile(
+      join(src, 'plugin.json'),
+      JSON.stringify({ name: 'localdemo', version: '0.1.0', description: 'local one' }),
+    );
+    const out = sink();
+    const code = await runPluginsCommand(['install', src], { cwd, home, output: out.stream });
+    expect(code).toBe(0);
+    expect(out.text()).toMatch(/Installed localdemo@0\.1\.0/);
+
+    // Now it's installed + trusted → appears in the loaded list (not "Not loaded").
+    const list = sink();
+    await runPluginsCommand(['list'], { cwd, home, output: list.stream, json: true });
+    const parsed = JSON.parse(list.text()) as { plugins: Array<{ name: string }> };
+    expect(parsed.plugins.some((p) => p.name === 'localdemo')).toBe(true);
+  });
+
+  it('uninstalls an installed plugin', async () => {
+    const src = join(cwd, 'p2');
+    await fs.mkdir(src, { recursive: true });
+    await fs.writeFile(join(src, 'plugin.json'), JSON.stringify({ name: 'p2', version: '1.0.0' }));
+    await runPluginsCommand(['install', src], { cwd, home, output: sink().stream });
+
+    const out = sink();
+    const code = await runPluginsCommand(['uninstall', 'p2'], { cwd, home, output: out.stream });
+    expect(code).toBe(0);
+    expect(out.text()).toMatch(/Uninstalled p2/);
+
+    const missing = sink();
+    const code2 = await runPluginsCommand(['uninstall', 'p2'], {
+      cwd,
+      home,
+      output: missing.stream,
+    });
+    expect(code2).toBe(1);
+    expect(missing.text()).toMatch(/No plugin named/);
+  });
+
+  it('install with no spec → usage exit 2; bad gh spec → error exit 1', async () => {
+    const noSpec = sink();
+    expect(await runPluginsCommand(['install'], { cwd, home, errOutput: noSpec.stream })).toBe(2);
+    expect(noSpec.text()).toMatch(/Usage: deepcode plugins install/);
+
+    const badGh = sink();
+    const code = await runPluginsCommand(['install', 'gh:not-a-valid-spec!!'], {
+      cwd,
+      home,
+      errOutput: badGh.stream,
+    });
+    expect(code).toBe(1);
+    expect(badGh.text()).toMatch(/Install failed.*Invalid GitHub spec/);
   });
 });
 

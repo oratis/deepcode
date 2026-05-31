@@ -278,6 +278,8 @@ USAGE
   deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
   deepcode trust [--plan-only]          Trust this directory's project config (hooks/MCP/...)
   deepcode plugins list [--json]        List installed plugins
+  deepcode plugins install <spec>       Install a plugin (gh:owner/repo | name@npm | ./path)
+  deepcode plugins uninstall <name>     Remove an installed plugin
   deepcode skills list [--json]         List available skills
 
 MODE
