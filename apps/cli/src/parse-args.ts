@@ -272,6 +272,7 @@ USAGE
   deepcode --continue                   Continue most recent session
   deepcode doctor                       Diagnostic checks
   deepcode upgrade                      Self-update (CLI; Mac client auto-updates)
+  deepcode setup-token [<token>]        Store a long-lived DeepSeek auth token (CI)
   deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
   deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
   deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
