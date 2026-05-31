@@ -11,6 +11,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  capMcpOutput,
   connectAllMcpServers,
   connectMcpServer,
   expandMcpResourceRefs,
@@ -439,6 +440,19 @@ describe('parseHelperOutput', () => {
   });
   it('returns {} for empty output', () => {
     expect(parseHelperOutput('   \n')).toEqual({});
+  });
+});
+
+describe('capMcpOutput', () => {
+  it('passes through output under the cap', () => {
+    expect(capMcpOutput('short', 100)).toBe('short');
+  });
+  it('truncates over-long output with a notice', () => {
+    const big = 'x'.repeat(120);
+    const out = capMcpOutput(big, 100);
+    expect(out.startsWith('x'.repeat(100))).toBe(true);
+    expect(out).toMatch(/20 characters truncated/);
+    expect(out).toMatch(/100-char cap/);
   });
 });
 

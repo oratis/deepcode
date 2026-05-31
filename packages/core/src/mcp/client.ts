@@ -179,6 +179,20 @@ interface FinishableTransport extends Transport {
   finishAuth(code: string): Promise<void>;
 }
 
+/** Max characters of MCP tool output fed back to the model (keeps a runaway
+ *  server response from blowing the context window). */
+export const MCP_OUTPUT_CAP = 50_000;
+
+/** Truncate over-long MCP output with a visible notice. Exported for testing. */
+export function capMcpOutput(text: string, cap = MCP_OUTPUT_CAP): string {
+  if (text.length <= cap) return text;
+  const omitted = text.length - cap;
+  return (
+    text.slice(0, cap) +
+    `\n\n[… ${omitted} characters truncated — MCP output exceeded the ${cap}-char cap]`
+  );
+}
+
 /**
  * Connect to one MCP server (stdio / http / sse). Returns a handle containing
  * the registered tools (qualified as `mcp__<server>__<tool>`).
@@ -264,7 +278,7 @@ export async function connectMcpServer(
               .map((c) => c.text ?? '')
               .join('\n') || '';
           return {
-            content: textParts || '(MCP tool returned no text content)',
+            content: textParts ? capMcpOutput(textParts) : '(MCP tool returned no text content)',
             isError: result.isError === true,
             data: { serverName, serverToolName: t.name },
           };
