@@ -139,6 +139,9 @@ export {
 export {
   loadMemory,
   walkUpwards,
+  rememberFact,
+  projectMemoryPath,
+  projectMemoryKey,
   type MemorySource,
   type LoadedMemory,
   type LoadMemoryOpts,

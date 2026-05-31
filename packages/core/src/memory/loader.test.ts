@@ -3,7 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadMemory, walkUpwards } from './loader.js';
+import {
+  loadMemory,
+  projectMemoryKey,
+  projectMemoryPath,
+  rememberFact,
+  walkUpwards,
+} from './loader.js';
 
 describe('loadMemory', () => {
   let home: string;
@@ -140,5 +146,48 @@ describe('walkUpwards', () => {
   it('handles cwd == boundary', () => {
     const dirs = walkUpwards('/a', '/a');
     expect(dirs).toEqual(['/a']);
+  });
+});
+
+describe('path-scoped rules + project memory', () => {
+  let home: string;
+  let cwd: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'dc-mem2-home-'));
+    cwd = await mkdtemp(join(tmpdir(), 'dc-mem2-cwd-'));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it("surfaces a rule's path-scope (globs) in its header + strips frontmatter", async () => {
+    const rulesDir = join(cwd, '.deepcode', 'rules');
+    await fs.mkdir(rulesDir, { recursive: true });
+    await fs.writeFile(
+      join(rulesDir, 'ts.md'),
+      '---\nglobs:\n  - "src/**/*.ts"\n  - "test/**"\n---\nUse strict types.\n',
+    );
+    const mem = await loadMemory({ cwd, home });
+    expect(mem.text).toMatch(/rule: ts\.md \(applies to: src\/\*\*\/\*\.ts, test\/\*\*\)/);
+    expect(mem.text).toContain('Use strict types.');
+    // the raw frontmatter fence should not leak into the memory text
+    expect(mem.text).not.toContain('globs:');
+  });
+
+  it('rememberFact appends to project memory, which loadMemory then reads back', async () => {
+    expect(projectMemoryPath(home, cwd)).toBe(
+      join(home, '.deepcode', 'projects', projectMemoryKey(cwd), 'memory', 'MEMORY.md'),
+    );
+    const p = await rememberFact(cwd, 'prefers tabs over spaces', home);
+    expect(p).toBe(projectMemoryPath(home, cwd));
+    await rememberFact(cwd, 'deploys on fridays', home);
+
+    const mem = await loadMemory({ cwd, home });
+    expect(mem.text).toContain('project memory');
+    expect(mem.text).toContain('prefers tabs over spaces');
+    expect(mem.text).toContain('deploys on fridays');
+    // header written once
+    expect(mem.text.match(/# Project memory/g)?.length).toBe(1);
   });
 });
