@@ -7,6 +7,7 @@ import { CredentialsStore, VERSION, redact } from '@deepcode/core';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { runHeadless } from './headless.js';
+import { runMcpCommand } from './mcp-cmd.js';
 import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
@@ -48,6 +49,13 @@ async function main(): Promise<number> {
   }
   if (args.positional[0] === 'cron') {
     return runCronCommand(args.positional.slice(1), {
+      output: process.stdout,
+      errOutput: process.stderr,
+    });
+  }
+  if (args.positional[0] === 'mcp') {
+    return runMcpCommand(args.positional.slice(1), {
+      cwd: process.cwd(),
       output: process.stdout,
       errOutput: process.stderr,
     });

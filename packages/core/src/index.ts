@@ -183,14 +183,20 @@ export {
   type SandboxedCommand,
 } from './sandbox/index.js';
 
-// MCP client (M3c — stdio transport; http/sse/OAuth/serve → M3c-ext)
+// MCP client (M3c — stdio transport; http/sse → M3c-ext) + server (`mcp serve`)
 export {
   connectMcpServer,
   connectAllMcpServers,
   closeAllMcpServers,
+  buildMcpServer,
+  serveMcpOverStdio,
+  mcpServableTools,
+  MCP_SERVE_EXCLUDE,
   type McpClientHandle,
   type McpToolMeta,
   type ConnectAllResult,
+  type BuildMcpServerOpts,
+  type ServeMcpStdioOpts,
 } from './mcp/index.js';
 
 // Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge;
