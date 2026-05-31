@@ -15,6 +15,7 @@ import { TaskTool } from './task.js';
 import { TodoWriteTool } from './todo.js';
 import { WebFetchTool } from './web-fetch.js';
 import { WebSearchTool } from './web-search.js';
+import { EnterWorktreeTool, ExitWorktreeTool } from './worktree-tools.js';
 import { WriteTool } from './write.js';
 
 /**
@@ -37,6 +38,8 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   AskUserQuestionTool,
   EnterPlanModeTool,
   ExitPlanModeTool,
+  EnterWorktreeTool,
+  ExitWorktreeTool,
   TaskTool,
 ];
 

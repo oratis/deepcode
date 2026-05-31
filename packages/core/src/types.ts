@@ -143,6 +143,12 @@ export interface ToolContext {
     agentType?: string;
     description?: string;
   }) => Promise<{ text: string; turnsUsed: number; agentType: string }>;
+  /**
+   * Active git worktree the agent has entered via EnterWorktree. While set,
+   * `cwd` points into the worktree; ExitWorktree reads this to remove the
+   * worktree and restore the original cwd. Mutated in place by those tools.
+   */
+  worktree?: { path: string; branch: string; source: string; originalCwd: string };
 }
 
 export interface ToolResult {
