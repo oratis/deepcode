@@ -236,10 +236,12 @@ pub struct SessionMeta {
     pub title: String,
 }
 
-/// First non-empty line of the first user message, truncated for display. Used
-/// as a session's auto-title in the sidebar (no manual naming required).
+/// A session's display title. Prefers a manual title set on the `session_meta`
+/// header line (via session_set_title); otherwise derives one from the first
+/// user message (first non-empty line, truncated). Returns None if neither.
 fn derive_session_title(path: &std::path::Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
+    let mut from_user: Option<String> = None;
     for line in text.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -248,25 +250,71 @@ fn derive_session_title(path: &std::path::Path) -> Option<String> {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if v.get("type").and_then(|t| t.as_str()) != Some("message") {
-            continue;
-        }
-        if v.get("role").and_then(|r| r.as_str()) != Some("user") {
-            continue;
-        }
-        let content = v.get("content").and_then(|c| c.as_array())?;
-        for block in content {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(txt) = block.get("text").and_then(|t| t.as_str()) {
-                    let title = clean_title(txt);
-                    if !title.is_empty() {
-                        return Some(title);
+        match v.get("type").and_then(|t| t.as_str()) {
+            // Manual title wins — return immediately.
+            Some("session_meta") => {
+                if let Some(t) = v.get("title").and_then(|t| t.as_str()) {
+                    let t = t.trim();
+                    if !t.is_empty() {
+                        return Some(clean_title(t));
                     }
                 }
             }
+            Some("message") if v.get("role").and_then(|r| r.as_str()) == Some("user") => {
+                if from_user.is_none() {
+                    if let Some(content) = v.get("content").and_then(|c| c.as_array()) {
+                        for block in content {
+                            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                                if let Some(txt) = block.get("text").and_then(|t| t.as_str()) {
+                                    let title = clean_title(txt);
+                                    if !title.is_empty() {
+                                        from_user = Some(title);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
-    None
+    from_user
+}
+
+/// Set (or clear, with "") a session's manual title on its session_meta header.
+#[tauri::command]
+pub fn session_set_title(id: String, title: String) -> Result<(), String> {
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let path = home
+        .join(".deepcode")
+        .join("sessions")
+        .join(format!("{id}.jsonl"));
+    let text = std::fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;
+    let trimmed = title.trim();
+    let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
+    let mut updated = false;
+    for line in lines.iter_mut() {
+        let Ok(mut v) = serde_json::from_str::<serde_json::Value>(line.trim()) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) == Some("session_meta") {
+            v["title"] = serde_json::Value::String(trimmed.to_string());
+            *line = v.to_string();
+            updated = true;
+            break;
+        }
+    }
+    if !updated {
+        // No meta header (older session) — prepend one carrying the title.
+        let meta = serde_json::json!({ "type": "session_meta", "id": id, "title": trimmed });
+        lines.insert(0, meta.to_string());
+    }
+    std::fs::write(&path, lines.join("\n") + "\n")
+        .map_err(|e| format!("write {}: {}", path.display(), e))
 }
 
 /// Strip a leading <system-reminder>…</system-reminder> block (CLI-created
@@ -408,5 +456,37 @@ mod contract_tests {
         let t = clean_title(&long);
         assert_eq!(t.chars().count(), 49); // 48 + '…'
         assert!(t.ends_with('…'));
+    }
+
+    #[test]
+    fn derive_title_prefers_meta_then_first_user() {
+        use std::io::Write;
+        let dir = std::env::temp_dir();
+        let pid = std::process::id();
+
+        // A manual title on the meta header wins over the first user message.
+        let p1 = dir.join(format!("dc-title-{pid}-a.jsonl"));
+        let mut f = std::fs::File::create(&p1).unwrap();
+        writeln!(f, r#"{{"type":"session_meta","id":"x","title":"My Custom Name"}}"#).unwrap();
+        writeln!(
+            f,
+            r#"{{"type":"message","role":"user","content":[{{"type":"text","text":"the prompt"}}]}}"#
+        )
+        .unwrap();
+        assert_eq!(derive_session_title(&p1).as_deref(), Some("My Custom Name"));
+
+        // No meta title → derive from the first user message (CJK).
+        let p2 = dir.join(format!("dc-title-{pid}-b.jsonl"));
+        let mut f2 = std::fs::File::create(&p2).unwrap();
+        writeln!(f2, r#"{{"type":"session_meta","id":"y"}}"#).unwrap();
+        writeln!(
+            f2,
+            r#"{{"type":"message","role":"user","content":[{{"type":"text","text":"做一个游戏"}}]}}"#
+        )
+        .unwrap();
+        assert_eq!(derive_session_title(&p2).as_deref(), Some("做一个游戏"));
+
+        std::fs::remove_file(&p1).ok();
+        std::fs::remove_file(&p2).ok();
     }
 }

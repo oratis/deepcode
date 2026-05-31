@@ -4,9 +4,9 @@
 // folder + a small switch-folder button. Below: sessions bucketed by
 // Today/Yesterday/Earlier per the spec note ①.
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { projectName } from '../lib/project.js';
-import { listSessions, type SessionMeta } from '../lib/tauri-api.js';
+import { listSessions, sessionSetTitle, type SessionMeta } from '../lib/tauri-api.js';
 import { BrandMark } from './BrandMark.js';
 
 interface SidebarProps {
@@ -46,14 +46,31 @@ export function Sidebar({
 }: SidebarProps): JSX.Element {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
+  // Inline rename: which session is being edited + its draft title.
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editValue, setEditValue] = useState('');
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     void listSessions()
       .then(setSessions)
       .catch(() => setSessions([]));
+  }, []);
+
+  useEffect(() => {
+    reload();
     const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
     return () => clearInterval(t);
-  }, []);
+  }, [reload]);
+
+  async function commitRename(id: string): Promise<void> {
+    setEditingId(null);
+    try {
+      await sessionSetTitle(id, editValue.trim());
+      reload();
+    } catch {
+      /* keep the old title on failure */
+    }
+  }
 
   const grouped: Record<Bucket, SessionMeta[]> = {
     Today: [],
@@ -150,11 +167,42 @@ export function Sidebar({
               <div
                 key={s.id}
                 className={'item' + (s.id === activeSessionId ? ' active' : '')}
-                onClick={() => onPickSession(s.id)}
-                title={`${s.title} · ${s.id}`}
+                onClick={() => editingId !== s.id && onPickSession(s.id)}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditingId(s.id);
+                  setEditValue(s.title?.trim() ? s.title : '');
+                }}
+                title={`${s.title} · ${s.id}  (double-click to rename)`}
               >
                 <span className="dot" />
-                <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
+                {editingId === s.id ? (
+                  <input
+                    className="label"
+                    autoFocus
+                    value={editValue}
+                    placeholder="Session name…"
+                    onChange={(e) => setEditValue(e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void commitRename(s.id);
+                      else if (e.key === 'Escape') setEditingId(null);
+                    }}
+                    onBlur={() => void commitRename(s.id)}
+                    style={{
+                      flex: 1,
+                      minWidth: 0,
+                      background: 'transparent',
+                      border: '1px solid var(--line)',
+                      borderRadius: 4,
+                      color: 'var(--text-0)',
+                      font: 'inherit',
+                      padding: '0 4px',
+                    }}
+                  />
+                ) : (
+                  <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
+                )}
                 <span className="meta">{relTime(s.updated_at_secs, now)}</span>
               </div>
             ))}

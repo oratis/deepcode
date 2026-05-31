@@ -18,6 +18,7 @@ use commands::{
     append_allow_matcher, cli_path, get_app_info, get_settings_path, list_sessions,
     load_keybindings, load_settings_file, open_url, read_credentials, save_credentials,
     save_keybindings, save_settings_file, session_append, session_create, session_read,
+    session_set_title,
 };
 use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
 use tauri::Manager;
@@ -44,6 +45,7 @@ pub fn run() {
             session_create,
             session_append,
             session_read,
+            session_set_title,
             list_sessions,
             cli_path,
             open_url,
