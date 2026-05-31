@@ -336,6 +336,24 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     }, 2000);
   });
 
+  // Session-lifecycle hooks (the agent loop fires the per-turn ones).
+  const fireLifecycle = async (
+    event: 'SessionStart' | 'SessionEnd' | 'Notification',
+    payload: Record<string, unknown> = {},
+  ): Promise<void> => {
+    try {
+      await hooks.dispatch({
+        event,
+        cwd: ctx.cwd,
+        triggeredAt: new Date().toISOString(),
+        payload,
+      });
+    } catch {
+      /* hook failure must not break the REPL */
+    }
+  };
+  await fireLifecycle('SessionStart', { sessionId: session.id, source: 'cli' });
+
   while (true) {
     let userInput: string;
     try {
@@ -478,8 +496,14 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     if (result.stopReason === 'error') {
       output.write('  ✕ Error during agent loop. Try again or /status to inspect.\n\n');
     }
+    // Notification hook — the turn finished and control returns to the user.
+    await fireLifecycle('Notification', {
+      message: 'DeepCode finished responding — awaiting your input.',
+      stopReason: result.stopReason,
+    });
   }
 
+  await fireLifecycle('SessionEnd', { sessionId: session.id });
   rl.close();
   // Clean up MCP server connections
   if (mcpServers.length > 0) {

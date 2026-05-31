@@ -247,6 +247,18 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   process.on('SIGTERM', sigintHandler);
 
   // ─── run ────────────────────────────────────────────────────────────
+  // SessionStart hook (headless is a one-shot session). Agent-loop hooks
+  // (UserPromptSubmit/Stop/…) fire from runAgent; SessionEnd fires in finally.
+  try {
+    await hooks.dispatch({
+      event: 'SessionStart',
+      cwd,
+      triggeredAt: new Date().toISOString(),
+      payload: { sessionId: session.id, source: 'headless' },
+    });
+  } catch {
+    /* ignore */
+  }
   let exitCode = 0;
   try {
     const result = await runAgent({
@@ -326,6 +338,16 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     }
     exitCode = 3;
   } finally {
+    try {
+      await hooks.dispatch({
+        event: 'SessionEnd',
+        cwd,
+        triggeredAt: new Date().toISOString(),
+        payload: { sessionId: session.id, exitCode },
+      });
+    } catch {
+      /* ignore */
+    }
     process.off('SIGINT', sigintHandler);
     process.off('SIGTERM', sigintHandler);
     if (mcpServers.length > 0) await closeAllMcpServers(mcpServers);

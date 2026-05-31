@@ -163,6 +163,23 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         /* reminder failures must not abort the agent */
       }
     }
+    // UserPromptSubmit hook — fires before the prompt is processed; any JSON
+    // `additionalContext` it returns is appended to the prompt. Top-level only
+    // (a sub-agent's prompt isn't a user prompt).
+    if (opts.hooks && (opts.subAgentDepth ?? 0) === 0) {
+      try {
+        const r = await opts.hooks.dispatch({
+          event: 'UserPromptSubmit',
+          cwd: opts.cwd,
+          triggeredAt: new Date().toISOString(),
+          payload: { prompt: opts.userMessage },
+        });
+        const extra = r.json?.additionalContext;
+        if (typeof extra === 'string' && extra.trim()) userText = `${userText}\n\n${extra}`;
+      } catch {
+        /* hook failure must not abort the prompt */
+      }
+    }
     const userMsg: StoredMessage = {
       role: 'user',
       content: [{ type: 'text', text: userText }],
@@ -264,6 +281,19 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         .map((b) => b.text)
         .join('\n')
         .trim();
+      // SubagentStop hook — fires when a sub-agent finishes.
+      if (opts.hooks) {
+        try {
+          await opts.hooks.dispatch({
+            event: 'SubagentStop',
+            cwd: opts.cwd,
+            triggeredAt: new Date().toISOString(),
+            payload: { agentType: agentType ?? 'general', turnsUsed: sub.turnsUsed },
+          });
+        } catch {
+          /* hook failure must not break the sub-agent result */
+        }
+      }
       return { text, turnsUsed: sub.turnsUsed, agentType: agentType ?? 'general' };
     };
   }
@@ -322,6 +352,22 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;
+
+  // Stop hook — fires when the TOP-LEVEL agent finishes a run (a sub-agent's
+  // completion is signalled by SubagentStop instead). Observation only.
+  const fireStop = async (reason: string): Promise<void> => {
+    if (!opts.hooks || depth !== 0) return;
+    try {
+      await opts.hooks.dispatch({
+        event: 'Stop',
+        cwd: opts.cwd,
+        triggeredAt: new Date().toISOString(),
+        payload: { stopReason: reason, turnsUsed },
+      });
+    } catch {
+      /* hook failure must not affect the result */
+    }
+  };
 
   for (let turn = 0; turn < maxTurns; turn++) {
     if (opts.signal?.aborted) {
@@ -392,6 +438,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // If no tool calls, we're done
     if (result.stopReason !== 'tool_use') {
+      await fireStop('end_turn');
       return { history, turnsUsed, usage: totalUsage, stopReason: 'end_turn', modeSignal };
     }
 
@@ -580,6 +627,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       })
     ) {
       try {
+        if (opts.hooks) {
+          await opts.hooks.dispatch({
+            event: 'PreCompact',
+            cwd: opts.cwd,
+            triggeredAt: new Date().toISOString(),
+            payload: { messages: history.length, trigger: 'auto' },
+          });
+        }
         const compactResult = await compact(history, {
           provider: opts.provider,
           summarizerModel: opts.autoCompact.summarizerModel,
@@ -595,12 +650,21 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           outputTokens: compactResult.usage.outputTokens,
           reasoningTokens: 0,
         });
+        if (opts.hooks) {
+          await opts.hooks.dispatch({
+            event: 'PostCompact',
+            cwd: opts.cwd,
+            triggeredAt: new Date().toISOString(),
+            payload: { messages: history.length, trigger: 'auto' },
+          });
+        }
       } catch {
         // compaction failure is non-fatal — continue with full history
       }
     }
   }
 
+  await fireStop('max_turns');
   return { history, turnsUsed, usage: totalUsage, stopReason: 'max_turns', modeSignal };
 }
 
