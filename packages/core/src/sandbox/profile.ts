@@ -2,8 +2,12 @@
 // sandbox specifications.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.9a + docs/design/sandbox-plan-worktree.md
 //
-// M3.5: macOS sandbox-exec SBPL profile generation. Linux bwrap arg generation
-// is partial (skeleton). Windows: disabled per §0.2.
+// M3.5: macOS sandbox-exec SBPL profile generation + Linux bwrap arg generation
+// (ro system mounts, rw cwd, read/write allowlists, net unshare, pid/ipc/uts
+// unshare, --new-session + --die-with-parent hardening). The one remaining gap
+// is the selective-domain net allowlist, which needs a slirp4netns helper to
+// bridge UDP into the netns (deny-all-net and full-net modes both work today).
+// Windows: disabled per §0.2.
 
 import { homedir, platform } from 'node:os';
 import type { SandboxConfig } from '../config/types.js';
@@ -187,6 +191,13 @@ export function buildLinuxBwrapArgs(
 
   // Default: unshare pid + ipc + uts
   args.push('--unshare-pid', '--unshare-ipc', '--unshare-uts');
+
+  // Hardening:
+  //  · --new-session: run in a fresh session so the sandboxed process can't use
+  //    the TIOCSTI ioctl to inject keystrokes into the controlling terminal — a
+  //    known sandbox-escape. Safe for non-interactive Bash-tool commands.
+  //  · --die-with-parent: kill the sandbox if the agent dies (no orphans).
+  args.push('--new-session', '--die-with-parent');
 
   return args;
 }

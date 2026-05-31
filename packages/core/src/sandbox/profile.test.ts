@@ -100,6 +100,12 @@ describe('buildLinuxBwrapArgs', () => {
     expect(args).toContain('--unshare-uts');
   });
 
+  it('adds hardening flags (--new-session blocks TIOCSTI, --die-with-parent)', () => {
+    const args = buildLinuxBwrapArgs({ enabled: true }, '/x');
+    expect(args).toContain('--new-session');
+    expect(args).toContain('--die-with-parent');
+  });
+
   it('unshares net when allowedDomains is empty array', () => {
     const args = buildLinuxBwrapArgs({ enabled: true, network: { allowedDomains: [] } }, '/x');
     expect(args).toContain('--unshare-net');
