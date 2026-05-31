@@ -9,6 +9,7 @@ import { EnterPlanModeTool } from './enter-plan.js';
 import { ExitPlanModeTool } from './exit-plan.js';
 import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
+import { NotebookEditTool } from './notebook.js';
 import { ReadTool } from './read.js';
 import { TaskTool } from './task.js';
 import { TodoWriteTool } from './todo.js';
@@ -29,6 +30,7 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   BashTool,
   GrepTool,
   GlobTool,
+  NotebookEditTool,
   TodoWriteTool,
   WebFetchTool,
   WebSearchTool,
