@@ -75,13 +75,13 @@ Specific deviations:
 | PreToolUse       | ✓           | ✓        | ✅                                           |
 | PostToolUse      | ✓           | ✓        | ✅                                           |
 | Stop             | ✓           | ✓        | ✅ — fires when agent loop ends (any reason) |
-| SubagentStop     | ✓           | 🔄       | M4+ wiring                                   |
+| SubagentStop     | ✓           | ✓        | ✅ — fires when a Task sub-agent finishes    |
 | PreCompact       | ✓           | ✓        | ✅ — fires through compaction event bus      |
 | PostCompact      | ✓           | ✓        | ✅                                           |
 | SessionStart     | ✓           | ✓        | ✅                                           |
 | SessionEnd       | ✓           | ✓        | ✅                                           |
 | UserPromptSubmit | ✓           | ✓        | ✅                                           |
-| Notification     | ✓           | 🔄       | M8                                           |
+| Notification     | ✓           | ✓        | ✅ — REPL fires on turn-end (awaiting input) |
 
 ## Hook handler types
 

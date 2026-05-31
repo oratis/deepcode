@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAgent } from './agent.js';
 import { HookDispatcher } from './hooks/index.js';
 import { SessionManager } from './sessions/index.js';
@@ -600,5 +600,116 @@ describe('runAgent', () => {
       hooks,
     });
     expect(result.stopReason).toBe('end_turn');
+  });
+
+  it('fires UserPromptSubmit + Stop lifecycle hooks on a normal run', async () => {
+    const hooks = new HookDispatcher({ hooks: {} });
+    const spy = vi.spyOn(hooks, 'dispatch');
+    await runAgent({
+      provider: new MockProvider([endTurn('done')]),
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'hi',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+    });
+    const events = spy.mock.calls.map((c) => (c[0] as { event: string }).event);
+    expect(events).toContain('UserPromptSubmit');
+    expect(events).toContain('Stop');
+  });
+
+  it('UserPromptSubmit hook injects additionalContext into the prompt', async () => {
+    const hooks = new HookDispatcher({
+      hooks: {
+        UserPromptSubmit: [{ hooks: [{ type: 'prompt', prompt: 'REMEMBER: be terse.' }] }],
+      },
+    });
+    const provider = new MockProvider([endTurn('ok')]);
+    await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'do the thing',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+      systemReminders: false,
+    });
+    const firstUser = provider.received[0]!.messages[0] as StoredMessage;
+    const text = firstUser.content[0];
+    expect(text?.type).toBe('text');
+    if (text?.type === 'text') {
+      expect(text.text).toContain('do the thing');
+      expect(text.text).toContain('REMEMBER: be terse.');
+    }
+  });
+
+  it('fires SubagentStop when a Task sub-agent finishes', async () => {
+    const hooks = new HookDispatcher({ hooks: {} });
+    const spy = vi.spyOn(hooks, 'dispatch');
+    await runAgent({
+      provider: new MockProvider([
+        toolUse('delegating', {
+          type: 'tool_use',
+          id: 't1',
+          name: 'Task',
+          input: { prompt: 'explore' },
+        }),
+        endTurn('sub done'), // sub-agent run
+        endTurn('top done'), // back at top level
+      ]),
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'delegate',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+    });
+    const events = spy.mock.calls.map((c) => (c[0] as { event: string }).event);
+    expect(events).toContain('SubagentStop');
+  });
+
+  it('fires PreCompact + PostCompact around auto-compaction', async () => {
+    await fs.writeFile(join(cwd, 'x.txt'), 'data');
+    const hooks = new HookDispatcher({ hooks: {} });
+    const spy = vi.spyOn(hooks, 'dispatch');
+    const scripted: ProviderResult[] = [
+      {
+        content: withToolCall('working', {
+          type: 'tool_use',
+          id: 'big',
+          name: 'Read',
+          input: { file_path: 'x.txt' },
+        }),
+        stopReason: 'tool_use',
+        usage: { inputTokens: 90, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
+      },
+      endTurn('done'),
+    ];
+    const provider: Provider = {
+      name: 'counting',
+      async runTurn(o: ProviderRunOpts): Promise<ProviderResult> {
+        if (o.systemPrompt.startsWith('You compress long agent conversations')) {
+          return endTurn('summary');
+        }
+        const next = scripted.shift();
+        if (!next) throw new Error('no scripted response');
+        return next;
+      },
+    };
+    await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: 'agent',
+      userMessage: 'go',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+      autoCompact: { contextWindow: 100, threshold: 0.8, keepFirstPairs: 0, keepLastMessages: 1 },
+    });
+    const events = spy.mock.calls.map((c) => (c[0] as { event: string }).event);
+    expect(events).toContain('PreCompact');
+    expect(events).toContain('PostCompact');
   });
 });
