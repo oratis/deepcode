@@ -13,7 +13,12 @@ import {
   writeMeta,
   type SessionMeta,
 } from './storage.js';
-import { captureSnapshot, listSnapshots, type Snapshot } from './snapshots.js';
+import {
+  captureGitCheckpoint,
+  captureSnapshot,
+  listSnapshots,
+  type Snapshot,
+} from './snapshots.js';
 
 export interface SessionManagerOpts {
   root?: string;
@@ -64,6 +69,16 @@ export class SessionManager {
     seq: number;
   }): Promise<Snapshot | null> {
     return captureSnapshot({ ...args, sessionsRoot: this.root });
+  }
+
+  /** Capture a git working-tree checkpoint (used before Bash commands). */
+  async gitCheckpoint(args: {
+    sessionId: string;
+    cwd: string;
+    reason: string;
+    seq: number;
+  }): Promise<Snapshot | null> {
+    return captureGitCheckpoint({ ...args, sessionsRoot: this.root });
   }
 
   async snapshots(sessionId: string): Promise<Snapshot[]> {

@@ -10,4 +10,10 @@ export {
   type SessionMeta,
   type SessionFiles,
 } from './storage.js';
-export { captureSnapshot, listSnapshots, restoreSnapshot, type Snapshot } from './snapshots.js';
+export {
+  captureSnapshot,
+  captureGitCheckpoint,
+  listSnapshots,
+  restoreSnapshot,
+  type Snapshot,
+} from './snapshots.js';
