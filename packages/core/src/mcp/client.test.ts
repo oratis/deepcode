@@ -14,10 +14,13 @@ import {
   connectAllMcpServers,
   connectMcpServer,
   expandMcpResourceRefs,
+  getMcpPrompt,
+  mcpPromptCommands,
   parseHelperOutput,
   parseResourceRefs,
   pickTransportKind,
   readMcpResource,
+  resolveMcpPromptInvocation,
 } from './client.js';
 
 const require_ = createRequire(import.meta.url);
@@ -40,9 +43,18 @@ async function writeFakeServer(
   name: string,
   tools: object[],
   resources?: Array<{ uri: string; name?: string; text: string; mimeType?: string }>,
+  prompts?: Array<{
+    name: string;
+    description?: string;
+    arguments?: Array<{ name: string; required?: boolean }>;
+    text: string;
+  }>,
 ): Promise<string> {
   const serverPath = join(dir, `${name}.mjs`);
-  const caps = resources ? '{ tools: {}, resources: {} }' : '{ tools: {} }';
+  const capList = ['tools: {}'];
+  if (resources) capList.push('resources: {}');
+  if (prompts) capList.push('prompts: {}');
+  const caps = `{ ${capList.join(', ')} }`;
   const resourceBlock = resources
     ? `
 import { ListResourcesRequestSchema, ReadResourceRequestSchema } from '${TYPES_INDEX}';
@@ -54,6 +66,25 @@ server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
   const found = RESOURCES.find((r) => r.uri === req.params.uri);
   if (!found) throw new Error('no such resource: ' + req.params.uri);
   return { contents: [{ uri: found.uri, mimeType: found.mimeType ?? 'text/plain', text: found.text }] };
+});
+`
+    : '';
+  const promptBlock = prompts
+    ? `
+import { ListPromptsRequestSchema, GetPromptRequestSchema } from '${TYPES_INDEX}';
+const PROMPTS = ${JSON.stringify(prompts)};
+server.setRequestHandler(ListPromptsRequestSchema, async () => ({
+  prompts: PROMPTS.map((p) => ({ name: p.name, description: p.description, arguments: p.arguments })),
+}));
+server.setRequestHandler(GetPromptRequestSchema, async (req) => {
+  const found = PROMPTS.find((p) => p.name === req.params.name);
+  if (!found) throw new Error('no such prompt: ' + req.params.name);
+  const argsStr = JSON.stringify(req.params.arguments ?? {});
+  return {
+    messages: [
+      { role: 'user', content: { type: 'text', text: found.text + ' args=' + argsStr } },
+    ],
+  };
 });
 `
     : '';
@@ -79,6 +110,7 @@ server.setRequestHandler(CallToolRequestSchema, async (req) => {
   };
 });
 ${resourceBlock}
+${promptBlock}
 await server.connect(new StdioServerTransport());
 `,
     'utf8',
@@ -256,6 +288,44 @@ describe('MCP client', () => {
       await handle.close();
     }
   }, 20_000);
+
+  it('lists prompts on connect and fetches one with arguments', async () => {
+    const serverScript = await writeFakeServer(
+      tmp,
+      'gh',
+      [{ name: 'noop', description: 'd', inputSchema: { type: 'object', properties: {} } }],
+      undefined,
+      [
+        {
+          name: 'open_pr',
+          description: 'Open a PR',
+          arguments: [{ name: 'title', required: true }],
+          text: 'Draft a PR titled',
+        },
+      ],
+    );
+    const handle = await connectMcpServer('gh', { command: 'node', args: [serverScript] });
+    try {
+      expect(handle.prompts.map((p) => p.name)).toEqual(['open_pr']);
+
+      // mcpPromptCommands surfaces it as a slash command
+      const cmds = mcpPromptCommands([handle]);
+      expect(cmds[0]!.command).toBe('/mcp__gh__open_pr');
+
+      // resolveMcpPromptInvocation maps a positional token to the declared arg
+      const inv = resolveMcpPromptInvocation('/mcp__gh__open_pr fix-bug', [handle]);
+      expect(inv).not.toBeNull();
+      expect(inv!.prompt).toBe('open_pr');
+      expect(inv!.args).toEqual({ title: 'fix-bug' });
+
+      // getMcpPrompt returns the server's rendered prompt text + forwarded args
+      const text = await getMcpPrompt(handle, inv!.prompt, inv!.args);
+      expect(text).toContain('Draft a PR titled');
+      expect(text).toContain('"title":"fix-bug"');
+    } finally {
+      await handle.close();
+    }
+  }, 20_000);
 });
 
 describe('pickTransportKind', () => {
@@ -312,6 +382,44 @@ describe('parseResourceRefs', () => {
 
   it('returns [] when there are no references', () => {
     expect(parseResourceRefs('just plain text')).toEqual([]);
+  });
+});
+
+describe('resolveMcpPromptInvocation', () => {
+  const handle = {
+    serverName: 'srv',
+    prompts: [
+      { name: 'greet', arguments: [{ name: 'who' }, { name: 'lang' }] },
+      { name: 'noargs' },
+    ],
+  } as unknown as Parameters<typeof resolveMcpPromptInvocation>[1][number];
+
+  it('returns null for non-prompt lines', () => {
+    expect(resolveMcpPromptInvocation('hello world', [handle])).toBeNull();
+    expect(resolveMcpPromptInvocation('/help', [handle])).toBeNull();
+  });
+
+  it('returns null for an unknown server or prompt', () => {
+    expect(resolveMcpPromptInvocation('/mcp__other__greet', [handle])).toBeNull();
+    expect(resolveMcpPromptInvocation('/mcp__srv__missing', [handle])).toBeNull();
+  });
+
+  it('maps bare tokens positionally onto declared argument names', () => {
+    const inv = resolveMcpPromptInvocation('/mcp__srv__greet Ada french', [handle]);
+    expect(inv?.prompt).toBe('greet');
+    expect(inv?.args).toEqual({ who: 'Ada', lang: 'french' });
+  });
+
+  it('parses key=value tokens (and mixes with positional)', () => {
+    const inv = resolveMcpPromptInvocation('/mcp__srv__greet lang=de Ada', [handle]);
+    // lang set explicitly; bare "Ada" fills the first declared arg (who)
+    expect(inv?.args).toEqual({ lang: 'de', who: 'Ada' });
+  });
+
+  it('handles a prompt with no declared arguments', () => {
+    const inv = resolveMcpPromptInvocation('/mcp__srv__noargs', [handle]);
+    expect(inv?.prompt).toBe('noargs');
+    expect(inv?.args).toEqual({});
   });
 });
 

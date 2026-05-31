@@ -195,14 +195,19 @@ export {
   readMcpResource,
   parseResourceRefs,
   expandMcpResourceRefs,
+  getMcpPrompt,
+  mcpPromptCommands,
+  resolveMcpPromptInvocation,
   type McpClientHandle,
   type McpToolMeta,
   type McpResourceMeta,
+  type McpPromptMeta,
   type ConnectAllResult,
   type BuildMcpServerOpts,
   type ServeMcpStdioOpts,
   type ResourceRef,
   type ExpandResourcesResult,
+  type McpPromptCommand,
 } from './mcp/index.js';
 
 // Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge;

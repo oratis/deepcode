@@ -36,6 +36,13 @@ export interface McpResourceMeta {
   mimeType?: string;
 }
 
+/** A prompt a server exposes (from prompts/list). */
+export interface McpPromptMeta {
+  name: string;
+  description?: string;
+  arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
 export interface McpClientHandle {
   serverName: string;
   client: Client;
@@ -45,6 +52,8 @@ export interface McpClientHandle {
   tools: ToolHandler[];
   /** Resources the server advertised (empty if it has no `resources` capability). */
   resources: McpResourceMeta[];
+  /** Prompts the server advertised (empty if it has no `prompts` capability). */
+  prompts: McpPromptMeta[];
   close(): Promise<void>;
 }
 
@@ -203,6 +212,21 @@ export async function connectMcpServer(
     }
   }
 
+  // Prompts (best-effort, capability-gated — same degradation as resources).
+  let prompts: McpPromptMeta[] = [];
+  if (client.getServerCapabilities()?.prompts) {
+    try {
+      const p = await client.listPrompts();
+      prompts = (p.prompts ?? []).map((pr) => ({
+        name: pr.name,
+        description: pr.description,
+        arguments: pr.arguments,
+      }));
+    } catch {
+      /* server advertised prompts but list failed — degrade to none */
+    }
+  }
+
   return {
     serverName,
     client,
@@ -210,10 +234,103 @@ export async function connectMcpServer(
     transportKind: kind,
     tools,
     resources,
+    prompts,
     async close() {
       await client.close();
     },
   };
+}
+
+/**
+ * Fetch an MCP prompt and flatten its messages to a single prompt string. Each
+ * message's text content is concatenated (non-text content is skipped).
+ */
+export async function getMcpPrompt(
+  handle: McpClientHandle,
+  name: string,
+  args: Record<string, string> = {},
+): Promise<string> {
+  const result = await handle.client.getPrompt({ name, arguments: args });
+  const parts = (result.messages ?? []).map((m) => {
+    const c = m.content;
+    if (
+      c &&
+      typeof c === 'object' &&
+      'type' in c &&
+      c.type === 'text' &&
+      typeof c.text === 'string'
+    ) {
+      return c.text;
+    }
+    return '';
+  });
+  return parts.filter(Boolean).join('\n\n');
+}
+
+/** A server prompt surfaced as a `/mcp__<server>__<prompt>` slash command. */
+export interface McpPromptCommand {
+  /** Slash command name, e.g. `/mcp__github__open_pr`. */
+  command: string;
+  server: string;
+  prompt: string;
+  description?: string;
+  arguments: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
+/** Build the `/mcp__server__prompt` command list across all connected servers. */
+export function mcpPromptCommands(handles: McpClientHandle[]): McpPromptCommand[] {
+  const out: McpPromptCommand[] = [];
+  for (const h of handles) {
+    for (const p of h.prompts) {
+      out.push({
+        command: `/mcp__${h.serverName}__${p.name}`,
+        server: h.serverName,
+        prompt: p.name,
+        description: p.description,
+        arguments: p.arguments ?? [],
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Resolve a `/mcp__server__prompt …` REPL line: find the matching prompt and
+ * parse its arguments. Args accept `key=value` tokens; bare tokens map
+ * positionally onto the prompt's declared argument names. Returns null if the
+ * line isn't an MCP-prompt invocation.
+ */
+export function resolveMcpPromptInvocation(
+  line: string,
+  handles: McpClientHandle[],
+): { handle: McpClientHandle; prompt: string; args: Record<string, string> } | null {
+  const trimmed = line.trim();
+  if (!trimmed.startsWith('/mcp__')) return null;
+  const tokens = trimmed.split(/\s+/);
+  const command = tokens[0]!; // /mcp__server__prompt
+  const rest = command.slice('/mcp__'.length);
+  const sep = rest.indexOf('__');
+  if (sep === -1) return null;
+  const server = rest.slice(0, sep);
+  const promptName = rest.slice(sep + 2);
+  const handle = handles.find((h) => h.serverName === server);
+  if (!handle) return null;
+  const meta = handle.prompts.find((p) => p.name === promptName);
+  if (!meta) return null;
+
+  const declared = meta.arguments ?? [];
+  const args: Record<string, string> = {};
+  let positional = 0;
+  for (const tok of tokens.slice(1)) {
+    const eq = tok.indexOf('=');
+    if (eq > 0) {
+      args[tok.slice(0, eq)] = tok.slice(eq + 1);
+    } else if (declared[positional]) {
+      args[declared[positional]!.name] = tok;
+      positional++;
+    }
+  }
+  return { handle, prompt: promptName, args };
 }
 
 /**

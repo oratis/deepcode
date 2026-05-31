@@ -18,6 +18,9 @@ import {
   closeAllMcpServers,
   connectAllMcpServers,
   expandMcpResourceRefs,
+  getMcpPrompt,
+  mcpPromptCommands,
+  resolveMcpPromptInvocation,
   expandCommandBody,
   findCustomCommand,
   findStyle,
@@ -190,11 +193,18 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     const deferredNames = installToolSearch(tools, deferredMcpTools);
     if (mcpServers.length > 0) {
       const eager = mcpServers.reduce((n, h) => n + h.tools.length, 0) - deferredNames.length;
+      const resourceCount = mcpServers.reduce((n, h) => n + h.resources.length, 0);
+      const promptCmds = mcpPromptCommands(mcpServers);
       output.write(
         `  ⊞ MCP: ${mcpServers.length} server(s) connected (${eager} tools` +
           (deferredNames.length > 0 ? `, ${deferredNames.length} deferred behind ToolSearch` : '') +
+          (resourceCount > 0 ? `, ${resourceCount} resources` : '') +
+          (promptCmds.length > 0 ? `, ${promptCmds.length} prompts` : '') +
           `)\n`,
       );
+      if (promptCmds.length > 0) {
+        output.write(`  ⊞ MCP prompts: ${promptCmds.map((c) => c.command).join(', ')}\n`);
+      }
     }
     if (mcpErrors.length > 0) {
       output.write(`  ⊞ MCP: ${mcpErrors.length} server(s) failed (see /mcp)\n`);
@@ -318,6 +328,21 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       }
       if (ctx.exitRequested) break;
       continue;
+    }
+
+    // MCP prompt command (`/mcp__<server>__<prompt> [args]`)? Fetch the rendered
+    // prompt from the server and submit it as the user prompt.
+    if (userInput.trim().startsWith('/mcp__') && mcpServers.length > 0) {
+      const inv = resolveMcpPromptInvocation(userInput, mcpServers);
+      if (inv) {
+        try {
+          userInput = await getMcpPrompt(inv.handle, inv.prompt, inv.args);
+          output.write(`  ▸ /mcp__${inv.handle.serverName}__${inv.prompt} (MCP prompt)\n\n`);
+        } catch (err) {
+          output.write(`  ⚠ MCP prompt failed: ${(err as Error).message}\n`);
+          continue;
+        }
+      }
     }
 
     // Custom prompt-template command (.deepcode/commands/<name>.md)? Expand its
