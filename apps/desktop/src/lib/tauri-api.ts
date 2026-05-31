@@ -132,6 +132,11 @@ export async function sessionCreate(cwd: string): Promise<string> {
   return (await invoke('session_create', { cwd })) as string;
 }
 
+/** Set (or clear, with '') a session's manual title. */
+export async function sessionSetTitle(id: string, title: string): Promise<void> {
+  await invoke('session_set_title', { id, title });
+}
+
 /** Append one JSON message line to a session's JSONL file. */
 export async function sessionAppend(id: string, message: Record<string, unknown>): Promise<void> {
   await invoke('session_append', { id, message });
