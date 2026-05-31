@@ -333,3 +333,90 @@ describe('built-in command behavior', () => {
     });
   });
 });
+
+describe('inspector + export commands', () => {
+  const reg = new CommandRegistry();
+  let cwd: string;
+  beforeEach(async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'dc-cmds-'));
+  });
+  afterEach(async () => {
+    await rm(cwd, { recursive: true, force: true });
+  });
+
+  it('/hooks lists configured events or reports none', async () => {
+    const none = await reg.match('/hooks')!.cmd.run([], makeContext());
+    expect(none.join('\n')).toMatch(/No hooks configured/);
+
+    const ctx = makeContext({
+      settings: {
+        hooks: { Stop: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] }] },
+      },
+    });
+    const out = await reg.match('/hooks')!.cmd.run([], ctx);
+    expect(out.join('\n')).toMatch(/Stop:/);
+    expect(out.join('\n')).toMatch(/command \(match: Bash\)/);
+  });
+
+  it('/permissions shows rules + default mode', async () => {
+    const none = await reg.match('/permissions')!.cmd.run([], makeContext());
+    expect(none.join('\n')).toMatch(/No permission rules/);
+
+    const ctx = makeContext({
+      settings: {
+        permissions: { defaultMode: 'plan', allow: ['Bash(npm test:*)'], deny: ['Bash(rm:*)'] },
+      },
+    });
+    const out = (await reg.match('/permissions')!.cmd.run([], ctx)).join('\n');
+    expect(out).toMatch(/default mode: plan/);
+    expect(out).toMatch(/Bash\(npm test:\*\)/);
+    expect(out).toMatch(/Bash\(rm:\*\)/);
+  });
+
+  it('/agents lists a project sub-agent', async () => {
+    const dir = join(cwd, '.deepcode', 'agents');
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      join(dir, 'explorer.md'),
+      '---\nname: explorer\ndescription: read-only explorer\n---\nExplore.\n',
+    );
+    const out = (await reg.match('/agents')!.cmd.run([], makeContext({ cwd }))).join('\n');
+    expect(out).toMatch(/explorer/);
+    expect(out).toMatch(/read-only explorer/);
+  });
+
+  it('/skills lists a project skill', async () => {
+    const dir = join(cwd, '.deepcode', 'skills', 'greet');
+    const fs = await import('node:fs/promises');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      join(dir, 'SKILL.md'),
+      '---\nname: greet\ndescription: say hi\n---\nGreet.\n',
+    );
+    const out = (await reg.match('/skills')!.cmd.run([], makeContext({ cwd }))).join('\n');
+    expect(out).toMatch(/greet/);
+    expect(out).toMatch(/\[project\]/);
+  });
+
+  it('/export writes a markdown file and reports the path', async () => {
+    const fs = await import('node:fs/promises');
+    const ctx = makeContext({
+      cwd,
+      history: [
+        { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'hi there' }] },
+      ],
+    });
+    const out = (await reg.match('/export')!.cmd.run([], ctx)).join('\n');
+    expect(out).toMatch(/Exported 2 messages/);
+    const written = await fs.readFile(join(cwd, 'deepcode-sess-xyz.md'), 'utf8');
+    expect(written).toContain('## User');
+    expect(written).toContain('hi there');
+  });
+
+  it('/export reports nothing to export with empty history', async () => {
+    const out = await reg.match('/export')!.cmd.run([], makeContext({ history: [] }));
+    expect(out.join('\n')).toMatch(/Nothing to export/);
+  });
+});
