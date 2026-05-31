@@ -309,6 +309,21 @@ export {
   type LaunchdInstallOpts,
 } from './launchd/index.js';
 
+// Cron — scheduled headless agent runs (CronCreate/List/Delete + scheduler daemon)
+export {
+  cronStorePath,
+  loadCronStore,
+  saveCronStore,
+  addCronJob,
+  removeCronJob,
+  listCronJobs,
+  validateCronExpr,
+  isCronDue,
+  dueJobs,
+  type CronJob,
+  type CronStore,
+} from './cron/index.js';
+
 // Keybindings (M8 — ~/.deepcode/keybindings.json + Vim mode state machine)
 export {
   DEFAULT_KEYBINDINGS,
