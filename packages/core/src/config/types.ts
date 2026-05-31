@@ -53,6 +53,15 @@ export interface McpServerConfig {
   headers?: Record<string, string>;
   headersHelper?: string;
   alwaysLoad?: boolean;
+  /**
+   * Authenticate to an http/sse server via OAuth 2.0 (authorization-code +
+   * PKCE, with dynamic client registration). On first connect this opens the
+   * browser; tokens persist under ~/.deepcode/mcp-auth/<server>.json and
+   * auto-refresh thereafter. Ignored for stdio servers.
+   */
+  oauth?: boolean;
+  /** OAuth scopes to request (space-joined into the authorization request). */
+  oauthScopes?: string[];
 }
 
 export interface StatusLineConfig {

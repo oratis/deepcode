@@ -38,3 +38,14 @@ export {
   type BuildMcpServerOpts,
   type ServeMcpStdioOpts,
 } from './serve.js';
+
+export {
+  McpAuthStore,
+  DeepCodeOAuthProvider,
+  createMcpOAuthProvider,
+  startLoopbackReceiver,
+  mcpAuthPath,
+  openBrowser,
+  type LoopbackReceiver,
+  type OAuthProviderOpts,
+} from './oauth.js';

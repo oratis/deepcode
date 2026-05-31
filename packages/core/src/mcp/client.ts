@@ -1,11 +1,8 @@
 // MCP client — wraps @modelcontextprotocol/sdk. Supports stdio, Streamable HTTP,
-// and HTTP+SSE transports, with static + dynamic (headersHelper) auth headers.
+// and HTTP+SSE transports, with static + dynamic (headersHelper) auth headers
+// AND OAuth 2.0 (authorization-code + PKCE, browser flow) via `config.oauth`
+// (see ./oauth.ts). Tokens persist under ~/.deepcode/mcp-auth/ and auto-refresh.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.3
-//
-// NOTE: full OAuth (authorization-code browser flow via the SDK's authProvider)
-// is a separate follow-up — static bearer/headers + headersHelper cover the
-// common token-auth case today. The transports already accept an authProvider,
-// so wiring OAuth later is additive.
 
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -14,9 +11,14 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import {
+  UnauthorizedError,
+  type OAuthClientProvider,
+} from '@modelcontextprotocol/sdk/client/auth.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from '../config/types.js';
 import type { ToolDefinition, ToolHandler, ToolResult } from '../types.js';
+import { createMcpOAuthProvider, type DeepCodeOAuthProvider } from './oauth.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -71,6 +73,10 @@ export interface ConnectMcpOpts {
    * servers know not to elicit.
    */
   elicit?: McpElicitHandler;
+  /** Override $HOME for OAuth token storage (tests). */
+  home?: string;
+  /** Diagnostics sink for the OAuth flow (browser-open prompt, etc.). */
+  log?: (msg: string) => void;
 }
 
 export interface McpClientHandle {
@@ -144,6 +150,7 @@ async function buildTransport(
   serverName: string,
   config: McpServerConfig,
   kind: McpTransportKind,
+  authProvider?: OAuthClientProvider,
 ): Promise<Transport> {
   if (kind === 'stdio') {
     if (!config.command) {
@@ -163,8 +170,13 @@ async function buildTransport(
   const headers = await resolveAuthHeaders(config);
   const requestInit: RequestInit = Object.keys(headers).length > 0 ? { headers } : {};
   return kind === 'sse'
-    ? new SSEClientTransport(url, { requestInit })
-    : new StreamableHTTPClientTransport(url, { requestInit });
+    ? new SSEClientTransport(url, { requestInit, authProvider })
+    : new StreamableHTTPClientTransport(url, { requestInit, authProvider });
+}
+
+/** A transport that supports completing an interactive OAuth flow. */
+interface FinishableTransport extends Transport {
+  finishAuth(code: string): Promise<void>;
 }
 
 /**
@@ -183,7 +195,17 @@ export async function connectMcpServer(
       `MCP server "${serverName}" must specify a command (stdio) or a url (http/sse)`,
     );
   }
-  const transport = await buildTransport(serverName, config, kind);
+  // OAuth (http/sse only): start a loopback receiver + provider so the SDK can
+  // run the authorization-code + PKCE flow. Tokens persist + auto-refresh.
+  let oauthProvider: DeepCodeOAuthProvider | undefined;
+  if (config.oauth && kind !== 'stdio') {
+    oauthProvider = await createMcpOAuthProvider(serverName, {
+      scopes: config.oauthScopes,
+      home: opts.home,
+      log: opts.log ?? ((m) => process.stderr.write(`[mcp:${serverName}] ${m}\n`)),
+    });
+  }
+  const transport = await buildTransport(serverName, config, kind, oauthProvider);
   // Advertise elicitation support only when the host gave us a handler — an
   // empty `elicitation: {}` capability means form mode (SDK default).
   const capabilities = opts.elicit ? { elicitation: {} } : {};
@@ -200,7 +222,22 @@ export async function connectMcpServer(
       });
     });
   }
-  await client.connect(transport);
+  try {
+    await client.connect(transport);
+  } catch (err) {
+    // First connect with no/expired token throws UnauthorizedError after opening
+    // the browser. Wait for the loopback redirect, finish the exchange, retry.
+    if (oauthProvider && err instanceof UnauthorizedError) {
+      const code = await oauthProvider.waitForCode();
+      await (transport as FinishableTransport).finishAuth(code);
+      await client.connect(transport);
+    } else {
+      oauthProvider?.closeReceiver();
+      throw err;
+    }
+  } finally {
+    oauthProvider?.closeReceiver();
+  }
 
   // List the tools the server exposes
   const listed = await client.listTools();
