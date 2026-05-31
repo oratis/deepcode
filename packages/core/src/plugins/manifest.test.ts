@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  collectPluginContributions,
   computeSourceHash,
   discoverPlugins,
   installLocal,
@@ -153,5 +154,35 @@ describe('plugin manifest', () => {
     const r = await discoverPlugins({ home });
     expect(r.plugins).toHaveLength(0);
     expect(r.hashMismatches[0]).toMatch(/not in trust manifest/);
+  });
+
+  it('collectPluginContributions returns dirs + mcpServers for trusted plugins', async () => {
+    await fakePlugin(src, {
+      name: 'contrib',
+      version: '1.0.0',
+      contributes: { mcpServers: { svc: { command: 'node', args: ['s.js'] } } },
+    });
+    const installed = await installLocal({ sourcePath: src, home });
+
+    const { dirs, mcpServers } = await collectPluginContributions({ home });
+    expect(dirs).toContain(installed.path);
+    expect(mcpServers.svc).toEqual({ command: 'node', args: ['s.js'] });
+  });
+
+  it('collectPluginContributions excludes untrusted plugins', async () => {
+    // Plugin on disk but never installed/trusted → not contributed.
+    const dir = join(home, '.deepcode', 'plugins', 'untrusted');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(
+      join(dir, 'plugin.json'),
+      JSON.stringify({
+        name: 'untrusted',
+        version: '1.0.0',
+        contributes: { mcpServers: { x: {} } },
+      }),
+    );
+    const { dirs, mcpServers } = await collectPluginContributions({ home });
+    expect(dirs).toEqual([]);
+    expect(mcpServers).toEqual({});
   });
 });

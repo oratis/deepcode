@@ -88,6 +88,9 @@ export interface RunAgentOptions {
    *  Sub-agents run at depth 1 and are NOT given a runSubAgent, so they can't
    *  spawn further sub-agents. */
   subAgentDepth?: number;
+  /** Installed-plugin directories — so the Task tool can resolve plugin-bundled
+   *  sub-agents (`<dir>/agents/*.md`) in addition to user/project ones. */
+  pluginDirs?: string[];
 }
 
 /** Max sub-agent recursion: top-level (0) may spawn sub-agents (depth 1); those
@@ -219,7 +222,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         const { loadSubAgents, findSubAgent } = (await import(
           mod
         )) as typeof import('./sub-agents/index.js');
-        const agents = await loadSubAgents({ cwd: opts.cwd });
+        const agents = await loadSubAgents({ cwd: opts.cwd, pluginDirs: opts.pluginDirs });
         const found = agentType ? findSubAgent(agents, agentType) : undefined;
         if (agentType && !found) {
           const names = agents.map((a) => a.qualifiedName).join(', ') || '(none)';

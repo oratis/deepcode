@@ -78,4 +78,23 @@ describe('loadSlashCommands', () => {
     const cmds = await loadSlashCommands({ cwd, home });
     expect(cmds.map((c) => c.name)).toEqual(['/real']);
   });
+
+  it('loads plugin-contributed commands (overridable by user/project)', async () => {
+    const pluginDir = await mkdtemp(join(tmpdir(), 'dc-plug-'));
+    try {
+      await mkdir(join(pluginDir, 'commands'), { recursive: true });
+      await writeFile(join(pluginDir, 'commands', 'pcmd.md'), 'plugin body');
+      await writeFile(join(pluginDir, 'commands', 'shared.md'), 'plugin shared');
+      // A project command of the same name as a plugin one overrides it.
+      await mkdir(join(cwd, '.deepcode', 'commands'), { recursive: true });
+      await writeFile(join(cwd, '.deepcode', 'commands', 'shared.md'), 'project shared');
+
+      const cmds = await loadSlashCommands({ cwd, home, pluginDirs: [pluginDir] });
+      expect(findCustomCommand(cmds, '/pcmd')?.source).toBe('plugin');
+      // project wins on the name clash
+      expect(findCustomCommand(cmds, '/shared')?.source).toBe('project');
+    } finally {
+      await rm(pluginDir, { recursive: true, force: true });
+    }
+  });
 });
