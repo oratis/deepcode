@@ -12,13 +12,18 @@ export {
   readMcpResource,
   parseResourceRefs,
   expandMcpResourceRefs,
+  getMcpPrompt,
+  mcpPromptCommands,
+  resolveMcpPromptInvocation,
   type McpClientHandle,
   type McpToolMeta,
   type McpResourceMeta,
+  type McpPromptMeta,
   type McpTransportKind,
   type ConnectAllResult,
   type ResourceRef,
   type ExpandResourcesResult,
+  type McpPromptCommand,
 } from './client.js';
 
 export {
