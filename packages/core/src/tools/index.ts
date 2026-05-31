@@ -17,9 +17,11 @@ export { AskUserQuestionTool } from './ask-user.js';
 export { ExitPlanModeTool } from './exit-plan.js';
 export {
   makeToolSearchTool,
+  installToolSearch,
   RegistryDeferredStore,
   type DeferredToolEntry,
   type DeferredToolStore,
+  type ToolSearchRegistry,
 } from './tool-search.js';
 export { ToolRegistry, BUILTIN_TOOLS } from './registry.js';
 export type { ToolDefinition, ToolContext, ToolResult, ToolHandler } from './types.js';
