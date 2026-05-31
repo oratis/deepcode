@@ -127,6 +127,22 @@ export async function listSessions(): Promise<SessionMeta[]> {
   return (await invoke('list_sessions')) as SessionMeta[];
 }
 
+/** A plugin row as returned by the `list_plugins` Rust command (camelCase). */
+export interface PluginInfo {
+  name: string;
+  version: string;
+  enabled: boolean;
+  contributedHookEvents: string[];
+  sourceHash: string;
+  trustedBy: 'user' | 'marketplace' | 'official';
+  warning?: string;
+}
+
+/** Installed plugins from ~/.deepcode/plugins (reads plugin.json + trust). */
+export async function listPlugins(): Promise<PluginInfo[]> {
+  return (await invoke('list_plugins')) as PluginInfo[];
+}
+
 /** Create a new session JSONL file. Returns the generated id. */
 export async function sessionCreate(cwd: string): Promise<string> {
   return (await invoke('session_create', { cwd })) as string;
