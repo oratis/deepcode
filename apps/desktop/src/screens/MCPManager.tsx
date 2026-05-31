@@ -15,7 +15,7 @@ interface McpServerStatus {
 const STATUS_BADGE: Record<McpServerStatus['status'], { kind: BadgeKind; label: string }> = {
   connected: { kind: 'ok', label: '● connected' },
   failed: { kind: 'err', label: '✕ failed' },
-  disabled: { kind: 'warn', label: '○ disabled' },
+  disabled: { kind: 'warn', label: '○ configured' },
 };
 
 const EXAMPLE_JSON = `{
@@ -49,17 +49,15 @@ export function MCPManagerScreen(): JSX.Element {
     );
   }
 
-  const connected = servers.filter((s) => s.status === 'connected').length;
-
   return (
     <Screen
       title="MCP servers"
       subtitle={
-        servers.length === 0 ? 'none configured' : `${connected} of ${servers.length} connected`
+        servers.length === 0 ? 'none configured' : `${servers.length} configured in settings.json`
       }
     >
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
-        <Card title={`Connected (${servers.length})`} flush padding={0}>
+        <Card title={`Configured (${servers.length})`} flush padding={0}>
           {servers.length === 0 ? (
             <div
               style={{
