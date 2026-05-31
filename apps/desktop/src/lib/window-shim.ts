@@ -100,7 +100,18 @@ export function installTauriShim(): void {
     },
     mcp: {
       async list() {
-        return [];
+        // Read the servers configured in settings.json#mcpServers. The desktop
+        // MVP doesn't spawn MCP servers itself (the CLI does), so they show as
+        // "configured" rather than live-connected.
+        try {
+          const s = (await loadSettingsFile()) as { mcpServers?: Record<string, unknown> };
+          return Object.keys(s.mcpServers ?? {}).map((name) => ({
+            name,
+            status: 'disabled' as const,
+          }));
+        } catch {
+          return [];
+        }
       },
     },
     skills: {
