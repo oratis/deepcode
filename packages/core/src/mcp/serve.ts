@@ -25,6 +25,13 @@ export const MCP_SERVE_EXCLUDE = new Set<string>([
   'CronCreate',
   'CronList',
   'CronDelete',
+  'TaskCreate',
+  'TaskList',
+  'TaskGet',
+  'TaskOutput',
+  'TaskUpdate',
+  'TaskStop',
+  'Monitor',
 ]);
 
 /** The subset of `tools` that is safe to expose over an MCP stdio server. */

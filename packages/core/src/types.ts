@@ -142,6 +142,8 @@ export interface ToolContext {
     prompt: string;
     agentType?: string;
     description?: string;
+    /** Per-call abort (used by background tasks so TaskStop can cancel one). */
+    signal?: AbortSignal;
   }) => Promise<{ text: string; turnsUsed: number; agentType: string }>;
   /**
    * Active git worktree the agent has entered via EnterWorktree. While set,
@@ -149,6 +151,12 @@ export interface ToolContext {
    * worktree and restore the original cwd. Mutated in place by those tools.
    */
   worktree?: { path: string; branch: string; source: string; originalCwd: string };
+  /**
+   * Background-task manager (the TaskCreate family + Monitor). Supplied by the
+   * agent loop at the top level; absent in sub-agents (so a background task
+   * can't spawn more) and in the renderer.
+   */
+  tasks?: import('./tasks/manager.js').TaskManager;
 }
 
 export interface ToolResult {

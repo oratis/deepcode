@@ -6,6 +6,7 @@ import { AskUserQuestionTool } from './ask-user.js';
 import { BashTool } from './bash.js';
 import { CronCreateTool, CronDeleteTool, CronListTool } from './cron-tools.js';
 import { EditTool } from './edit.js';
+import { TASK_TOOLS } from './task-manage.js';
 import { EnterPlanModeTool } from './enter-plan.js';
 import { ExitPlanModeTool } from './exit-plan.js';
 import { GlobTool } from './glob.js';
@@ -47,6 +48,7 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   CronCreateTool,
   CronListTool,
   CronDeleteTool,
+  ...TASK_TOOLS,
 ];
 
 export class ToolRegistry {
