@@ -14,6 +14,7 @@ import { startRepl } from './repl.js';
 import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
 import { runPluginsCommand, runSkillsCommand } from './list-cmd.js';
+import { runSetupToken } from './setup-token.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -67,6 +68,9 @@ async function main(): Promise<number> {
       cwd: process.cwd(),
       output: process.stdout,
     });
+  }
+  if (args.positional[0] === 'setup-token') {
+    return runSetupToken({ token: args.positional[1] });
   }
   if (args.positional[0] === 'plugins') {
     return runPluginsCommand(args.positional.slice(1), {
