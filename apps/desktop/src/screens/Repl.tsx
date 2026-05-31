@@ -179,6 +179,10 @@ interface AgentEvt {
   requestId?: string;
   toolName?: string;
   reason?: string;
+  // ask_user fields (AskUserQuestion tool)
+  question?: string;
+  options?: Array<{ label: string; description: string }>;
+  multiSelect?: boolean;
   // tool_use carries id; we use it on tool_result to attach output to the right card
   id?: string;
 }
@@ -187,6 +191,13 @@ interface PendingApproval {
   requestId: string;
   toolName: string;
   reason: string;
+}
+
+interface PendingQuestion {
+  requestId: string;
+  question: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect?: boolean;
 }
 
 // ─── Component ────────────────────────────────────────────────────────
@@ -217,6 +228,7 @@ export function ReplScreen({
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
+  const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
   // 'high' (6k output) by default — 'medium' (3k) truncates multi-file writes.
   // Overridden by a persisted effortLevel in settings on mount.
   const [effort, setEffort] = useState<Effort>('high');
@@ -279,6 +291,8 @@ export function ReplScreen({
       if (e.kind === 'turn_done') {
         setBusy(false);
         setActiveTurnId(null);
+        setPendingApproval(null);
+        setPendingQuestion(null);
         setMessages((m) => finalizeStreaming(m));
         onTurnComplete?.();
         return;
@@ -348,6 +362,16 @@ export function ReplScreen({
               requestId: e.requestId,
               toolName: e.toolName,
               reason: e.reason ?? `Approve ${e.toolName}?`,
+            });
+          }
+          break;
+        case 'ask_user':
+          if (e.requestId && e.question) {
+            setPendingQuestion({
+              requestId: e.requestId,
+              question: e.question,
+              options: e.options ?? [],
+              multiSelect: e.multiSelect,
             });
           }
           break;
@@ -491,11 +515,20 @@ export function ReplScreen({
     await window.deepcode.agent.approve({ requestId: req.requestId, decision });
   }
 
+  // ── AskUserQuestion answer ──
+  async function handleAnswer(answer: string): Promise<void> {
+    if (!pendingQuestion) return;
+    const req = pendingQuestion;
+    setPendingQuestion(null);
+    setMessages((m) => [...m, { role: 'system', text: `❯ ${req.question} → ${answer}` }]);
+    await window.deepcode.agent.answer({ requestId: req.requestId, answer });
+  }
+
   // ── Send ──
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const text = input.trim();
-    if (!text || busy || pendingApproval) return;
+    if (!text || busy || pendingApproval || pendingQuestion) return;
     setInput('');
     setMessages((m) => [...m, { role: 'user', text }]);
     setBusy(true);
@@ -530,7 +563,7 @@ export function ReplScreen({
   // Lock all the toolbar controls (mode / model / effort) once a turn
   // is in flight or pending approval — changing them mid-turn would
   // contradict the system prompt already sent.
-  const controlsLocked = busy || pendingApproval !== null;
+  const controlsLocked = busy || pendingApproval !== null || pendingQuestion !== null;
 
   // Only the last assistant turn is "active" — its cursor blinks while the rest
   // stay static. Guards against a second cursor if a turn was left streaming.
@@ -577,13 +610,38 @@ export function ReplScreen({
           renderMessage(m, i, pendingApproval, handleApproval, i === activeAssistantIdx),
         )}
 
-        {busy && !pendingApproval && (
+        {busy && !pendingApproval && !pendingQuestion && (
           <div className="msg assistant">
             <div className="avatar">DC</div>
             <div className="body">
               <div className="author">DeepCode · thinking</div>
               <div className="content">
                 <span className="spinner" /> <span className="muted">working…</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pendingQuestion && (
+          <div className="msg assistant">
+            <div className="avatar">DC</div>
+            <div className="body">
+              <div className="author">DeepCode · needs your input</div>
+              <div className="content">
+                <div style={{ marginBottom: 8 }}>{pendingQuestion.question}</div>
+                <div className="approval-row" style={{ flexWrap: 'wrap' }}>
+                  {pendingQuestion.options.map((o) => (
+                    <button
+                      key={o.label}
+                      type="button"
+                      className="btn btn-secondary"
+                      title={o.description}
+                      onClick={() => void handleAnswer(o.label)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -599,13 +657,15 @@ export function ReplScreen({
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                pendingApproval
-                  ? 'Approve or reject the tool call above to continue…'
-                  : busy
-                    ? 'Agent is responding…'
-                    : '问点什么…   @ 引用文件   ·   / 命令   ·   # 写入 DEEPCODE.md'
+                pendingQuestion
+                  ? 'Pick an option above to continue…'
+                  : pendingApproval
+                    ? 'Approve or reject the tool call above to continue…'
+                    : busy
+                      ? 'Agent is responding…'
+                      : '问点什么…   @ 引用文件   ·   / 命令   ·   # 写入 DEEPCODE.md'
               }
-              disabled={busy || pendingApproval !== null}
+              disabled={busy || pendingApproval !== null || pendingQuestion !== null}
               rows={Math.min(6, Math.max(1, input.split('\n').length))}
             />
             <div className="toolbar">

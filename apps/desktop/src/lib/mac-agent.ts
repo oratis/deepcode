@@ -112,6 +112,13 @@ export interface StartTurnArgs {
    *   'always' — permit + persist a permissions.allow matcher
    */
   onApproval?: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
+  /** Called when the agent's AskUserQuestion tool needs an answer. Resolves to
+   *  the chosen option label (or free text). */
+  onAskUser?: (req: {
+    question: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect?: boolean;
+  }) => Promise<string>;
 }
 
 export interface StartTurnResult {
@@ -184,6 +191,7 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
               return decision === 'allow';
             }
           : undefined,
+        askUser: args.onAskUser ? async (req) => args.onAskUser!(req) : undefined,
         onEvent: args.onEvent,
         // No hook dispatcher, no sessions persistence, no autoCompact in v1 Mac MVP.
       });
