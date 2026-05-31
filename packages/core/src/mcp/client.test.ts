@@ -70,7 +70,7 @@ async function writeFakeServer(
     : '';
   const resourceBlock = resources
     ? `
-import { ListResourcesRequestSchema, ReadResourceRequestSchema } from '${TYPES_INDEX}';
+import { ListResourcesRequestSchema, ReadResourceRequestSchema, ListResourceTemplatesRequestSchema } from '${TYPES_INDEX}';
 const RESOURCES = ${JSON.stringify(resources)};
 server.setRequestHandler(ListResourcesRequestSchema, async () => ({
   resources: RESOURCES.map((r) => ({ uri: r.uri, name: r.name, mimeType: r.mimeType })),
@@ -80,6 +80,9 @@ server.setRequestHandler(ReadResourceRequestSchema, async (req) => {
   if (!found) throw new Error('no such resource: ' + req.params.uri);
   return { contents: [{ uri: found.uri, mimeType: found.mimeType ?? 'text/plain', text: found.text }] };
 });
+server.setRequestHandler(ListResourceTemplatesRequestSchema, async () => ({
+  resourceTemplates: [{ uriTemplate: 'file:///{path}', name: 'file', description: 'a file by path' }],
+}));
 `
     : '';
   const promptBlock = prompts
@@ -278,6 +281,10 @@ describe('MCP client', () => {
         'file:///readme.md',
         'mem://note',
       ]);
+
+      // resources/templates/list populated the handle's templates
+      expect(handle.resourceTemplates.map((t) => t.uriTemplate)).toEqual(['file:///{path}']);
+      expect(handle.resourceTemplates[0]!.name).toBe('file');
 
       // readMcpResource flattens contents to text
       expect(await readMcpResource(handle, 'file:///readme.md')).toContain('# Hello');

@@ -18,6 +18,7 @@ export {
   type McpClientHandle,
   type McpToolMeta,
   type McpResourceMeta,
+  type McpResourceTemplateMeta,
   type McpPromptMeta,
   type McpTransportKind,
   type ConnectAllResult,
