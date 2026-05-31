@@ -28,9 +28,11 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
     );
   }
 
-  const filtered = sessions.filter(
-    (s) => !filter || s.id.toLowerCase().includes(filter.toLowerCase()),
-  );
+  const filtered = sessions.filter((s) => {
+    if (!filter) return true;
+    const q = filter.toLowerCase();
+    return s.id.toLowerCase().includes(q) || (s.title ?? '').toLowerCase().includes(q);
+  });
 
   return (
     <Screen
@@ -90,19 +92,19 @@ export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
                         fontSize: 13,
                         color: 'var(--text-0)',
                         fontWeight: 500,
-                        fontFamily: 'JetBrains Mono, monospace',
                       }}
                     >
-                      {s.id}
+                      {s.title?.trim() ? s.title : s.id}
                     </div>
                     <div
                       style={{
                         fontSize: 11,
                         color: 'var(--text-3)',
                         marginTop: 2,
+                        fontFamily: 'JetBrains Mono, monospace',
                       }}
                     >
-                      {(s.size_bytes / 1024).toFixed(1)} KB
+                      {s.id} · {(s.size_bytes / 1024).toFixed(1)} KB
                     </div>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-2)' }}>

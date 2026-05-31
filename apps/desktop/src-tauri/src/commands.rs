@@ -230,6 +230,64 @@ pub struct SessionMeta {
     pub path: PathBuf,
     pub size_bytes: u64,
     pub updated_at_secs: u64,
+    /// Human-readable title derived from the first user message (falls back to
+    /// the id when the session has no user message yet). Single word → no
+    /// rename_all needed; the renderer reads `title`.
+    pub title: String,
+}
+
+/// First non-empty line of the first user message, truncated for display. Used
+/// as a session's auto-title in the sidebar (no manual naming required).
+fn derive_session_title(path: &std::path::Path) -> Option<String> {
+    let text = std::fs::read_to_string(path).ok()?;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("type").and_then(|t| t.as_str()) != Some("message") {
+            continue;
+        }
+        if v.get("role").and_then(|r| r.as_str()) != Some("user") {
+            continue;
+        }
+        let content = v.get("content").and_then(|c| c.as_array())?;
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                if let Some(txt) = block.get("text").and_then(|t| t.as_str()) {
+                    let title = clean_title(txt);
+                    if !title.is_empty() {
+                        return Some(title);
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Strip a leading <system-reminder>…</system-reminder> block (CLI-created
+/// sessions prepend one), take the first non-empty line, truncate to 48 chars
+/// (char-safe for CJK).
+fn clean_title(raw: &str) -> String {
+    let mut s = raw.trim_start();
+    if s.starts_with("<system-reminder>") {
+        if let Some(end) = s.find("</system-reminder>") {
+            s = s[end + "</system-reminder>".len()..].trim_start();
+        }
+    }
+    let first_line = s.lines().find(|l| !l.trim().is_empty()).unwrap_or("").trim();
+    const MAX: usize = 48;
+    let chars: Vec<char> = first_line.chars().collect();
+    if chars.len() > MAX {
+        let head: String = chars[..MAX].iter().collect();
+        format!("{head}…")
+    } else {
+        first_line.to_string()
+    }
 }
 
 #[tauri::command]
@@ -263,11 +321,13 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
             .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
+        let title = derive_session_title(&path).unwrap_or_else(|| id.clone());
         out.push(SessionMeta {
             id,
             path: path.clone(),
             size_bytes: meta.len(),
             updated_at_secs,
+            title,
         });
     }
     out.sort_by(|a, b| b.updated_at_secs.cmp(&a.updated_at_secs));
@@ -325,11 +385,28 @@ mod contract_tests {
             path: std::path::PathBuf::from("/tmp/s1.jsonl"),
             size_bytes: 42,
             updated_at_secs: 1700,
+            title: "s1".into(),
         })
         .unwrap();
         let k = keys(&v);
         assert!(k.contains(&"size_bytes".to_string()), "got {k:?}");
         assert!(k.contains(&"updated_at_secs".to_string()), "got {k:?}");
+        assert!(k.contains(&"title".to_string()), "got {k:?}");
         assert!(!k.contains(&"sizeBytes".to_string()), "camelCase leaked: {k:?}");
+    }
+
+    #[test]
+    fn clean_title_truncates_and_strips_reminder() {
+        assert_eq!(clean_title("制作一个打飞机小游戏"), "制作一个打飞机小游戏");
+        assert_eq!(clean_title("  first line\nsecond"), "first line");
+        assert_eq!(
+            clean_title("<system-reminder>ctx</system-reminder>\nreal prompt"),
+            "real prompt"
+        );
+        // 60 ASCII chars → truncated to 48 + ellipsis
+        let long = "a".repeat(60);
+        let t = clean_title(&long);
+        assert_eq!(t.chars().count(), 49); // 48 + '…'
+        assert!(t.ends_with('…'));
     }
 }

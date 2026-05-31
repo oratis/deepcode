@@ -70,6 +70,7 @@ export function installTauriShim(): void {
         const rows = await listSessions();
         return rows.map((r) => ({
           id: r.id,
+          title: r.title,
           cwd: '',
           updatedAt: new Date(r.updated_at_secs * 1000).toISOString(),
         }));

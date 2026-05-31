@@ -151,10 +151,10 @@ export function Sidebar({
                 key={s.id}
                 className={'item' + (s.id === activeSessionId ? ' active' : '')}
                 onClick={() => onPickSession(s.id)}
-                title={s.id}
+                title={`${s.title} · ${s.id}`}
               >
                 <span className="dot" />
-                <span className="label">{shortTitle(s.id)}</span>
+                <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
                 <span className="meta">{relTime(s.updated_at_secs, now)}</span>
               </div>
             ))}
