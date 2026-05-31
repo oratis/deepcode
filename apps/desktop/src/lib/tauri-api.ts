@@ -22,6 +22,8 @@ export interface SessionMeta {
   path: string;
   size_bytes: number;
   updated_at_secs: number;
+  /** Auto-derived from the first user message (falls back to the id). */
+  title: string;
 }
 
 export async function getAppInfo(): Promise<AppInfo> {
