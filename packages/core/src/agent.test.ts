@@ -4,9 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runAgent } from './agent.js';
+import { HookDispatcher } from './hooks/index.js';
 import { SessionManager } from './sessions/index.js';
 import { ToolRegistry } from './tools/registry.js';
-import type { AgentEvent, ContentBlock, StoredMessage, ToolUseBlock } from './types.js';
+import type {
+  AgentEvent,
+  ContentBlock,
+  StoredMessage,
+  ToolHandler,
+  ToolUseBlock,
+} from './types.js';
 import type { Provider, ProviderResult, ProviderRunOpts } from './providers/types.js';
 
 /**
@@ -513,5 +520,85 @@ describe('runAgent', () => {
     } else {
       expect.fail('expected text block');
     }
+  });
+
+  it('wires mcp_tool + agent hook dispatchers; mcp_tool hook runs the registered MCP tool', async () => {
+    await fs.writeFile(join(cwd, 'a.txt'), 'hi');
+    let echoCalls = 0;
+    const echoTool: ToolHandler = {
+      name: 'mcp__test__echo',
+      definition: {
+        name: 'mcp__test__echo',
+        description: 'echo (fake MCP tool)',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      async execute() {
+        echoCalls++;
+        return { content: 'echoed' };
+      },
+    };
+    const tools = new ToolRegistry();
+    tools.register(echoTool);
+
+    // A PostToolUse hook that calls an MCP tool — fires after the agent's Read.
+    const hooks = new HookDispatcher({
+      hooks: { PostToolUse: [{ hooks: [{ type: 'mcp_tool', server: 'test', tool: 'echo' }] }] },
+    });
+    expect(hooks.hasMcpToolDispatcher()).toBe(false);
+
+    const provider = new MockProvider([
+      toolUse('reading', {
+        type: 'tool_use',
+        id: 'c1',
+        name: 'Read',
+        input: { file_path: 'a.txt' },
+      }),
+      endTurn('done'),
+    ]);
+
+    await runAgent({
+      provider,
+      tools,
+      systemPrompt: '',
+      userMessage: 'read it',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+    });
+
+    // The loop late-wired both dispatchers (mcp_tool from the registry, agent
+    // from its sub-agent runner)...
+    expect(hooks.hasMcpToolDispatcher()).toBe(true);
+    expect(hooks.hasAgentDispatcher()).toBe(true);
+    // ...and the PostToolUse mcp_tool hook resolved + ran mcp__test__echo.
+    expect(echoCalls).toBe(1);
+  });
+
+  it('mcp_tool hook reports an unregistered MCP tool without throwing', async () => {
+    await fs.writeFile(join(cwd, 'b.txt'), 'hi');
+    const tools = new ToolRegistry();
+    const hooks = new HookDispatcher({
+      hooks: { PostToolUse: [{ hooks: [{ type: 'mcp_tool', server: 'absent', tool: 'nope' }] }] },
+    });
+    const provider = new MockProvider([
+      toolUse('reading', {
+        type: 'tool_use',
+        id: 'c1',
+        name: 'Read',
+        input: { file_path: 'b.txt' },
+      }),
+      endTurn('done'),
+    ]);
+    // Should complete cleanly — the hook's stderr notes the missing tool.
+    const result = await runAgent({
+      provider,
+      tools,
+      systemPrompt: '',
+      userMessage: 'read it',
+      model: 'deepseek-chat',
+      cwd,
+      hooks,
+    });
+    expect(result.stopReason).toBe('end_turn');
   });
 });

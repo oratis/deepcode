@@ -369,6 +369,57 @@ describe('HookDispatcher', () => {
     expect(r.stdout).not.toContain('SHOULD_NOT_RUN');
     expect(r.stdout).toContain('ran');
   });
+
+  describe('setMcpToolDispatcher / setAgentDispatcher (late wiring by the agent loop)', () => {
+    it('hasX reflects whether a dispatcher is wired', () => {
+      const d = new HookDispatcher({ hooks: {} });
+      expect(d.hasMcpToolDispatcher()).toBe(false);
+      expect(d.hasAgentDispatcher()).toBe(false);
+      d.setMcpToolDispatcher(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
+      d.setAgentDispatcher(async () => ({ stdout: '', stderr: '', exitCode: 0 }));
+      expect(d.hasMcpToolDispatcher()).toBe(true);
+      expect(d.hasAgentDispatcher()).toBe(true);
+    });
+
+    it('a late-wired mcpToolDispatcher is used by the mcp_tool handler', async () => {
+      let captured: { server: string; tool: string } | null = null;
+      const d = new HookDispatcher({
+        hooks: { Stop: [{ hooks: [{ type: 'mcp_tool', server: 'slack', tool: 'notify' }] }] },
+      });
+      d.setMcpToolDispatcher(async (h) => {
+        captured = { server: h.server, tool: h.tool };
+        return { stdout: 'sent', stderr: '', exitCode: 0 };
+      });
+      const r = await d.dispatch({ event: 'Stop', cwd, triggeredAt: 't', payload: {} });
+      expect(captured).toEqual({ server: 'slack', tool: 'notify' });
+      expect(r.stdout).toContain('sent');
+    });
+
+    it('a late-wired agentDispatcher is used by the agent handler', async () => {
+      let saw: string | null = null;
+      const d = new HookDispatcher({
+        hooks: { Stop: [{ hooks: [{ type: 'agent', agent: 'reviewer' }] }] },
+      });
+      d.setAgentDispatcher(async (h) => {
+        saw = h.agent;
+        return { stdout: 'reviewed', stderr: '', exitCode: 0 };
+      });
+      const r = await d.dispatch({ event: 'Stop', cwd, triggeredAt: 't', payload: {} });
+      expect(saw).toBe('reviewer');
+      expect(r.stdout).toContain('reviewed');
+    });
+
+    it('setX does NOT clobber a constructor-supplied dispatcher (constructor wins)', async () => {
+      const d = new HookDispatcher({
+        hooks: { Stop: [{ hooks: [{ type: 'mcp_tool', server: 's', tool: 't' }] }] },
+        mcpToolDispatcher: async () => ({ stdout: 'original', stderr: '', exitCode: 0 }),
+      });
+      d.setMcpToolDispatcher(async () => ({ stdout: 'override', stderr: '', exitCode: 0 }));
+      const r = await d.dispatch({ event: 'Stop', cwd, triggeredAt: 't', payload: {} });
+      expect(r.stdout).toContain('original');
+      expect(r.stdout).not.toContain('override');
+    });
+  });
 });
 
 describe('runCommand', () => {

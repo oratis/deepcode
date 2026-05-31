@@ -267,6 +267,59 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       return { text, turnsUsed: sub.turnsUsed, agentType: agentType ?? 'general' };
     };
   }
+
+  // Wire the mcp_tool + agent hook dispatchers. These can only be supplied here
+  // (not at the host's HookDispatcher construction): mcp_tool needs the live
+  // tool registry where MCP tools are registered as `mcp__<server>__<tool>`, and
+  // `agent` needs the sub-agent runner built just above. setX() no-ops if the
+  // host already provided one, so this never clobbers explicit wiring.
+  if (opts.hooks) {
+    opts.hooks.setMcpToolDispatcher(async (handler) => {
+      const qualified = `mcp__${handler.server}__${handler.tool}`;
+      const tool = opts.tools.get(qualified);
+      if (!tool) {
+        return { stdout: '', stderr: `mcp_tool hook: ${qualified} is not registered`, exitCode: 1 };
+      }
+      try {
+        const r = await tool.execute((handler.arguments ?? {}) as Record<string, unknown>, toolCtx);
+        return {
+          stdout: r.content,
+          stderr: r.isError ? r.content : '',
+          exitCode: r.isError ? 1 : 0,
+        };
+      } catch (err) {
+        return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
+      }
+    });
+
+    // The agent hook runs a named sub-agent. Only wire it when a sub-agent
+    // runner exists (i.e. below the recursion cap). A re-entrancy guard stops a
+    // hook that fires *during* the sub-agent run from spawning more agents — the
+    // dispatcher is shared with the sub-agent loop, so the same flag is seen.
+    if (toolCtx.runSubAgent) {
+      const runSub = toolCtx.runSubAgent;
+      let agentHookRunning = false;
+      opts.hooks.setAgentDispatcher(async (handler, payload) => {
+        if (agentHookRunning) {
+          return { stdout: '', stderr: 'agent hook skipped (re-entrancy guard)', exitCode: 0 };
+        }
+        const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+        const prompt = handler.prompt
+          ? `${handler.prompt}\n\nHook event payload:\n${payloadStr}`
+          : payloadStr;
+        agentHookRunning = true;
+        try {
+          const res = await runSub({ prompt, agentType: handler.agent });
+          return { stdout: res.text, stderr: '', exitCode: 0 };
+        } catch (err) {
+          return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
+        } finally {
+          agentHookRunning = false;
+        }
+      });
+    }
+  }
+
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
   let turnsUsed = 0;
 

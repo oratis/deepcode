@@ -40,8 +40,11 @@ export class HookDispatcher {
   private readonly disabled: boolean;
   private readonly defaultTimeoutMs: number;
   private readonly allowedHttpHookUrls?: string[];
-  private readonly mcpToolDispatcher?: HookDispatcherOpts['mcpToolDispatcher'];
-  private readonly agentDispatcher?: HookDispatcherOpts['agentDispatcher'];
+  // Mutable so the agent loop can wire these once it has a live MCP registry +
+  // sub-agent runner (the host can't supply them at construction — see
+  // setMcpToolDispatcher / setAgentDispatcher).
+  private mcpToolDispatcher?: HookDispatcherOpts['mcpToolDispatcher'];
+  private agentDispatcher?: HookDispatcherOpts['agentDispatcher'];
 
   constructor(opts: HookDispatcherOpts) {
     this.hooks = opts.hooks ?? {};
@@ -50,6 +53,30 @@ export class HookDispatcher {
     this.allowedHttpHookUrls = opts.allowedHttpHookUrls;
     this.mcpToolDispatcher = opts.mcpToolDispatcher;
     this.agentDispatcher = opts.agentDispatcher;
+  }
+
+  /**
+   * Wire the `mcp_tool` hook handler. The agent loop calls this with a closure
+   * that resolves the requested MCP tool from its registry — the construction
+   * site (CLI host) doesn't yet have the live registry, so it can't pass one in.
+   * No-ops if a dispatcher was already supplied (constructor wins).
+   */
+  setMcpToolDispatcher(fn: NonNullable<HookDispatcherOpts['mcpToolDispatcher']>): void {
+    if (!this.mcpToolDispatcher) this.mcpToolDispatcher = fn;
+  }
+  hasMcpToolDispatcher(): boolean {
+    return !!this.mcpToolDispatcher;
+  }
+
+  /**
+   * Wire the `agent` hook handler (runs a named sub-agent on the event). Set by
+   * the agent loop using its sub-agent runner. No-ops if already set.
+   */
+  setAgentDispatcher(fn: NonNullable<HookDispatcherOpts['agentDispatcher']>): void {
+    if (!this.agentDispatcher) this.agentDispatcher = fn;
+  }
+  hasAgentDispatcher(): boolean {
+    return !!this.agentDispatcher;
   }
 
   /**
