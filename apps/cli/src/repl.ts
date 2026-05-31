@@ -50,6 +50,7 @@ import type { Readable, Writable } from 'node:stream';
 import { CommandRegistry, type SessionContext } from './commands.js';
 import { resolveEffort } from './parse-args.js';
 import { TrustStore } from './trust.js';
+import { resolveBuiltinSkillsDir } from './builtin-skills.js';
 
 export interface ReplOpts {
   input: Readable;
@@ -692,22 +693,3 @@ function buildPluginCapabilities(cwd: string): {
  * In published package: packaged inside @deepcode/core/skills/.
  * Returns undefined if not found.
  */
-async function resolveBuiltinSkillsDir(): Promise<string | undefined> {
-  const { createRequire } = await import('node:module');
-  const require_ = createRequire(import.meta.url);
-  try {
-    // Resolve any file inside the package, then walk up to find skills/
-    const corePkg = require_.resolve('@deepcode/core/package.json');
-    const path = await import('node:path');
-    const fs = await import('node:fs/promises');
-    const skillsDir = path.join(path.dirname(corePkg), 'skills');
-    try {
-      await fs.access(skillsDir);
-      return skillsDir;
-    } catch {
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  }
-}

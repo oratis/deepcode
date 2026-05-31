@@ -27,7 +27,9 @@
     "./dist/keybindings/vim.js": {
       "types": "./dist/keybindings/vim.d.ts",
       "import": "./dist/keybindings/vim.js"
-    }
+    },
+    "./skills/*": "./skills/*",
+    "./package.json": "./package.json"
   },
   "files": [
     "dist/",
