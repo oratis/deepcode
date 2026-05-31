@@ -299,6 +299,16 @@ export {
   type ProviderImagePayload,
 } from './vision/index.js';
 
+// Background tasks (M3.15.3 — TaskCreate family + Monitor)
+export {
+  TaskManager,
+  type Task,
+  type TaskStatus,
+  type TaskRunner,
+  type TaskRunHandle,
+  type CreateTaskSpec,
+} from './tasks/manager.js';
+
 // IPC protocol (M6-rest — renderer ↔ main process type-safe channels)
 export {
   newTurnId,

@@ -4,6 +4,7 @@
 import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
+import { TaskManager } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
@@ -102,6 +103,14 @@ const SUBAGENT_TOOL_DENYLIST = new Set([
   'EnterPlanMode',
   'ExitPlanMode',
   'AskUserQuestion',
+  // Background tasks are top-level only (a sub-agent has no task manager).
+  'TaskCreate',
+  'TaskList',
+  'TaskGet',
+  'TaskOutput',
+  'TaskUpdate',
+  'TaskStop',
+  'Monitor',
 ]);
 /** Default turn cap for a sub-agent run when its frontmatter doesn't set one. */
 const DEFAULT_SUBAGENT_MAX_TURNS = 12;
@@ -209,7 +218,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   // tool, see the denylist below; this is belt-and-suspenders).
   const depth = opts.subAgentDepth ?? 0;
   if (depth < MAX_SUBAGENT_DEPTH) {
-    toolCtx.runSubAgent = async ({ prompt, agentType }) => {
+    toolCtx.runSubAgent = async ({ prompt, agentType, signal }) => {
       // Resolve a named sub-agent from disk (lazy import keeps node:fs out of
       // browser bundles; failures degrade to a generic sub-agent prompt).
       let systemPrompt =
@@ -268,7 +277,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         temperature: opts.temperature,
         maxTurns: subMaxTurns,
         cwd: opts.cwd,
-        signal: opts.signal,
+        // A background task passes its own signal so TaskStop can cancel just
+        // that task; foreground sub-agents inherit the main run's signal.
+        signal: signal ?? opts.signal,
         mode: opts.mode,
         permissions: opts.permissions,
         hooks: opts.hooks,
@@ -351,6 +362,22 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         }
       });
     }
+  }
+
+  // Background tasks (TaskCreate family) — only at the top level, backed by the
+  // sub-agent runner. Each task gets its own AbortController so TaskStop cancels
+  // just that task. A sub-agent (depth ≥ 1) gets no manager → can't spawn tasks.
+  if (depth === 0 && toolCtx.runSubAgent) {
+    const runSub = toolCtx.runSubAgent;
+    toolCtx.tasks = new TaskManager((spec) => {
+      const ac = new AbortController();
+      const done = runSub({
+        prompt: spec.prompt,
+        agentType: spec.agentType,
+        signal: ac.signal,
+      }).then((r) => r.text);
+      return { done, abort: () => ac.abort() };
+    });
   }
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
