@@ -20,7 +20,7 @@ export interface CustomCommand {
   body: string;
   /** Hint shown in help, e.g. "<file>". */
   argumentHint?: string;
-  source: 'user' | 'project';
+  source: 'user' | 'project' | 'plugin';
   path: string;
 }
 
@@ -28,16 +28,22 @@ export interface LoadSlashCommandsOpts {
   cwd: string;
   /** Override HOME (tests). */
   home?: string;
+  /** Installed-plugin directories; each contributes `<dir>/commands/*.md`. */
+  pluginDirs?: string[];
 }
 
 /**
- * Load custom commands from `~/.deepcode/commands/*.md` (user) then
- * `<cwd>/.deepcode/commands/*.md` (project). Project commands override user
- * commands of the same name.
+ * Load custom commands from plugin `<dir>/commands/*.md`, then
+ * `~/.deepcode/commands/*.md` (user), then `<cwd>/.deepcode/commands/*.md`
+ * (project). Precedence ascends plugin → user → project (later wins on a name
+ * clash) so a user/project command can override a plugin's.
  */
 export async function loadSlashCommands(opts: LoadSlashCommandsOpts): Promise<CustomCommand[]> {
   const home = opts.home ?? homedir();
   const collected: CustomCommand[] = [];
+  for (const dir of opts.pluginDirs ?? []) {
+    await loadFromDir(join(dir, 'commands'), 'plugin', collected);
+  }
   await loadFromDir(join(home, '.deepcode', 'commands'), 'user', collected);
   await loadFromDir(join(opts.cwd, '.deepcode', 'commands'), 'project', collected);
   // De-dupe by name; later (project) wins.

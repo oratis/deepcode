@@ -41,6 +41,7 @@ import {
   resolveCredentials,
   runAgent,
   wirePlugins,
+  collectPluginContributions,
   type AgentEvent,
   type Effort,
   type McpClientHandle,
@@ -145,10 +146,16 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     maxBytes: (settings.memoryLoadCapKB ?? 100) * 1024,
   });
   const builtinSkillsDir = await resolveBuiltinSkillsDir();
+  // Trusted+enabled plugins contribute skills / sub-agents (dirs) + MCP servers.
+  const pluginContrib = await collectPluginContributions({
+    home: opts.home,
+    disabled: settings.disabledPlugins,
+  });
   const skills = await loadSkills({
     cwd,
     home: opts.home,
     builtinDir: builtinSkillsDir,
+    pluginDirs: pluginContrib.dirs,
     overrides: settings.skillOverrides,
   });
   const styles = await loadOutputStyles({ cwd, home: opts.home });
@@ -157,8 +164,9 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
 
   // ─── MCP ─────────────────────────────────────────────────────────────
   let mcpServers: McpClientHandle[] = [];
-  if (settings.mcpServers && Object.keys(settings.mcpServers).length > 0) {
-    const r = await connectAllMcpServers(settings.mcpServers, {
+  const allMcpServers = { ...pluginContrib.mcpServers, ...(settings.mcpServers ?? {}) };
+  if (Object.keys(allMcpServers).length > 0) {
+    const r = await connectAllMcpServers(allMcpServers, {
       enabledOnly: settings.enabledMcpjsonServers,
       disabled: settings.disabledMcpjsonServers ?? [],
     });
@@ -276,6 +284,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       mode,
       permissions: settings.permissions,
       hooks,
+      pluginDirs: pluginContrib.dirs,
       autoCompact: { contextWindow: contextWindowFor(model), threshold: 0.8 },
       autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,

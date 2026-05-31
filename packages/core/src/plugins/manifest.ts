@@ -14,6 +14,7 @@ import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import type { McpServerConfig } from '../config/types.js';
 
 export interface PluginManifest {
   name: string;
@@ -206,6 +207,26 @@ export async function discoverPlugins(opts: DiscoverOptions = {}): Promise<{
     });
   }
   return { plugins: out, hashMismatches };
+}
+
+/**
+ * Collect the live contributions of trusted+enabled plugins for the host to
+ * wire in: their directories (for skill / sub-agent / command loaders, which
+ * read `<dir>/{skills,agents,commands}`) and their contributed `mcpServers`.
+ * Hooks are merged separately by wirePlugins (it needs the live dispatcher).
+ */
+export async function collectPluginContributions(
+  opts: { home?: string; disabled?: string[] } = {},
+): Promise<{ dirs: string[]; mcpServers: Record<string, McpServerConfig> }> {
+  const { plugins } = await discoverPlugins({ home: opts.home, disabled: opts.disabled });
+  const enabled = plugins.filter((p) => p.enabled);
+  const dirs = enabled.map((p) => p.path);
+  const mcpServers: Record<string, McpServerConfig> = {};
+  for (const p of enabled) {
+    const contributed = p.manifest.contributes?.mcpServers;
+    if (contributed) Object.assign(mcpServers, contributed as Record<string, McpServerConfig>);
+  }
+  return { dirs, mcpServers };
 }
 
 async function copyDirectory(src: string, dest: string): Promise<void> {

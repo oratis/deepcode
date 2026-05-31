@@ -229,6 +229,7 @@ export {
 export {
   installLocal,
   discoverPlugins,
+  collectPluginContributions,
   readManifest,
   computeSourceHash,
   loadTrustState,

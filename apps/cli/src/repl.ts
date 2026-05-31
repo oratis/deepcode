@@ -38,6 +38,7 @@ import {
   runAgent,
   settingsPaths,
   wirePlugins,
+  collectPluginContributions,
   type Effort,
   type McpClientHandle,
   type Mode,
@@ -146,8 +147,18 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     tools = new ToolRegistry();
   }
   const commands = new CommandRegistry();
-  // Custom prompt-template commands from .deepcode/commands/*.md (user + project).
-  const customCommands = await loadSlashCommands({ cwd, home: opts.home });
+  // Trusted+enabled plugins contribute skills / sub-agents / commands (their
+  // dirs) + MCP servers. Hooks are merged separately by wirePlugins.
+  const pluginContrib = await collectPluginContributions({
+    home: opts.home,
+    disabled: settings.disabledPlugins,
+  });
+  // Custom prompt-template commands from plugin + user + project commands dirs.
+  const customCommands = await loadSlashCommands({
+    cwd,
+    home: opts.home,
+    pluginDirs: pluginContrib.dirs,
+  });
 
   // M5: load memory, skills, output style — assemble final system prompt
   const memory = await loadMemory({
@@ -161,6 +172,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     cwd,
     home: opts.home,
     builtinDir: builtinSkillsDir,
+    pluginDirs: pluginContrib.dirs,
     overrides: settings.skillOverrides,
   });
   const styles = await loadOutputStyles({ cwd, home: opts.home });
@@ -180,10 +192,12 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   const elicitHolder: { fn?: McpElicitHandler } = {};
   const elicitForServers: McpElicitHandler = (req) =>
     elicitHolder.fn ? elicitHolder.fn(req) : Promise.resolve({ action: 'cancel' });
-  if (settings.mcpServers && Object.keys(settings.mcpServers).length > 0) {
+  // Plugin-contributed MCP servers + the user's settings (user wins on a clash).
+  const allMcpServers = { ...pluginContrib.mcpServers, ...(settings.mcpServers ?? {}) };
+  if (Object.keys(allMcpServers).length > 0) {
     const enabled = settings.enabledMcpjsonServers;
     const disabled = settings.disabledMcpjsonServers ?? [];
-    const result = await connectAllMcpServers(settings.mcpServers, {
+    const result = await connectAllMcpServers(allMcpServers, {
       enabledOnly: enabled,
       disabled,
       elicit: elicitForServers,
@@ -438,6 +452,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       mode: ctx.mode as Mode,
       permissions: settings.permissions,
       hooks,
+      pluginDirs: pluginContrib.dirs,
       autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
       autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
