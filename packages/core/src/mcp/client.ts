@@ -13,6 +13,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { McpServerConfig } from '../config/types.js';
 import type { ToolDefinition, ToolHandler, ToolResult } from '../types.js';
@@ -41,6 +42,35 @@ export interface McpPromptMeta {
   name: string;
   description?: string;
   arguments?: Array<{ name: string; description?: string; required?: boolean }>;
+}
+
+/**
+ * A server-initiated request for structured input (elicitation/create, form
+ * mode). The host answers by collecting the fields described by `requestedSchema`.
+ */
+export interface McpElicitRequest {
+  server: string;
+  message: string;
+  /** JSON Schema (object) describing the fields the server wants. */
+  requestedSchema: Record<string, unknown>;
+}
+
+export type McpElicitResult =
+  | { action: 'accept'; content: Record<string, unknown> }
+  | { action: 'decline' }
+  | { action: 'cancel' };
+
+/** Host callback that answers a server's elicitation request. */
+export type McpElicitHandler = (req: McpElicitRequest) => Promise<McpElicitResult>;
+
+export interface ConnectMcpOpts {
+  /**
+   * Handler for server-initiated elicitation (structured input) requests. When
+   * provided, the client advertises the `elicitation` capability and routes
+   * `elicitation/create` requests here. Omit in non-interactive hosts so
+   * servers know not to elicit.
+   */
+  elicit?: McpElicitHandler;
 }
 
 export interface McpClientHandle {
@@ -145,6 +175,7 @@ async function buildTransport(
 export async function connectMcpServer(
   serverName: string,
   config: McpServerConfig,
+  opts: ConnectMcpOpts = {},
 ): Promise<McpClientHandle> {
   const kind = pickTransportKind(config);
   if (!kind) {
@@ -153,7 +184,22 @@ export async function connectMcpServer(
     );
   }
   const transport = await buildTransport(serverName, config, kind);
-  const client = new Client({ name: 'deepcode', version: '0.1.0' }, { capabilities: {} });
+  // Advertise elicitation support only when the host gave us a handler — an
+  // empty `elicitation: {}` capability means form mode (SDK default).
+  const capabilities = opts.elicit ? { elicitation: {} } : {};
+  const client = new Client({ name: 'deepcode', version: '0.1.0' }, { capabilities });
+  if (opts.elicit) {
+    const elicit = opts.elicit;
+    // Register before connect so an early server request can't race the handler.
+    client.setRequestHandler(ElicitRequestSchema, async (req) => {
+      const params = req.params as { message?: string; requestedSchema?: Record<string, unknown> };
+      return elicit({
+        server: serverName,
+        message: params.message ?? '',
+        requestedSchema: params.requestedSchema ?? { type: 'object', properties: {} },
+      });
+    });
+  }
   await client.connect(transport);
 
   // List the tools the server exposes
@@ -430,7 +476,7 @@ export interface ConnectAllResult {
 
 export async function connectAllMcpServers(
   servers: Record<string, McpServerConfig>,
-  opts: { enabledOnly?: string[]; disabled?: string[] } = {},
+  opts: { enabledOnly?: string[]; disabled?: string[]; elicit?: McpElicitHandler } = {},
 ): Promise<ConnectAllResult> {
   const handles: McpClientHandle[] = [];
   const errors: Array<{ serverName: string; error: string }> = [];
@@ -441,7 +487,7 @@ export async function connectAllMcpServers(
     if (enabled && !enabled.has(name)) continue;
     if (disabled.has(name)) continue;
     try {
-      const handle = await connectMcpServer(name, cfg);
+      const handle = await connectMcpServer(name, cfg, { elicit: opts.elicit });
       handles.push(handle);
     } catch (err) {
       errors.push({ serverName: name, error: (err as Error).message });

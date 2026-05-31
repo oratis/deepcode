@@ -208,6 +208,10 @@ export {
   type ResourceRef,
   type ExpandResourcesResult,
   type McpPromptCommand,
+  type McpElicitRequest,
+  type McpElicitResult,
+  type McpElicitHandler,
+  type ConnectMcpOpts,
 } from './mcp/index.js';
 
 // Plugins (M5 — manifest + hash pin; M5.1 — subprocess runtime + RPC bridge;
