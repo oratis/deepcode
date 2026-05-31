@@ -27,6 +27,7 @@ import {
   findStyle,
   installToolSearch,
   loadMemory,
+  rememberFact,
   loadOutputStyles,
   loadSettings,
   gateUntrustedSettings,
@@ -378,6 +379,20 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     ctrlCCount = 0;
 
     if (!userInput.trim()) continue;
+
+    // `#<text>` — remember a fact to project memory (no agent turn).
+    if (userInput.trim().startsWith('#')) {
+      const fact = userInput.trim().slice(1).trim();
+      if (fact) {
+        try {
+          const path = await rememberFact(ctx.cwd, fact, opts.home);
+          output.write(`  ✓ Remembered to ${path}\n\n`);
+        } catch (e) {
+          output.write(`  ⚠ Could not save memory: ${(e as Error).message}\n\n`);
+        }
+      }
+      continue;
+    }
 
     // Slash command?
     const match = commands.match(userInput);

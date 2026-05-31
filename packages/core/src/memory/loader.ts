@@ -10,6 +10,39 @@
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { parseFrontmatter } from '../skills/frontmatter.js';
+
+/** Slugify an absolute project path into a stable per-repo key (mirrors the
+ *  harness layout `~/.deepcode/projects/<key>/memory/MEMORY.md`). */
+export function projectMemoryKey(cwd: string): string {
+  return resolve(cwd).replace(/[/\\]+/g, '-');
+}
+
+/** Path to the agent/user-written project memory file for `cwd`. */
+export function projectMemoryPath(home: string, cwd: string): string {
+  return join(home, '.deepcode', 'projects', projectMemoryKey(cwd), 'memory', 'MEMORY.md');
+}
+
+/**
+ * Append a remembered fact to the project memory file (the `#` store). Creates
+ * the file with a header on first write. Returns the file path.
+ */
+export async function rememberFact(
+  cwd: string,
+  fact: string,
+  home: string = homedir(),
+): Promise<string> {
+  const path = projectMemoryPath(home, cwd);
+  await fs.mkdir(dirname(path), { recursive: true });
+  let header = '';
+  try {
+    await fs.access(path);
+  } catch {
+    header = `# Project memory\n\nFacts DeepCode should remember for this project.\n\n`;
+  }
+  await fs.appendFile(path, `${header}- ${fact.trim()}\n`, 'utf8');
+  return path;
+}
 
 export interface MemorySource {
   /** Where the content came from (label only — not for matching). */
@@ -53,17 +86,10 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
   const visited = new Set<string>();
   let bytes = 0;
 
-  const addFile = async (path: string, label: string, depth: number): Promise<void> => {
-    const abs = resolve(path);
-    if (visited.has(abs)) return; // cycle
-    visited.add(abs);
-
-    const raw = await readMaybe(abs);
-    if (raw === null) return;
-
+  // Process already-read content: expand @-imports, enforce the byte cap, push.
+  const addRaw = async (abs: string, label: string, raw: string, depth: number): Promise<void> => {
     const expanded =
       depth < maxDepth ? await expandImports(raw, abs, depth + 1, addFile, unresolvedImports) : raw;
-
     if (bytes + expanded.length > maxBytes) {
       const remaining = Math.max(0, maxBytes - bytes);
       const truncated = expanded.slice(0, remaining) + '\n... [truncated by memoryLoadCapKB]';
@@ -75,8 +101,20 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
     bytes += expanded.length;
   };
 
+  const addFile = async (path: string, label: string, depth: number): Promise<void> => {
+    const abs = resolve(path);
+    if (visited.has(abs)) return; // cycle
+    visited.add(abs);
+    const raw = await readMaybe(abs);
+    if (raw === null) return;
+    await addRaw(abs, label, raw, depth);
+  };
+
   // 1. ~/.deepcode/DEEPCODE.md (user-level)
   await addFile(join(home, '.deepcode', 'DEEPCODE.md'), 'user memory', 0);
+
+  // 1b. Agent/user-written project memory (the `#` remember store).
+  await addFile(projectMemoryPath(home, opts.cwd), 'project memory', 0);
 
   // 2. DEEPCODE.md walking from cwd → root, deepest first
   const upwards = walkUpwards(opts.cwd, home);
@@ -88,12 +126,26 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
   // 3. AGENTS.md (project root only — co-located with DEEPCODE.md)
   await addFile(join(opts.cwd, 'AGENTS.md'), 'AGENTS.md (cross-tool)', 0);
 
-  // 4. .deepcode/rules/*.md (path-scoped frontmatter — M3 loads all; gating M4)
+  // 4. .deepcode/rules/*.md — path-scoped via frontmatter. A rule's `globs`
+  //    (or `applyTo`/`paths`) is surfaced in its header so the model applies it
+  //    only when editing matching files; the frontmatter block itself is stripped.
   const rulesDir = join(opts.cwd, '.deepcode', 'rules');
   try {
     const entries = await fs.readdir(rulesDir);
     for (const e of entries.sort()) {
-      if (e.endsWith('.md')) await addFile(join(rulesDir, e), `rule: ${e}`, 0);
+      if (!e.endsWith('.md')) continue;
+      const rulePath = resolve(join(rulesDir, e));
+      if (visited.has(rulePath)) continue;
+      visited.add(rulePath);
+      const raw = await readMaybe(rulePath);
+      if (raw === null) continue;
+      const { fields, body } = parseFrontmatter(raw);
+      const globs = fields.globs ?? fields.applyTo ?? fields.paths;
+      const scope =
+        globs !== undefined
+          ? ` (applies to: ${Array.isArray(globs) ? globs.join(', ') : String(globs)})`
+          : '';
+      await addRaw(rulePath, `rule: ${e}${scope}`, body.trim() || raw, 0);
     }
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
