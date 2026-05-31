@@ -266,6 +266,8 @@ USAGE
   deepcode --continue                   Continue most recent session
   deepcode doctor                       Diagnostic checks
   deepcode upgrade                      Self-update (CLI; Mac client auto-updates)
+  deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
+  deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions

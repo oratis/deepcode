@@ -18,6 +18,13 @@ export interface LaunchdInstallOpts {
   binPath: string;
   /** Subcommand to invoke (default: "scheduler run"). */
   subcommand?: string;
+  /**
+   * Explicit ProgramArguments, used verbatim (NOT space-split). Takes
+   * precedence over binPath+subcommand. Use this when the launcher path or
+   * any argument may contain spaces — e.g. `[node, "/path with space/cli.js",
+   * "scheduler", "run"]`.
+   */
+  programArgs?: string[];
   /** Run interval in seconds — default 60. */
   intervalSec?: number;
 }
@@ -33,9 +40,8 @@ export function launchdPlistPath(home: string = homedir()): string {
 export function buildPlist(opts: LaunchdInstallOpts): string {
   const sub = (opts.subcommand ?? 'scheduler run').split(' ').filter(Boolean);
   const interval = opts.intervalSec ?? 60;
-  const programArgs = [opts.binPath, ...sub]
-    .map((s) => `      <string>${escapeXml(s)}</string>`)
-    .join('\n');
+  const argv = opts.programArgs ?? [opts.binPath, ...sub];
+  const programArgs = argv.map((s) => `      <string>${escapeXml(s)}</string>`).join('\n');
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
