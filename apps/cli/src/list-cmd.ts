@@ -3,7 +3,16 @@
 // scripting and the desktop app.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.13 (skills) / §3.14 (plugins)
 
-import { discoverPlugins, loadSettings, loadSkills } from '@deepcode/core';
+import {
+  discoverPlugins,
+  installFromGithub,
+  installFromNpm,
+  installLocal,
+  loadSettings,
+  loadSkills,
+  uninstallPlugin,
+} from '@deepcode/core';
+import { resolve } from 'node:path';
 import type { Writable } from 'node:stream';
 import { resolveBuiltinSkillsDir } from './builtin-skills.js';
 
@@ -71,10 +80,16 @@ export async function listSkills(deps: ListCmdDeps): Promise<SkillRow[]> {
 
 export async function runPluginsCommand(sub: string[], deps: ListCmdDeps): Promise<number> {
   const out = deps.output ?? process.stdout;
-  if (sub[0] && sub[0] !== 'list') {
-    out.write('Usage: deepcode plugins list [--json]\n');
+  const err = deps.errOutput ?? process.stderr;
+  const cmd = sub[0];
+
+  if (cmd === 'install') return pluginInstall(sub.slice(1), deps, out, err);
+  if (cmd === 'uninstall' || cmd === 'remove') return pluginUninstall(sub[1], deps, out, err);
+  if (cmd && cmd !== 'list') {
+    out.write('Usage: deepcode plugins [list [--json] | install <spec> | uninstall <name>]\n');
     return 2;
   }
+
   const { rows, issues } = await listPlugins(deps);
   if (deps.json || sub.includes('--json')) {
     out.write(JSON.stringify({ plugins: rows, issues }, null, 2) + '\n');
@@ -96,6 +111,50 @@ export async function runPluginsCommand(sub: string[], deps: ListCmdDeps): Promi
     for (const i of issues) out.write(`  ⚠ ${i}\n`);
   }
   return 0;
+}
+
+async function pluginInstall(
+  args: string[],
+  deps: ListCmdDeps,
+  out: Writable,
+  err: Writable,
+): Promise<number> {
+  const spec = args[0];
+  if (!spec) {
+    err.write(
+      'Usage: deepcode plugins install <gh:owner/repo[@ref] | <name>@npm | ./local/path>\n',
+    );
+    return 2;
+  }
+  try {
+    const installed = spec.startsWith('gh:')
+      ? await installFromGithub(spec, { home: deps.home })
+      : /@npm$/.test(spec)
+        ? await installFromNpm(spec, { home: deps.home })
+        : await installLocal({ sourcePath: resolve(deps.cwd, spec), home: deps.home });
+    out.write(
+      `✓ Installed ${installed.manifest.name}@${installed.manifest.version} (trusted: user).\n`,
+    );
+    return 0;
+  } catch (e) {
+    err.write(`Install failed: ${(e as Error).message}\n`);
+    return 1;
+  }
+}
+
+async function pluginUninstall(
+  name: string | undefined,
+  deps: ListCmdDeps,
+  out: Writable,
+  err: Writable,
+): Promise<number> {
+  if (!name) {
+    err.write('Usage: deepcode plugins uninstall <name>\n');
+    return 2;
+  }
+  const removed = await uninstallPlugin(name, deps.home);
+  out.write(removed ? `✓ Uninstalled ${name}.\n` : `No plugin named "${name}".\n`);
+  return removed ? 0 : 1;
 }
 
 export async function runSkillsCommand(sub: string[], deps: ListCmdDeps): Promise<number> {
