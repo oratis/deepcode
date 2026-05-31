@@ -79,7 +79,8 @@ export interface DeepCodeAPI {
     /** Resolve an in-flight permission_request event. `decision === 'always'`
      *  also persists a matcher to ~/.deepcode/settings.json. */
     approve: (args: { requestId: string; decision: 'allow' | 'deny' | 'always' }) => Promise<void>;
-    answer: (args: { turnId: string; questionId: string; answer: string }) => Promise<void>;
+    /** Resolve an in-flight ask_user event with the chosen option label / text. */
+    answer: (args: { requestId: string; answer: string }) => Promise<void>;
     onEvent: (cb: (e: unknown) => void) => () => void;
   };
   onUpdateDownloaded: (cb: (info: UpdateInfo) => void) => () => void;

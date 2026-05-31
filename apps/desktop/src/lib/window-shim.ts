@@ -36,6 +36,9 @@ function emitEvent(e: unknown): void {
 // resolver here. The UI calls api.agent.approve({ requestId, decision })
 // which pops the resolver and resolves the original promise.
 const pendingApprovals = new Map<string, (decision: 'allow' | 'deny' | 'always') => void>();
+// AskUserQuestion round-trips: same pattern — emit an `ask_user` event, stash
+// the resolver, resolve it when the UI calls api.agent.answer({ requestId, answer }).
+const pendingQuestions = new Map<string, (answer: string) => void>();
 
 function nextRequestId(): string {
   return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -138,6 +141,21 @@ export function installTauriShim(): void {
               });
             });
           },
+          onAskUser: (req) => {
+            const requestId = nextRequestId();
+            return new Promise<string>((resolve) => {
+              pendingQuestions.set(requestId, resolve);
+              emitEvent({
+                kind: 'event',
+                turnId: pendingTurnId,
+                type: 'ask_user',
+                requestId,
+                question: req.question,
+                options: req.options,
+                multiSelect: req.multiSelect,
+              });
+            });
+          },
         });
         pendingTurnId = result.turnId;
         return result;
@@ -156,10 +174,11 @@ export function installTauriShim(): void {
         pendingApprovals.delete(requestId);
         resolver(decision);
       },
-      async answer() {
-        // AskUserQuestion answers: same — for v1 Mac MVP we don't wire
-        // the inline askUser callback because the renderer doesn't yet
-        // surface that UI.
+      async answer({ requestId, answer }) {
+        const resolver = pendingQuestions.get(requestId);
+        if (!resolver) return; // stale / already answered
+        pendingQuestions.delete(requestId);
+        resolver(answer);
       },
       onEvent(cb: (e: unknown) => void): () => void {
         listeners.push(cb);
