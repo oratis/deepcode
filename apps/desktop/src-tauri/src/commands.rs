@@ -382,13 +382,117 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     Ok(out)
 }
 
-/// Path to the bundled deepcode CLI (alongside the .app) so the GUI can
-/// drop users into the CLI for advanced workflows.
+/// Path to the `deepcode` CLI so the GUI can drop users into it for advanced
+/// workflows. Resolves a globally-installed `deepcode` on PATH (npm i -g
+/// deepcode-cli). Bundling the CLI inside the .app is separate future work.
 #[tauri::command]
 pub fn cli_path() -> Option<PathBuf> {
-    // Bundled at `<App>/Contents/Resources/deepcode` (we copy it in the
-    // electron-builder ... I mean tauri.conf.json bundle step in v1.1).
+    find_on_path("deepcode")
+}
+
+fn find_on_path(exe: &str) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        let candidate = dir.join(exe);
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
     None
+}
+
+// ── Skills listing ─────────────────────────────────────────────────────
+// The Skills screen lists built-in (bundled .app resource) + user + project
+// skills. Built-in skills resolve via the Tauri resource dir; user/project from
+// fixed ~/.deepcode/skills + <cwd>/.deepcode/skills. Each skill is a directory
+// with a SKILL.md (`---` frontmatter + body). Mirrors core's skills/loader.ts.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SkillInfo {
+    pub name: String,
+    pub description: String,
+    pub source: String,
+    pub path: String,
+    pub body: String,
+}
+
+fn unquote(s: &str) -> String {
+    s.trim().trim_matches(|c| c == '"' || c == '\'').to_string()
+}
+
+/// Extract `name` + `description` from a SKILL.md `---`-fenced frontmatter block.
+pub fn parse_skill_frontmatter(content: &str) -> (Option<String>, Option<String>) {
+    let trimmed = content.trim_start();
+    let Some(rest) = trimmed.strip_prefix("---") else {
+        return (None, None);
+    };
+    let Some(end) = rest.find("\n---") else {
+        return (None, None);
+    };
+    let mut name = None;
+    let mut description = None;
+    for line in rest[..end].lines() {
+        if let Some(v) = line.strip_prefix("name:") {
+            name = Some(unquote(v));
+        } else if let Some(v) = line.strip_prefix("description:") {
+            description = Some(unquote(v));
+        }
+    }
+    (name, description)
+}
+
+fn collect_skills_from(dir: &std::path::Path, source: &str, out: &mut Vec<SkillInfo>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let skill_md = p.join("SKILL.md");
+        let Ok(content) = std::fs::read_to_string(&skill_md) else {
+            continue;
+        };
+        let (name, description) = parse_skill_frontmatter(&content);
+        out.push(SkillInfo {
+            name: name.unwrap_or_else(|| entry.file_name().to_string_lossy().to_string()),
+            description: description.unwrap_or_default(),
+            source: source.to_string(),
+            path: skill_md.to_string_lossy().to_string(),
+            body: content,
+        });
+    }
+}
+
+/// Collect skills from the built-in (optional), user, and project (optional)
+/// directories. Pure (takes dirs) so it's unit-testable.
+pub fn collect_skills(
+    builtin: Option<&std::path::Path>,
+    user: &std::path::Path,
+    project: Option<&std::path::Path>,
+) -> Vec<SkillInfo> {
+    let mut out: Vec<SkillInfo> = Vec::new();
+    if let Some(b) = builtin {
+        collect_skills_from(b, "builtin", &mut out);
+    }
+    collect_skills_from(user, "user", &mut out);
+    if let Some(pr) = project {
+        collect_skills_from(pr, "project", &mut out);
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    out
+}
+
+#[tauri::command]
+pub fn list_skills(app: tauri::AppHandle, cwd: Option<String>) -> Vec<SkillInfo> {
+    use tauri::Manager;
+    let builtin = app.path().resource_dir().ok().map(|r| r.join("skills"));
+    let user = dirs::home_dir()
+        .map(|h| h.join(".deepcode").join("skills"))
+        .unwrap_or_default();
+    let project = cwd.map(|c| std::path::PathBuf::from(c).join(".deepcode").join("skills"));
+    collect_skills(builtin.as_deref(), &user, project.as_deref())
 }
 
 /// Open a URL in the user's default browser via the plugin-opener bridge.
@@ -604,6 +708,63 @@ mod contract_tests {
     fn collect_plugins_empty_without_dir() {
         let dir = std::env::temp_dir().join(format!("dc-plug-none-{}", std::process::id()));
         assert!(collect_plugins(&dir).is_empty());
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_extracts_name_and_description() {
+        let md = "---\nname: greet\ndescription: \"Say hello\"\n---\nBody here\n";
+        let (name, desc) = parse_skill_frontmatter(md);
+        assert_eq!(name.as_deref(), Some("greet"));
+        assert_eq!(desc.as_deref(), Some("Say hello"));
+    }
+
+    #[test]
+    fn parse_skill_frontmatter_none_without_fence() {
+        let (name, desc) = parse_skill_frontmatter("no frontmatter here");
+        assert!(name.is_none() && desc.is_none());
+    }
+
+    #[test]
+    fn skill_info_serializes_camel_case() {
+        let v = serde_json::to_value(SkillInfo {
+            name: "s".into(),
+            description: "d".into(),
+            source: "builtin".into(),
+            path: "/x/SKILL.md".into(),
+            body: "b".into(),
+        })
+        .unwrap();
+        let k = keys(&v);
+        assert!(k.contains(&"name".to_string()) && k.contains(&"source".to_string()), "got {k:?}");
+    }
+
+    #[test]
+    fn collect_skills_reads_builtin_user_project_and_sorts() {
+        let root = std::env::temp_dir().join(format!("dc-skills-{}", std::process::id()));
+        let mk = |dir: &std::path::Path, name: &str, desc: &str| {
+            let sd = dir.join(name);
+            std::fs::create_dir_all(&sd).unwrap();
+            std::fs::write(
+                sd.join("SKILL.md"),
+                format!("---\nname: {name}\ndescription: {desc}\n---\nbody-{name}\n"),
+            )
+            .unwrap();
+        };
+        let builtin = root.join("builtin");
+        let user = root.join("user");
+        let project = root.join("project");
+        mk(&builtin, "zeta", "builtin one");
+        mk(&user, "alpha", "user one");
+        mk(&project, "mid", "project one");
+
+        let rows = collect_skills(Some(&builtin), &user, Some(&project));
+        std::fs::remove_dir_all(&root).ok();
+
+        // sorted by name → alpha(user), mid(project), zeta(builtin)
+        assert_eq!(rows.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), vec!["alpha", "mid", "zeta"]);
+        assert_eq!(rows[0].source, "user");
+        assert_eq!(rows[2].source, "builtin");
+        assert!(rows[2].body.contains("body-zeta"));
     }
 
     #[test]
