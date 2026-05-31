@@ -143,6 +143,20 @@ export async function listPlugins(): Promise<PluginInfo[]> {
   return (await invoke('list_plugins')) as PluginInfo[];
 }
 
+/** A skill row as returned by the `list_skills` Rust command (camelCase). */
+export interface SkillInfo {
+  name: string;
+  description: string;
+  source: 'builtin' | 'user' | 'project' | 'plugin';
+  path: string;
+  body: string;
+}
+
+/** Built-in (bundled) + user + project skills. `cwd` enables project skills. */
+export async function listSkills(cwd?: string): Promise<SkillInfo[]> {
+  return (await invoke('list_skills', { cwd })) as SkillInfo[];
+}
+
 /** Create a new session JSONL file. Returns the generated id. */
 export async function sessionCreate(cwd: string): Promise<string> {
   return (await invoke('session_create', { cwd })) as string;

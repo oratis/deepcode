@@ -13,6 +13,7 @@ import {
   appendAllowMatcher,
   getAppInfo,
   listPlugins,
+  listSkills,
   loadSettingsFile,
   readCredentials,
   saveCredentials,
@@ -128,6 +129,18 @@ describe('listPlugins', () => {
     invokeMock.mockResolvedValue(rows);
     const result = await listPlugins();
     expect(invokeMock).toHaveBeenCalledWith('list_plugins');
+    expect(result).toEqual(rows);
+  });
+});
+
+describe('listSkills', () => {
+  it('invokes list_skills with the cwd and returns the rows', async () => {
+    const rows = [
+      { name: 'greet', description: 'd', source: 'builtin', path: '/x/SKILL.md', body: 'b' },
+    ];
+    invokeMock.mockResolvedValue(rows);
+    const result = await listSkills('/proj');
+    expect(invokeMock).toHaveBeenCalledWith('list_skills', { cwd: '/proj' });
     expect(result).toEqual(rows);
   });
 });

@@ -31,6 +31,9 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
+    "resources": {
+      "../../../packages/core/skills": "skills"
+    },
     "category": "public.app-category.developer-tools",
     "shortDescription": "DeepSeek-powered coding agent",
     "longDescription": "DeepCode is a Claude-Code-parity coding agent powered by DeepSeek — chat, plan mode, tool use, sandboxed bash, MCP, plugins.",

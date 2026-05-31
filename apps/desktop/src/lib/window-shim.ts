@@ -5,11 +5,13 @@
 import type { AgentEvent, Mode } from '@deepcode/core/dist/types.js';
 import type { DeepCodeAPI } from '../types/global.js';
 import { abortAgentTurn, clearHistory, resumeSession, startAgentTurn } from './mac-agent.js';
+import { loadProjectPath } from './project.js';
 import {
   appendAllowMatcher,
   getAppInfo,
   listPlugins,
   listSessions,
+  listSkills,
   loadSettingsFile,
   openUrl,
   readCredentials,
@@ -124,10 +126,24 @@ export function installTauriShim(): void {
     },
     skills: {
       async list() {
-        return [];
+        // Built-in (bundled .app resource) + user + project skills via the
+        // list_skills Rust command. Project skills need the picked project dir.
+        try {
+          const cwd = await loadProjectPath();
+          return await listSkills(cwd);
+        } catch {
+          return [];
+        }
       },
-      async body() {
-        return '';
+      async body({ path }: { path: string }) {
+        // list_skills already returns each skill's body; find by SKILL.md path.
+        try {
+          const cwd = await loadProjectPath();
+          const found = (await listSkills(cwd)).find((s) => s.path === path);
+          return found?.body ?? '';
+        } catch {
+          return '';
+        }
       },
     },
     agent: {
