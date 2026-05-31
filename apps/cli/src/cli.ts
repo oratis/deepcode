@@ -10,6 +10,7 @@ import { runHeadless } from './headless.js';
 import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
+import { runCronCommand, runSchedulerRun } from './scheduler.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -37,6 +38,19 @@ async function main(): Promise<number> {
     process.stdout.write(`Run: npm i -g deepcode-cli@latest\n`);
     process.stdout.write(`(Self-update via electron-updater is Mac-client only — see §4b.)\n`);
     return 0;
+  }
+
+  // Scheduled tasks: `deepcode scheduler run` (fired by launchd) and the
+  // `deepcode cron <install|uninstall|list|status>` management commands.
+  if (args.positional[0] === 'scheduler' && args.positional[1] === 'run') {
+    await runSchedulerRun({ output: process.stdout });
+    return 0;
+  }
+  if (args.positional[0] === 'cron') {
+    return runCronCommand(args.positional.slice(1), {
+      output: process.stdout,
+      errOutput: process.stderr,
+    });
   }
 
   // Headless one-shot (-p / --print)
