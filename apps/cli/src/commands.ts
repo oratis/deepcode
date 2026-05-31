@@ -567,6 +567,146 @@ function restoreCodeMessage(
   return `✓ Restored ${target.filePath} from snapshot #${target.seq}`;
 }
 
+export const HooksCommand: SlashCommand = {
+  name: '/hooks',
+  description: 'List hooks configured in settings.json.',
+  run(_args, ctx) {
+    const hooks = ctx.settings.hooks ?? {};
+    const events = Object.keys(hooks);
+    if (events.length === 0) {
+      return ['No hooks configured.', '', 'Add them in settings.json under "hooks".'];
+    }
+    const lines = ['Configured hooks:'];
+    for (const event of events) {
+      const matchers = hooks[event as keyof typeof hooks] ?? [];
+      lines.push(`  ${event}:`);
+      for (const m of matchers) {
+        const match = m.matcher ? ` (match: ${m.matcher})` : '';
+        const types = m.hooks.map((h) => h.type).join(', ');
+        lines.push(`     - ${types}${match}`);
+      }
+    }
+    return lines;
+  },
+};
+
+export const PermissionsCommand: SlashCommand = {
+  name: '/permissions',
+  description: 'Show permission rules from settings.json.',
+  run(_args, ctx) {
+    const p = ctx.settings.permissions;
+    if (!p) return ['No permission rules configured (DeepCode asks before risky tools).'];
+    const lines = ['Permissions:'];
+    if (p.defaultMode) lines.push(`  default mode: ${p.defaultMode}`);
+    for (const kind of ['allow', 'ask', 'deny'] as const) {
+      const rules = p[kind] ?? [];
+      if (rules.length > 0) {
+        lines.push(`  ${kind}:`);
+        for (const r of rules) lines.push(`     ${r}`);
+      }
+    }
+    if ((p.additionalDirectories ?? []).length > 0) {
+      lines.push(`  additionalDirectories: ${p.additionalDirectories!.join(', ')}`);
+    }
+    return lines.length === 1 ? ['Permissions: (no rules; default mode only)'] : lines;
+  },
+};
+
+export const AgentsCommand: SlashCommand = {
+  name: '/agents',
+  description: 'List available sub-agents (.deepcode/agents/*.md).',
+  async run(_args, ctx) {
+    try {
+      const { loadSubAgents } = await import('@deepcode/core');
+      const agents = await loadSubAgents({ cwd: ctx.cwd });
+      if (agents.length === 0) {
+        return [
+          'No sub-agents found.',
+          'Add one as .deepcode/agents/<name>.md with a name/description frontmatter.',
+        ];
+      }
+      const lines = [`Sub-agents (${agents.length}):`];
+      for (const a of agents) {
+        lines.push(
+          `  ${a.qualifiedName}  [${a.source}]` +
+            (a.frontmatter.description ? ` — ${a.frontmatter.description}` : ''),
+        );
+      }
+      return lines;
+    } catch (err) {
+      return [`(Error loading sub-agents: ${(err as Error).message})`];
+    }
+  },
+};
+
+export const SkillsCommand: SlashCommand = {
+  name: '/skills',
+  description: 'List available skills (built-in + user + project).',
+  async run(_args, ctx) {
+    try {
+      const { listSkills } = await import('./list-cmd.js');
+      const rows = await listSkills({ cwd: ctx.cwd });
+      if (rows.length === 0) return ['No skills found.'];
+      const lines = [`Skills (${rows.length}):`];
+      for (const s of rows) {
+        lines.push(`  ${s.name}  [${s.source}]` + (s.description ? ` — ${s.description}` : ''));
+      }
+      return lines;
+    } catch (err) {
+      return [`(Error loading skills: ${(err as Error).message})`];
+    }
+  },
+};
+
+export const ExportCommand: SlashCommand = {
+  name: '/export',
+  description: 'Export the current conversation to a markdown file (/export [path]).',
+  async run(args, ctx) {
+    const history = ctx.history ?? [];
+    if (history.length === 0) return ['Nothing to export yet.'];
+    try {
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const target = args[0]
+        ? path.resolve(ctx.cwd, args[0])
+        : path.join(ctx.cwd, `deepcode-${ctx.sessionId}.md`);
+      await fs.writeFile(target, historyToMarkdown(history), 'utf8');
+      return [`✓ Exported ${history.length} messages → ${target}`];
+    } catch (err) {
+      return [`(Export failed: ${(err as Error).message})`];
+    }
+  },
+};
+
+/** Render a conversation as readable markdown (text + tool calls). */
+function historyToMarkdown(history: StoredMessage[]): string {
+  const out: string[] = ['# DeepCode conversation export', ''];
+  for (const msg of history) {
+    out.push(`## ${msg.role === 'user' ? 'User' : 'Assistant'}`, '');
+    for (const block of msg.content) {
+      if (block.type === 'text') out.push(block.text, '');
+      else if (block.type === 'thinking') out.push(`> _(thinking)_ ${block.text}`, '');
+      else if (block.type === 'tool_use')
+        out.push(
+          '```json',
+          `// tool: ${block.name}`,
+          JSON.stringify(block.input, null, 2),
+          '```',
+          '',
+        );
+      else if (block.type === 'tool_result')
+        out.push(
+          '```',
+          `// result${block.is_error ? ' (error)' : ''}`,
+          block.content.slice(0, 4000),
+          '```',
+          '',
+        );
+    }
+  }
+  return out.join('\n');
+}
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -587,6 +727,11 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   KeybindingsCommand,
   VimCommand,
   RewindCommand,
+  HooksCommand,
+  PermissionsCommand,
+  AgentsCommand,
+  SkillsCommand,
+  ExportCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
