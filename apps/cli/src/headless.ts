@@ -49,6 +49,7 @@ import {
 } from '@deepcode/core';
 import type { Writable } from 'node:stream';
 import { TrustStore } from './trust.js';
+import { resolveBuiltinSkillsDir } from './builtin-skills.js';
 
 export interface HeadlessOpts {
   output: Writable;
@@ -422,23 +423,4 @@ function formatToolInput(input: Record<string, unknown>): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
-}
-
-async function resolveBuiltinSkillsDir(): Promise<string | undefined> {
-  const { createRequire } = await import('node:module');
-  const require_ = createRequire(import.meta.url);
-  try {
-    const corePkg = require_.resolve('@deepcode/core/package.json');
-    const path = await import('node:path');
-    const fsp = await import('node:fs/promises');
-    const skillsDir = path.join(path.dirname(corePkg), 'skills');
-    try {
-      await fsp.access(skillsDir);
-      return skillsDir;
-    } catch {
-      return undefined;
-    }
-  } catch {
-    return undefined;
-  }
 }
