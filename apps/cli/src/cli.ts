@@ -12,6 +12,7 @@ import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
 import { runCronCommand, runSchedulerRun } from './scheduler.js';
+import { runTrustCommand } from './trust-cmd.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -58,6 +59,12 @@ async function main(): Promise<number> {
       cwd: process.cwd(),
       output: process.stdout,
       errOutput: process.stderr,
+    });
+  }
+  if (args.positional[0] === 'trust') {
+    return runTrustCommand(args.positional.slice(1), {
+      cwd: process.cwd(),
+      output: process.stdout,
     });
   }
 

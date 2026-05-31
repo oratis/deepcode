@@ -11,7 +11,12 @@ export interface TrustState {
   dirs: Record<string, { trustedAt: string; mode: 'full' | 'plan-only' }>;
 }
 
-const EMPTY: TrustState = { dirs: {} };
+/** A fresh empty state. Must be a factory — returning a shared object literal
+ *  would let `trust()`/`untrust()` mutate `dirs` on the shared instance, leaking
+ *  entries into later `load()`s of a not-yet-created store file. */
+function emptyState(): TrustState {
+  return { dirs: {} };
+}
 
 export interface TrustStoreOpts {
   home?: string;
@@ -32,7 +37,7 @@ export class TrustStore {
       const raw = await fs.readFile(this.filePath(), 'utf8');
       return JSON.parse(raw) as TrustState;
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { ...EMPTY };
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') return emptyState();
       throw err;
     }
   }

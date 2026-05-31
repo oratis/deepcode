@@ -28,6 +28,14 @@ export {
 } from './loader.js';
 
 export {
+  gateUntrustedSettings,
+  TRUST_GATED_FIELDS,
+  type TrustStatus,
+  type TrustGatedField,
+  type GateResult,
+} from './trust-gate.js';
+
+export {
   evaluatePermission,
   matchRule,
   parseRule,
