@@ -29,7 +29,7 @@ Legend: `✅` matches · `🟡` matches with caveats · `🔄` deferred · `⚠�
 | `/compact`            | ✓           | ✓ auto-trigger             | 🟡 — manual `/compact` slash command not exposed yet (auto works via agent loop)           |
 | `/btw`                | ✓           | ✗                          | 🔄                                                                                         |
 | `/recap`              | ✓           | ✗                          | 🔄                                                                                         |
-| `/rewind`             | ✓           | ✗                          | 🔄 M7                                                                                      |
+| `/rewind`             | ✓           | ✓                          | ✅ — 5 ops (code/conversation/both/summarize-from/up-to); `Esc Esc` bound                  |
 | `/voice`              | ✓           | ✗                          | 🔄 M8                                                                                      |
 | `/teleport`           | ✓           | ✗                          | 🔄 M8                                                                                      |
 | `/desktop`            | ✓           | ✗                          | 🔄 M6                                                                                      |
@@ -90,20 +90,20 @@ Specific deviations:
 | `command`  | ✓           | ✓        | ✅ — JSON-on-stdin contract, JSON-on-stdout decoded                     |
 | `http`     | ✓           | ✓        | ✅ — fetch POST, response.text → stdout; `allowedHttpHookUrls` enforced |
 | `prompt`   | ✓           | ✓        | ✅ — synthesizes additionalContext (no exec)                            |
-| `mcp_tool` | ✓           | 🔄 stub  | M5+                                                                     |
-| `agent`    | ✓           | 🔄 stub  | M4+                                                                     |
+| `mcp_tool` | ✓           | ✓        | ✅ — agent loop resolves `mcp__<server>__<tool>` from the live registry |
+| `agent`    | ✓           | ✓        | ✅ — runs a named sub-agent (re-entrancy-guarded)                       |
 | `if` field | ✓           | ✓        | ✅ permission-rule syntax filter                                        |
 
 ## Modes
 
-| Mode                  | Claude Code | DeepCode | Status                                  |
-| --------------------- | ----------- | -------- | --------------------------------------- |
-| default               | ✓           | ✓        | ✅                                      |
-| acceptEdits           | ✓           | ✓        | ✅                                      |
-| plan                  | ✓           | ✓        | ✅                                      |
-| auto (LLM classifier) | ✓           | 🔄       | falls back to default behavior; M3c-ext |
-| dontAsk               | ✓           | ✓        | ✅                                      |
-| bypassPermissions     | ✓           | ✓        | ✅ sandbox still enforces               |
+| Mode                  | Claude Code | DeepCode | Status                                               |
+| --------------------- | ----------- | -------- | ---------------------------------------------------- |
+| default               | ✓           | ✓        | ✅                                                   |
+| acceptEdits           | ✓           | ✓        | ✅                                                   |
+| plan                  | ✓           | ✓        | ✅                                                   |
+| auto (LLM classifier) | ✓           | ✓        | ✅ — `classifyAutoMode` wired in the tool dispatcher |
+| dontAsk               | ✓           | ✓        | ✅                                                   |
+| bypassPermissions     | ✓           | ✓        | ✅ sandbox still enforces                            |
 
 ## Memory system
 
@@ -118,14 +118,16 @@ Specific deviations:
 ## MCP
 
 - ✅ stdio transport
+- ✅ http (Streamable HTTP) / sse transports
 - ✅ list_tools + call_tool with `mcp__<server>__<tool>` qualification
 - ✅ `/mcp` slash + auto-connect from settings + per-server enabled/disabled
-- 🔄 http / sse transports (M3c-ext)
-- 🔄 OAuth (M3c-ext)
-- 🔄 headersHelper (M3c-ext)
-- 🔄 Elicitation hooks (M5+)
-- 🔄 `deepcode mcp serve` (reverse exposure) — M5+
-- 🔄 MCP resources via `@server:proto://path` (M3c-ext)
+- ✅ `alwaysLoad: false` opt-out defers a server's tools behind ToolSearch
+- ✅ static `headers` + dynamic `headersHelper` auth
+- ✅ Elicitation (form mode) — server-initiated structured input → host prompt
+- ✅ `deepcode mcp serve` — expose DeepCode's stateless tools as an MCP server (stdio)
+- ✅ MCP resources — listed on connect; `@server:scheme://path` refs expanded in prompts
+- ✅ MCP prompts as slash commands — `/mcp__<server>__<prompt> [args]`
+- 🔄 OAuth (authorization-code browser flow) — static bearer / `headersHelper` cover token auth today
 
 ## Tools
 
