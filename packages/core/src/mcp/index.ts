@@ -24,6 +24,10 @@ export {
   type ResourceRef,
   type ExpandResourcesResult,
   type McpPromptCommand,
+  type McpElicitRequest,
+  type McpElicitResult,
+  type McpElicitHandler,
+  type ConnectMcpOpts,
 } from './client.js';
 
 export {

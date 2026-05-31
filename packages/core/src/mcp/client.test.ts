@@ -49,12 +49,24 @@ async function writeFakeServer(
     arguments?: Array<{ name: string; required?: boolean }>;
     text: string;
   }>,
+  /** When set, the named tool triggers a server→client elicitation/create. */
+  elicit?: { toolName: string; message: string; requestedSchema: object },
 ): Promise<string> {
   const serverPath = join(dir, `${name}.mjs`);
   const capList = ['tools: {}'];
   if (resources) capList.push('resources: {}');
   if (prompts) capList.push('prompts: {}');
   const caps = `{ ${capList.join(', ')} }`;
+  const elicitBranch = elicit
+    ? `
+  if (req.params.name === ${JSON.stringify(elicit.toolName)}) {
+    const r = await server.elicitInput({
+      message: ${JSON.stringify(elicit.message)},
+      requestedSchema: ${JSON.stringify(elicit.requestedSchema)},
+    });
+    return { content: [{ type: 'text', text: 'elicited:' + JSON.stringify(r) }] };
+  }`
+    : '';
   const resourceBlock = resources
     ? `
 import { ListResourcesRequestSchema, ReadResourceRequestSchema } from '${TYPES_INDEX}';
@@ -103,7 +115,7 @@ const server = new Server(
 const TOOLS = ${JSON.stringify(tools)};
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-server.setRequestHandler(CallToolRequestSchema, async (req) => {
+server.setRequestHandler(CallToolRequestSchema, async (req) => {${elicitBranch}
   const argsStr = JSON.stringify(req.params.arguments);
   return {
     content: [{ type: 'text', text: 'called: ' + req.params.name + ' args: ' + argsStr }],
@@ -322,6 +334,76 @@ describe('MCP client', () => {
       const text = await getMcpPrompt(handle, inv!.prompt, inv!.args);
       expect(text).toContain('Draft a PR titled');
       expect(text).toContain('"title":"fix-bug"');
+    } finally {
+      await handle.close();
+    }
+  }, 20_000);
+
+  it('routes a server elicitation/create request to the host elicit handler', async () => {
+    const serverScript = await writeFakeServer(
+      tmp,
+      'forms',
+      [
+        {
+          name: 'ask',
+          description: 'asks for input',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ],
+      undefined,
+      undefined,
+      {
+        toolName: 'ask',
+        message: 'What is your name?',
+        requestedSchema: {
+          type: 'object',
+          properties: { name: { type: 'string' } },
+          required: ['name'],
+        },
+      },
+    );
+    let seen: { server: string; message: string } | null = null;
+    const handle = await connectMcpServer(
+      'forms',
+      { command: 'node', args: [serverScript] },
+      {
+        elicit: async (req) => {
+          seen = { server: req.server, message: req.message };
+          return { action: 'accept', content: { name: 'Ada' } };
+        },
+      },
+    );
+    try {
+      const ask = handle.tools.find((t) => t.name === 'mcp__forms__ask')!;
+      const result = await ask.execute({}, { cwd: tmp });
+      // The host handler was invoked with the server's prompt...
+      expect(seen).toEqual({ server: 'forms', message: 'What is your name?' });
+      // ...and the accepted content flowed back to the server's tool result.
+      expect(result.content).toContain('elicited:');
+      expect(result.content).toContain('"action":"accept"');
+      expect(result.content).toContain('"name":"Ada"');
+    } finally {
+      await handle.close();
+    }
+  }, 20_000);
+
+  it('does not advertise elicitation when no handler is supplied', async () => {
+    // A server that tries to elicit against a client without the capability
+    // gets an error from its elicitInput call; the tool surfaces it (no hang).
+    const serverScript = await writeFakeServer(
+      tmp,
+      'forms2',
+      [{ name: 'ask', description: 'asks', inputSchema: { type: 'object', properties: {} } }],
+      undefined,
+      undefined,
+      { toolName: 'ask', message: 'name?', requestedSchema: { type: 'object', properties: {} } },
+    );
+    const handle = await connectMcpServer('forms2', { command: 'node', args: [serverScript] });
+    try {
+      const ask = handle.tools.find((t) => t.name === 'mcp__forms2__ask')!;
+      const result = await ask.execute({}, { cwd: tmp });
+      // elicitInput rejects (client lacks the capability) → tool reports an error.
+      expect(result.isError).toBe(true);
     } finally {
       await handle.close();
     }

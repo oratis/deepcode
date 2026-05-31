@@ -21,6 +21,7 @@ import {
   getMcpPrompt,
   mcpPromptCommands,
   resolveMcpPromptInvocation,
+  type McpElicitHandler,
   expandCommandBody,
   findCustomCommand,
   findStyle,
@@ -161,12 +162,19 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   // M3c: connect MCP servers (best-effort; individual failures don't abort)
   let mcpServers: McpClientHandle[] = [];
   let mcpErrors: Array<{ serverName: string; error: string }> = [];
+  // Elicitation handler holder — filled once the readline interface exists
+  // (below). Until then (and there's nothing to elicit at connect time) it
+  // cancels. Servers see the `elicitation` capability via this passthrough.
+  const elicitHolder: { fn?: McpElicitHandler } = {};
+  const elicitForServers: McpElicitHandler = (req) =>
+    elicitHolder.fn ? elicitHolder.fn(req) : Promise.resolve({ action: 'cancel' });
   if (settings.mcpServers && Object.keys(settings.mcpServers).length > 0) {
     const enabled = settings.enabledMcpjsonServers;
     const disabled = settings.disabledMcpjsonServers ?? [];
     const result = await connectAllMcpServers(settings.mcpServers, {
       enabledOnly: enabled,
       disabled,
+      elicit: elicitForServers,
     });
     mcpServers = result.handles;
     mcpErrors = result.errors;
@@ -284,6 +292,23 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   output.write(`  Type /help for commands, /exit to quit.\n\n`);
 
   const rl = createInterface({ input: opts.input, output, terminal: true });
+
+  // Now that readline exists, let MCP servers elicit structured input from the
+  // user: print the server's message, prompt for each requested field.
+  elicitHolder.fn = async (req) => {
+    output.write(`\n  ⊞ ${req.server} requests input: ${req.message}\n`);
+    const props = (req.requestedSchema.properties ?? {}) as Record<
+      string,
+      { description?: string }
+    >;
+    const content: Record<string, string> = {};
+    for (const [key, spec] of Object.entries(props)) {
+      const label = spec.description ? `${key} (${spec.description})` : key;
+      const ans = (await rl.question(`     ${label}: `)).trim();
+      if (ans) content[key] = ans;
+    }
+    return Object.keys(content).length > 0 ? { action: 'accept', content } : { action: 'cancel' };
+  };
 
   let ctrlCCount = 0;
   rl.on('SIGINT', () => {
