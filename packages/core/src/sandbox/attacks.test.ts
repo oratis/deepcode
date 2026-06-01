@@ -330,9 +330,13 @@ describe.runIf(hasBwrap)('bwrap end-to-end (Linux)', () => {
     } catch {
       exists = false;
     }
-    // The file should not exist outside the bound cwd because tmpfs covers /tmp.
+    // The security property: the write does NOT reach the host. /tmp inside the
+    // sandbox is a fresh tmpfs, so the write may "succeed" (exit 0) into that
+    // ephemeral, isolated filesystem — what matters is the HOST file is never
+    // created. (A write to a read-only bind like /etc *does* fail with a
+    // non-zero exit; that's covered by bwrap-integration.test.ts.)
     expect(exists).toBe(false);
-    expect(res.stdout ?? '').toMatch(/exit=[1-9]|read-only|Permission/i);
+    void res;
   }, 15000);
 
   it('network unshared when allowedDomains is empty', async () => {
