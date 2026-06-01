@@ -109,12 +109,16 @@ echo "--- curl DENIED (github.com) ---"
 curl -sS --max-time 10 -o /dev/null -w "denied_http=%{http_code}\n" https://github.com 2>&1 || echo "denied_curl_exit=$?"
 echo "--- sandbox inner done ---"'
 
+# NOTE: --uid 0 --gid 0 maps the sandbox to root inside its userns (matches the
+# slirp4netns README bwrap example). This PoC tries the README-exact slirp
+# incantation (plain PID, no --userns-path) since --userns-path did not help.
 bwrap \
   --ro-bind-try /usr /usr --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
   --ro-bind-try /bin /bin --ro-bind-try /sbin /sbin --ro-bind-try /etc /etc \
   --proc /proc --dev /dev --tmpfs /tmp \
   --ro-bind "$WORK/resolv.conf" "$RP" \
   --bind "$CWD" "$CWD" \
+  --uid 0 --gid 0 \
   --unshare-net --unshare-pid --unshare-ipc --unshare-uts \
   --new-session --die-with-parent \
   --info-fd 8 \
@@ -132,15 +136,22 @@ echo "--- info.json ---"; cat "$WORK/info.json" 2>/dev/null || echo "(empty)"
 CHILD_PID="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["child-pid"])' "$WORK/info.json" 2>/dev/null || echo "")"
 echo "child-pid=$CHILD_PID"
 
+say "namespace topology — is bwrap's netns owned by a userns slirp can enter?"
+echo "host    user ns: $(readlink /proc/self/ns/user 2>/dev/null)"
+echo "host    net  ns: $(readlink /proc/self/ns/net 2>/dev/null)"
 if [ -n "$CHILD_PID" ]; then
-  say "start slirp4netns attached to child-pid=$CHILD_PID"
-  # bwrap's netns is owned by bwrap's CHILD user namespace; slirp (host user)
-  # can't setns into it without entering that userns first. --userns-path makes
-  # slirp join /proc/<pid>/ns/user (where it's root) before the netns.
-  # --disable-dns closes the 10.0.2.3 host-DNS bypass so ALL resolution must go
-  # through our allowlisting proxy (guest resolv.conf points only at 10.0.2.2).
-  slirp4netns --configure --disable-dns --mtu=65520 \
-    --userns-path="/proc/$CHILD_PID/ns/user" "$CHILD_PID" tap0 &
+  echo "child   user ns: $(readlink /proc/$CHILD_PID/ns/user 2>/dev/null)"
+  echo "child   net  ns: $(readlink /proc/$CHILD_PID/ns/net 2>/dev/null)"
+  echo "child  uid_map: $(tr '\n' '|' < /proc/$CHILD_PID/uid_map 2>/dev/null)"
+  echo "child  gid_map: $(tr '\n' '|' < /proc/$CHILD_PID/gid_map 2>/dev/null)"
+  # ioctl NS_GET_USERNS would tell the owning userns; approximate via lsns
+  command -v lsns >/dev/null && lsns -p "$CHILD_PID" 2>/dev/null || true
+fi
+
+if [ -n "$CHILD_PID" ]; then
+  # README-exact incantation: plain PID, --configure, no userns-path/disable-dns.
+  say "ATTEMPT [readme]: slirp4netns --configure --mtu=65520 $CHILD_PID tap0"
+  slirp4netns --configure --mtu=65520 "$CHILD_PID" tap0 &
   SLIRP_PID=$!
   echo "slirp pid=$SLIRP_PID (inner sleeps 3s to let it configure)"
 else
