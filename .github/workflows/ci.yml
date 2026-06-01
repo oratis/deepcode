@@ -49,6 +49,14 @@ jobs:
           sudo apt-get install -y bubblewrap slirp4netns curl
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
 
+      # TEMPORARY diagnostic — proves the bwrap+slirp4netns+DNS-allowlist
+      # mechanics on a real kernel before they are encoded in netns.ts. Removed
+      # once the TypeScript orchestrator + integration test land.
+      - name: Sandbox net PoC (Linux, diagnostic)
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        run: bash scripts/sandbox-net-poc.sh
+
       - name: Typecheck
         run: pnpm typecheck
 
