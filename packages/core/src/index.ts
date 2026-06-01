@@ -190,6 +190,8 @@ export {
   buildLinuxBwrapArgs,
   detectPlatform,
   spawnNetworkSandbox,
+  needsNetworkSandbox,
+  denyAllNetwork,
   NetworkSandboxUnavailable,
   startDnsProxy,
   type SandboxPlatform,

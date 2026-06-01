@@ -29,6 +29,8 @@ export {
 
 export {
   spawnNetworkSandbox,
+  needsNetworkSandbox,
+  denyAllNetwork,
   NetworkSandboxUnavailable,
   type SpawnNetworkSandboxOpts,
   type NetworkSandboxHandle,

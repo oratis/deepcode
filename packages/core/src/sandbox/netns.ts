@@ -40,6 +40,30 @@ export class NetworkSandboxUnavailable extends Error {
   }
 }
 
+/**
+ * True iff a command should run under the selective-allowlist network sandbox:
+ * Linux + sandbox enabled + `network.allowedDomains` is a NON-EMPTY allowlist.
+ * (An empty array means deny-all-net — handled by plain bwrap --unshare-net;
+ * `undefined` means full network — no netns orchestration needed.)
+ */
+export function needsNetworkSandbox(
+  config: SandboxConfig | undefined,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  if (!config?.enabled || platform !== 'linux') return false;
+  const domains = config.network?.allowedDomains;
+  return Array.isArray(domains) && domains.length > 0;
+}
+
+/**
+ * Derive a deny-all-network config from `config` (allowedDomains: []). Used as
+ * the fail-closed fallback when the selective allowlist can't be set up — the
+ * command runs with NO network rather than unrestricted.
+ */
+export function denyAllNetwork(config: SandboxConfig): SandboxConfig {
+  return { ...config, network: { ...config.network, allowedDomains: [] } };
+}
+
 export interface SpawnNetworkSandboxOpts {
   /** The user shell command to run inside the sandbox. */
   userCommand: string;
