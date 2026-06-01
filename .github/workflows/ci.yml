@@ -38,6 +38,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Linux only: install bubblewrap + slirp4netns so the real-kernel sandbox
+      # integration tests run (they skip when `bwrap` is absent, e.g. macOS/dev).
+      # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor — relax
+      # it so bwrap can unshare namespaces on the runner.
+      - name: Install sandbox tools (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap slirp4netns curl
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+
       - name: Typecheck
         run: pnpm typecheck
 
