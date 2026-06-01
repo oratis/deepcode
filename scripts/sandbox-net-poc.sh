@@ -36,8 +36,8 @@ python3 --version || true
 say "bwrap help — fd handshake flags"
 bwrap --help 2>&1 | grep -iE "info-fd|block-fd|sync-fd|userns-block|unshare-net|--chdir" || true
 
-say "slirp4netns help — config/ready/dns flags"
-slirp4netns --help 2>&1 | grep -iE "ready-fd|configure|disable-host-loopback|mtu|netns|--dns|outbound" || true
+say "slirp4netns help — config/ready/dns/userns flags"
+slirp4netns --help 2>&1 | grep -iE "ready-fd|configure|disable-host-loopback|mtu|netns|userns|--dns|outbound" || true
 
 say "unprivileged port start (need <=53 to bind :53 rootless)"
 sysctl net.ipv4.ip_unprivileged_port_start 2>/dev/null || true
@@ -134,9 +134,13 @@ echo "child-pid=$CHILD_PID"
 
 if [ -n "$CHILD_PID" ]; then
   say "start slirp4netns attached to child-pid=$CHILD_PID"
+  # bwrap's netns is owned by bwrap's CHILD user namespace; slirp (host user)
+  # can't setns into it without entering that userns first. --userns-path makes
+  # slirp join /proc/<pid>/ns/user (where it's root) before the netns.
   # --disable-dns closes the 10.0.2.3 host-DNS bypass so ALL resolution must go
   # through our allowlisting proxy (guest resolv.conf points only at 10.0.2.2).
-  slirp4netns --configure --disable-dns --mtu=65520 "$CHILD_PID" tap0 &
+  slirp4netns --configure --disable-dns --mtu=65520 \
+    --userns-path="/proc/$CHILD_PID/ns/user" "$CHILD_PID" tap0 &
   SLIRP_PID=$!
   echo "slirp pid=$SLIRP_PID (inner sleeps 3s to let it configure)"
 else
