@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { FilePanel } from './components/FilePanel.js';
 import { InspectorPanel } from './components/InspectorPanel.js';
 import { InspectorRail } from './components/InspectorRail.js';
 import { ProjectPickerOverlay } from './components/ProjectPickerOverlay.js';
@@ -15,6 +16,7 @@ import { clearHistory as clearAgentHistory } from './lib/mac-agent.js';
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
 import { storedToMsgs, type Msg } from './lib/repl-stream.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
+import { useFilePanel } from './lib/use-file-panel.js';
 import { AboutScreen } from './screens/About.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
 import { OnboardingScreen } from './screens/Onboarding.js';
@@ -47,6 +49,25 @@ export function App(): JSX.Element {
   // Which section to scroll to when expanding via a rail hint icon (null = top).
   const [inspectorFocus, setInspectorFocus] = useState<InspectorSection | null>(null);
   const [inspector, setInspector] = useState<InspectorData>(() => emptyInspectorData());
+  // Right-side file panel (§3.11): opens between chat and the inspector rail.
+  const fp = useFilePanel();
+
+  // Drag the panel's left edge to resize (320–800px, persisted by the hook).
+  const onFilePanelResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const startX = e.clientX;
+      const startW = fp.state.width;
+      const move = (ev: MouseEvent): void => fp.setWidth(startW + (startX - ev.clientX));
+      const up = (): void => {
+        window.removeEventListener('mousemove', move);
+        window.removeEventListener('mouseup', up);
+      };
+      window.addEventListener('mousemove', move);
+      window.addEventListener('mouseup', up);
+    },
+    [fp.state.width, fp.setWidth],
+  );
 
   // Expand the inspector, optionally scrolling to a section. Bumps focus to a
   // fresh value each time so re-clicking the same icon re-scrolls.
@@ -78,7 +99,6 @@ export function App(): JSX.Element {
     });
     const offComma = registerShortcut('meta+,', () => setScreen('settings'));
     const offSlash = registerShortcut('meta+/', () => setScreen('about'));
-    const offBackslash = registerShortcut('meta+\\', () => setInspectorExpanded((v) => !v));
 
     return () => {
       offShim();
@@ -86,9 +106,18 @@ export function App(): JSX.Element {
       offN();
       offComma();
       offSlash();
-      offBackslash();
     };
   }, []);
+
+  // ⌘\ is context-sensitive: when the file panel is showing a diff it toggles
+  // split/inline (§3.11); otherwise it expands/collapses the inspector (§3.10a).
+  // Re-registered when that context changes so it never reads stale state.
+  useEffect(() => {
+    return registerShortcut('meta+\\', () => {
+      if (fp.isOpen && fp.state.view === 'diff') fp.toggleDiffMode();
+      else setInspectorExpanded((v) => !v);
+    });
+  }, [fp.isOpen, fp.state.view, fp.toggleDiffMode]);
 
   async function handlePickProject(path: string): Promise<void> {
     await saveProjectPath(path);
@@ -130,8 +159,14 @@ export function App(): JSX.Element {
   const usedTokens = inspector.usage.inputTokens + inspector.usage.outputTokens;
   const contextFill = usedTokens > 0 ? usedTokens / contextWindowFor(inspector.model) : undefined;
 
+  // When the file panel is open it inserts a 4th column and the inspector stays
+  // a 48px rail (§3.11); otherwise the 3-column shell with an optional 320px
+  // inspector panel.
+  const shellClass =
+    'app-shell' + (fp.isOpen ? ' file-open' : inspectorExpanded ? ' inspector-open' : '');
+
   return (
-    <div className={'app-shell' + (inspectorExpanded ? ' inspector-open' : '')}>
+    <div className={shellClass}>
       {update && <UpdateBanner info={update} />}
       <Sidebar
         key={`sb-${sessionEpoch}`}
@@ -179,12 +214,28 @@ export function App(): JSX.Element {
           resumedMessages,
         )}
       </main>
-      {inspectorExpanded ? (
+      {fp.isOpen && (
+        <FilePanel
+          tabs={fp.state.tabs}
+          activeIndex={fp.state.activeIndex}
+          view={fp.state.view}
+          diffMode={fp.state.diffMode}
+          width={fp.state.width}
+          onSelectTab={fp.select}
+          onCloseTab={fp.close}
+          onSelectView={fp.setView}
+          onToggleDiffMode={fp.toggleDiffMode}
+          onSelectHistory={() => {}}
+          onResizeStart={onFilePanelResizeStart}
+        />
+      )}
+      {inspectorExpanded && !fp.isOpen ? (
         <InspectorPanel
           projectPath={projectPath}
           data={inspector}
           focusSection={inspectorFocus}
           onCollapse={() => setInspectorExpanded(false)}
+          onOpenFile={(path) => void fp.open(path)}
         />
       ) : (
         <InspectorRail

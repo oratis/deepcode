@@ -25,6 +25,8 @@ interface InspectorPanelProps {
    * clicked one of the rail's hint icons (▤/◐/📁/ⓘ) rather than the chevron.
    */
   focusSection?: InspectorSection | null;
+  /** Open a recent file in the right-side file panel (§3.11). */
+  onOpenFile?: (path: string) => void;
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -40,6 +42,7 @@ export function InspectorPanel({
   data,
   onCollapse,
   focusSection,
+  onOpenFile,
 }: InspectorPanelProps): JSX.Element {
   const { usage, costYuan, model, mode, recentFiles, todos } = data;
 
@@ -112,7 +115,15 @@ export function InspectorPanel({
       ) : (
         <div className="recent-files">
           {recentFiles.map((f) => (
-            <div className="recent-file" key={f} title={f}>
+            <div
+              className="recent-file"
+              key={f}
+              title={onOpenFile ? `Open ${f}` : f}
+              role={onOpenFile ? 'button' : undefined}
+              tabIndex={onOpenFile ? 0 : undefined}
+              onClick={onOpenFile ? () => onOpenFile(f) : undefined}
+              style={onOpenFile ? { cursor: 'pointer' } : undefined}
+            >
               <span className="name">{basename(f)}</span>
               <span className="dir">{dirname(f)}</span>
             </div>

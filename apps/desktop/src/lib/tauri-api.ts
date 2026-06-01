@@ -189,6 +189,15 @@ export async function cliPath(): Promise<string | null> {
   return (await invoke('cli_path')) as string | null;
 }
 
+/**
+ * Read a file's text via the unscoped `tool_read` Rust command (the file panel's
+ * Source view). Returns up to the first 2000 lines (tool_read's default limit).
+ */
+export async function toolRead(filePath: string): Promise<string> {
+  const r = (await invoke('tool_read', { filePath })) as { content: string };
+  return r.content;
+}
+
 /** Open a URL in the user's default browser. */
 export async function openUrl(url: string): Promise<void> {
   const { openUrl: openerOpen } = await import('@tauri-apps/plugin-opener');
