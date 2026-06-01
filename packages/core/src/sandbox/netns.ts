@@ -153,6 +153,10 @@ export async function spawnNetworkSandbox(
     stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe'],
     cwd: opts.cwd,
   });
+  // Swallow stream/process errors so a SIGTERM-induced ECONNRESET on the info /
+  // block / stdio pipes during teardown doesn't surface as an unhandled error.
+  ignoreErrors(child);
+  child.stdio.forEach((s) => ignoreErrors(s));
 
   let slirp: ChildProcess | undefined;
   let closed = false;
@@ -187,6 +191,8 @@ export async function spawnNetworkSandbox(
       ],
       { stdio: ['ignore', 'pipe', 'pipe', 'pipe'] },
     );
+    ignoreErrors(slirp);
+    slirp.stdio.forEach((s) => ignoreErrors(s));
     pipeLog(slirp.stdio[1] as Readable | null, '[slirp]', log);
     pipeLog(slirp.stdio[2] as Readable | null, '[slirp!]', log);
 
@@ -282,6 +288,17 @@ function pipeLog(fd: Readable | null, prefix: string, log: (s: string) => void):
     const s = d.toString('utf8').trimEnd();
     if (s) log(`${prefix} ${s}`);
   });
+}
+
+/**
+ * Attach a no-op 'error' listener so a stream/process error during teardown
+ * (e.g. ECONNRESET on the stdio pipes when slirp/bwrap is SIGTERM'd) doesn't
+ * bubble up as an unhandled error. Accepts ChildProcess, streams, or null.
+ */
+function ignoreErrors(
+  emitter: { on(event: 'error', cb: (err: unknown) => void): unknown } | null | undefined,
+): void {
+  emitter?.on('error', () => {});
 }
 
 function killQuietly(proc: ChildProcess | undefined): void {
