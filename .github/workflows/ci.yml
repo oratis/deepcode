@@ -40,14 +40,17 @@ jobs:
 
       # Linux only: install bubblewrap + slirp4netns so the real-kernel sandbox
       # integration tests run (they skip when `bwrap` is absent, e.g. macOS/dev).
-      # Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor — relax
-      # it so bwrap can unshare namespaces on the runner.
+      #  · Ubuntu 24.04 restricts unprivileged user namespaces via AppArmor —
+      #    relax it so bwrap can unshare namespaces on the runner.
+      #  · The selective network-allowlist test runs an allowlisting DNS proxy on
+      #    127.0.0.1:53; relax ip_unprivileged_port_start so :53 binds rootless.
       - name: Install sandbox tools (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y bubblewrap slirp4netns curl
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=53 || true
 
       - name: Typecheck
         run: pnpm typecheck
@@ -59,6 +62,10 @@ jobs:
         run: pnpm format:check
 
       - name: Test
+        # DC_SANDBOX_NET_TEST opts the selective-allowlist integration test in;
+        # it self-skips on non-Linux / when bwrap/slirp4netns are absent.
+        env:
+          DC_SANDBOX_NET_TEST: '1'
         run: pnpm test
 
       - name: Build

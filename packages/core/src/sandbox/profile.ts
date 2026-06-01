@@ -4,9 +4,11 @@
 //
 // M3.5: macOS sandbox-exec SBPL profile generation + Linux bwrap arg generation
 // (ro system mounts, rw cwd, read/write allowlists, net unshare, pid/ipc/uts
-// unshare, --new-session + --die-with-parent hardening). The one remaining gap
-// is the selective-domain net allowlist, which needs a slirp4netns helper to
-// bridge UDP into the netns (deny-all-net and full-net modes both work today).
+// unshare, --new-session + --die-with-parent hardening).
+// M3.5-ext: the selective-domain net allowlist is implemented in netns.ts
+// (bwrap own-netns + slirp4netns userspace NAT + allowlisting DNS proxy); this
+// module just emits the bwrap args (--unshare-net + the resolv.conf bind) that
+// netns.ts orchestrates. deny-all-net and full-net modes work standalone here.
 // Windows: disabled per §0.2.
 
 import { homedir, platform } from 'node:os';
@@ -140,6 +142,14 @@ export interface BwrapArgsOpts {
   dnsProxyPort?: number;
   /** Path to a generated resolv.conf to bind into the sandbox. */
   resolvConfPath?: string;
+  /**
+   * In-sandbox destination for the resolv.conf bind. Defaults to
+   * `/etc/resolv.conf`, but on systemd hosts that path is a dangling symlink
+   * (→ /run/systemd/resolve/stub-resolv.conf) which bwrap can't create a bind
+   * target for. The orchestrator resolves the symlink (realpath) and passes the
+   * real path here so the preserved /etc/resolv.conf symlink leads to our file.
+   */
+  resolvConfDest?: string;
 }
 
 export function buildLinuxBwrapArgs(
@@ -185,7 +195,7 @@ export function buildLinuxBwrapArgs(
   } else if (whitelisted) {
     args.push('--unshare-net');
     if (opts.resolvConfPath) {
-      args.push('--ro-bind', opts.resolvConfPath, '/etc/resolv.conf');
+      args.push('--ro-bind', opts.resolvConfPath, opts.resolvConfDest ?? '/etc/resolv.conf');
     }
   }
 

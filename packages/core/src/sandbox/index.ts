@@ -27,6 +27,13 @@ export {
   type DnsProxyHandle,
 } from './dns-proxy.js';
 
+export {
+  spawnNetworkSandbox,
+  NetworkSandboxUnavailable,
+  type SpawnNetworkSandboxOpts,
+  type NetworkSandboxHandle,
+} from './netns.js';
+
 export type { BwrapArgsOpts } from './profile.js';
 
 export interface SandboxedCommand {
