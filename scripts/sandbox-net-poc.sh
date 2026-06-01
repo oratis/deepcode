@@ -49,6 +49,15 @@ CWD="$WORK/cwd"; mkdir -p "$CWD"
 echo "nameserver 10.0.2.2" > "$WORK/resolv.conf"   # slirp gateway → host loopback
 echo "WORK=$WORK"
 
+# /etc/resolv.conf is usually a dangling symlink (→ /run/systemd/resolve/...)
+# which bwrap can't create a bind target for. Bind our file at the symlink's
+# RESOLVED real path so the preserved /etc/resolv.conf symlink leads to it.
+say "resolv.conf shape on host"
+ls -l /etc/resolv.conf || true
+RP="$(readlink -f /etc/resolv.conf 2>/dev/null || true)"
+[ -n "$RP" ] || RP=/etc/resolv.conf
+echo "resolv real path RP=$RP"
+
 # ── allowlisting DNS proxy on host 127.0.0.1:53 (allow example.com only) ──────
 say "start allowlist DNS proxy on 127.0.0.1:53"
 cat > "$WORK/dns.py" <<'PY'
@@ -104,7 +113,7 @@ bwrap \
   --ro-bind-try /usr /usr --ro-bind-try /lib /lib --ro-bind-try /lib64 /lib64 \
   --ro-bind-try /bin /bin --ro-bind-try /sbin /sbin --ro-bind-try /etc /etc \
   --proc /proc --dev /dev --tmpfs /tmp \
-  --ro-bind "$WORK/resolv.conf" /etc/resolv.conf \
+  --ro-bind "$WORK/resolv.conf" "$RP" \
   --bind "$CWD" "$CWD" \
   --unshare-net --unshare-pid --unshare-ipc --unshare-uts \
   --new-session --die-with-parent \
@@ -125,7 +134,9 @@ echo "child-pid=$CHILD_PID"
 
 if [ -n "$CHILD_PID" ]; then
   say "start slirp4netns attached to child-pid=$CHILD_PID"
-  slirp4netns --configure --mtu=65520 "$CHILD_PID" tap0 &
+  # --disable-dns closes the 10.0.2.3 host-DNS bypass so ALL resolution must go
+  # through our allowlisting proxy (guest resolv.conf points only at 10.0.2.2).
+  slirp4netns --configure --disable-dns --mtu=65520 "$CHILD_PID" tap0 &
   SLIRP_PID=$!
   echo "slirp pid=$SLIRP_PID (inner sleeps 3s to let it configure)"
 else
