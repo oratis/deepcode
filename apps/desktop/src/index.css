@@ -256,6 +256,13 @@ select {
   grid-template-rows: 1fr;
   height: 100vh;
   background: var(--bg-1);
+  /* Clear the macOS transparent titlebar (titleBarStyle:Transparent +
+     hiddenTitle) so the traffic lights + native drag region don't overlap the
+     sidebar brand / chat-header pills / inspector head. box-sizing is
+     border-box globally, so the grid fits within 100vh − this inset. The native
+     title region (top ~28px) stays OS-draggable; we deliberately do NOT add
+     -webkit-app-region:drag to the shell (it would make chat text unselectable). */
+  padding-top: 30px;
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -774,6 +781,31 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* File-tool cards: the target is a clickable "open preview" affordance. */
+.tool-card .tc-head .tc-open {
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: var(--brand);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  max-width: 100%;
+}
+.tool-card .tc-head .tc-open:hover {
+  background: var(--brand-tint);
+  color: #b4c2ff;
+}
+.tool-card .tc-head .tc-open .tc-open-caret {
+  color: var(--text-3);
+  font-weight: 700;
+}
+.tool-card .tc-head .tc-open:hover .tc-open-caret {
+  color: var(--brand);
 }
 .tool-card .tc-head .badge {
   margin-left: auto;

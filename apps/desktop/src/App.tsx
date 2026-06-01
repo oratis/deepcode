@@ -212,6 +212,7 @@ export function App(): JSX.Element {
           () => setSessionEpoch((k) => k + 1),
           handleInspector,
           resumedMessages,
+          (path) => void fp.open(path),
         )}
       </main>
       {fp.isOpen && (
@@ -257,6 +258,7 @@ function renderScreen(
   onTurnComplete: () => void,
   onInspector: (patch: Partial<InspectorData>) => void,
   initialMessages?: Msg[],
+  onOpenFile?: (path: string) => void,
 ): JSX.Element {
   switch (screen) {
     case 'chat':
@@ -267,6 +269,7 @@ function renderScreen(
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
           onInspector={onInspector}
+          onOpenFile={onOpenFile}
         />
       );
     case 'sessions':
@@ -292,6 +295,7 @@ function renderScreen(
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
           onInspector={onInspector}
+          onOpenFile={onOpenFile}
         />
       );
   }

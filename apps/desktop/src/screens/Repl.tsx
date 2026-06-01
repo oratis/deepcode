@@ -64,6 +64,8 @@ interface ReplScreenProps {
    * model, mode, recent files, or the todo list change.
    */
   onInspector?: (patch: Partial<InspectorData>) => void;
+  /** Open a file (from a tool card's "preview" affordance) in the file panel. */
+  onOpenFile?: (path: string) => void;
 }
 
 /** Tools whose file_path we surface in the inspector's Recent files section. */
@@ -207,6 +209,7 @@ export function ReplScreen({
   onTurnComplete,
   initialMessages,
   onInspector,
+  onOpenFile,
 }: ReplScreenProps): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>(() =>
     initialMessages && initialMessages.length > 0
@@ -607,7 +610,14 @@ export function ReplScreen({
 
       <div className="chat-stream" ref={listRef}>
         {messages.map((m, i) =>
-          renderMessage(m, i, pendingApproval, handleApproval, i === activeAssistantIdx),
+          renderMessage(
+            m,
+            i,
+            pendingApproval,
+            handleApproval,
+            i === activeAssistantIdx,
+            onOpenFile,
+          ),
         )}
 
         {busy && !pendingApproval && !pendingQuestion && (
@@ -825,6 +835,7 @@ function renderMessage(
   pendingApproval: PendingApproval | null,
   onApproval: (decision: 'allow' | 'deny' | 'always') => void,
   isActive: boolean,
+  onOpenFile?: (path: string) => void,
 ): JSX.Element | null {
   if (m.role === 'user') {
     return (
@@ -877,6 +888,11 @@ function renderMessage(
                     t.status === 'running' ? '… running' : t.status === 'ok' ? '✓ done' : '✕ error',
                 }}
                 body={t.resultText ? truncate(t.resultText, 1500) : undefined}
+                onOpen={
+                  onOpenFile && typeof t.input?.file_path === 'string'
+                    ? () => onOpenFile(String(t.input.file_path))
+                    : undefined
+                }
               />
               {/* Inline approval — appears right under the relevant tool card */}
               {pendingApproval && pendingApproval.toolName === t.name && t.status === 'running' && (
