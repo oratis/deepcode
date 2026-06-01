@@ -10,15 +10,21 @@
 // component is purely presentational. Sections with no data show an honest
 // empty state rather than a placeholder — per HANDOFF: no fake sections.
 
+import { useEffect, useRef } from 'react';
 import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
 import { projectName } from '../lib/project.js';
-import type { InspectorData } from '../types/inspector.js';
+import type { InspectorData, InspectorSection } from '../types/inspector.js';
 
 interface InspectorPanelProps {
   projectPath: string;
   data: InspectorData;
   /** Collapse back to the 48 px rail (the › button / ⌘\). */
   onCollapse: () => void;
+  /**
+   * Section to scroll into view when the panel opens — set when the user
+   * clicked one of the rail's hint icons (▤/◐/📁/ⓘ) rather than the chevron.
+   */
+  focusSection?: InspectorSection | null;
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -33,6 +39,7 @@ export function InspectorPanel({
   projectPath,
   data,
   onCollapse,
+  focusSection,
 }: InspectorPanelProps): JSX.Element {
   const { usage, costYuan, model, mode, recentFiles, todos } = data;
 
@@ -42,8 +49,17 @@ export function InspectorPanel({
 
   const pending = todos.filter((t) => t.status !== 'completed').length;
 
+  // Scroll the requested section to the top when the panel opens via a rail
+  // hint icon. The header is sticky so the heading lands just below it.
+  const rootRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!focusSection) return;
+    const el = rootRef.current?.querySelector(`[data-section="${focusSection}"]`);
+    el?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  }, [focusSection]);
+
   return (
-    <aside className="inspector">
+    <aside className="inspector" ref={rootRef}>
       <div className="inspector-head">
         <span className="inspector-title">Inspector</span>
         <button
@@ -57,7 +73,7 @@ export function InspectorPanel({
       </div>
 
       {/* ── ▤ Plan ─────────────────────────────────────────────── */}
-      <h5>▤ Plan{pending > 0 ? ` · ${pending} pending` : ''}</h5>
+      <h5 data-section="plan">▤ Plan{pending > 0 ? ` · ${pending} pending` : ''}</h5>
       {todos.length === 0 ? (
         <p className="insp-empty">No plan yet — the agent hasn’t written a todo list.</p>
       ) : (
@@ -78,7 +94,7 @@ export function InspectorPanel({
       )}
 
       {/* ── ◐ Context ──────────────────────────────────────────── */}
-      <h5>◐ Context</h5>
+      <h5 data-section="context">◐ Context</h5>
       <div className="ctx-bar">
         <span>
           {usedTokens.toLocaleString()} / {contextWindow.toLocaleString()}
@@ -90,7 +106,7 @@ export function InspectorPanel({
       </div>
 
       {/* ── 📁 Recent files ────────────────────────────────────── */}
-      <h5>📁 Recent files</h5>
+      <h5 data-section="files">📁 Recent files</h5>
       {recentFiles.length === 0 ? (
         <p className="insp-empty">No files written or edited yet.</p>
       ) : (
@@ -105,7 +121,7 @@ export function InspectorPanel({
       )}
 
       {/* ── ⓘ Session info ─────────────────────────────────────── */}
-      <h5>ⓘ Session info</h5>
+      <h5 data-section="session">ⓘ Session info</h5>
       <div className="insp-row">
         <span className="k">Project</span>
         <span className="v">{projectName(projectPath)}</span>
