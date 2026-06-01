@@ -182,14 +182,21 @@ export {
   type Frontmatter,
 } from './skills/index.js';
 
-// Sandbox (M3.5 — macOS sandbox-exec + Linux bwrap)
+// Sandbox (M3.5 — macOS sandbox-exec + Linux bwrap; M3.5-ext — slirp4netns
+// selective per-domain network allowlist)
 export {
   wrapBashCommand,
   buildMacOsProfile,
   buildLinuxBwrapArgs,
   detectPlatform,
+  spawnNetworkSandbox,
+  NetworkSandboxUnavailable,
+  startDnsProxy,
   type SandboxPlatform,
   type SandboxedCommand,
+  type SpawnNetworkSandboxOpts,
+  type NetworkSandboxHandle,
+  type DnsProxyHandle,
 } from './sandbox/index.js';
 
 // MCP client (M3c — stdio transport; http/sse → M3c-ext) + server (`mcp serve`)
