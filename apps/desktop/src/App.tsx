@@ -7,6 +7,7 @@ import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
 import { InspectorPanel } from './components/InspectorPanel.js';
 import { InspectorRail } from './components/InspectorRail.js';
 import { ProjectPickerOverlay } from './components/ProjectPickerOverlay.js';
+import { SETTINGS_FAMILY, SettingsLayout } from './components/SettingsLayout.js';
 import { Sidebar } from './components/Sidebar.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
 import { registerShortcut } from './lib/keyboard.js';
@@ -25,7 +26,11 @@ import { SettingsScreen } from './screens/Settings.js';
 import { SkillsScreen } from './screens/Skills.js';
 import type { ScreenName } from './types/screens.js';
 import type { UpdateInfo } from './types/global.js';
-import { emptyInspectorData, type InspectorData } from './types/inspector.js';
+import {
+  emptyInspectorData,
+  type InspectorData,
+  type InspectorSection,
+} from './types/inspector.js';
 
 export function App(): JSX.Element {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -39,7 +44,16 @@ export function App(): JSX.Element {
   const [resumedMessages, setResumedMessages] = useState<Msg[] | undefined>(undefined);
   // Right inspector: 48 px rail by default, 320 px panel when expanded.
   const [inspectorExpanded, setInspectorExpanded] = useState(false);
+  // Which section to scroll to when expanding via a rail hint icon (null = top).
+  const [inspectorFocus, setInspectorFocus] = useState<InspectorSection | null>(null);
   const [inspector, setInspector] = useState<InspectorData>(() => emptyInspectorData());
+
+  // Expand the inspector, optionally scrolling to a section. Bumps focus to a
+  // fresh value each time so re-clicking the same icon re-scrolls.
+  const expandInspector = useCallback((section?: InspectorSection) => {
+    setInspectorExpanded(true);
+    setInspectorFocus(section ?? null);
+  }, []);
 
   // Merge the slice ReplScreen lifts up (usage / model / mode / files / todos).
   // Stable identity so ReplScreen's sync effect doesn't refire every render.
@@ -169,13 +183,14 @@ export function App(): JSX.Element {
         <InspectorPanel
           projectPath={projectPath}
           data={inspector}
+          focusSection={inspectorFocus}
           onCollapse={() => setInspectorExpanded(false)}
         />
       ) : (
         <InspectorRail
-          activeScreen={screen}
-          onChange={(s) => setScreen(s)}
-          onExpand={() => setInspectorExpanded(true)}
+          onExpand={expandInspector}
+          onSettings={() => setScreen('settings')}
+          settingsActive={SETTINGS_FAMILY.includes(screen)}
           planCount={planCount}
           contextFill={contextFill}
         />
@@ -205,18 +220,19 @@ function renderScreen(
       );
     case 'sessions':
       return <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />;
+    // Settings-family screens share the Settings shell's left nav so they're
+    // mutually reachable now that the inspector rail no longer routes to them.
     case 'plugins':
-      return <PluginsScreen />;
     case 'skills':
-      return <SkillsScreen />;
     case 'permissions':
-      return <PermissionsScreen />;
     case 'mcp':
-      return <MCPManagerScreen />;
     case 'settings':
-      return <SettingsScreen />;
     case 'about':
-      return <AboutScreen />;
+      return (
+        <SettingsLayout active={screen} onChange={setScreen}>
+          {renderSettingsPane(screen)}
+        </SettingsLayout>
+      );
     case 'repl':
     default:
       return (
@@ -227,5 +243,24 @@ function renderScreen(
           onInspector={onInspector}
         />
       );
+  }
+}
+
+/** The right-hand pane for a settings-family screen (hosted by SettingsLayout). */
+function renderSettingsPane(screen: ScreenName): JSX.Element {
+  switch (screen) {
+    case 'plugins':
+      return <PluginsScreen />;
+    case 'skills':
+      return <SkillsScreen />;
+    case 'permissions':
+      return <PermissionsScreen />;
+    case 'mcp':
+      return <MCPManagerScreen />;
+    case 'about':
+      return <AboutScreen />;
+    case 'settings':
+    default:
+      return <SettingsScreen />;
   }
 }

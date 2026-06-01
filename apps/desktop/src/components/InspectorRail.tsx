@@ -1,32 +1,35 @@
 // Right-column collapsed inspector rail (48 px).
-// Design spec screen #3.
+// Design spec screen #3 (line ~1220).
 //
-// Each rail button routes to a screen so users can reach Plan / Files /
-// Info / Settings without scrolling for a hidden menu. The ‹ expand
-// chevron opens the full-width inspector panel (InspectorPanel) — App
-// owns the collapsed↔expanded state and passes it down via onExpand.
+// Per the spec the rail is intentionally minimal: it hints at the inspector's
+// contents with four small icons (▤ Plan · ◐ Context · 📁 Recent files ·
+// ⓘ Session info) and nothing else but the ‹ expand chevron and a ⚙ Settings
+// shortcut. Clicking ‹ — or any of the four hint icons — expands the 320 px
+// panel (the icon picks which section to scroll to). The settings cog is the
+// rail's one piece of navigation; everything else (Permissions / MCP / Plugins
+// / Skills / About) lives inside the Settings shell's left nav.
 
-import type { ScreenName } from '../types/screens.js';
+import type { InspectorSection } from '../types/inspector.js';
 
 interface InspectorRailProps {
   /** Plan items pending — shown as a badge on ▤. */
   planCount?: number;
   /** Context fill 0..1 — drives the ◐ color (mint if < 0.6, warn ≥ 0.8). */
   contextFill?: number;
-  /** Active screen so settings cog highlights when on settings. */
-  activeScreen: ScreenName;
-  /** Switch screen. */
-  onChange: (screen: ScreenName) => void;
-  /** Expand the rail into the 320 px inspector panel (‹ / ⌘\). */
-  onExpand: () => void;
+  /** Expand the rail into the 320 px panel, optionally focusing a section. */
+  onExpand: (section?: InspectorSection) => void;
+  /** Open the Settings shell. */
+  onSettings: () => void;
+  /** Highlight the cog when the user is on any settings-family screen. */
+  settingsActive: boolean;
 }
 
 export function InspectorRail({
   planCount,
   contextFill,
-  activeScreen,
-  onChange,
   onExpand,
+  onSettings,
+  settingsActive,
 }: InspectorRailProps): JSX.Element {
   const ctxColor =
     contextFill === undefined
@@ -43,7 +46,7 @@ export function InspectorRail({
         type="button"
         className="rail-btn expand"
         title="Expand inspector (⌘\\)"
-        onClick={onExpand}
+        onClick={() => onExpand()}
       >
         ‹
       </button>
@@ -51,9 +54,9 @@ export function InspectorRail({
 
       <button
         type="button"
-        className={'rail-btn' + (activeScreen === 'permissions' ? ' active' : '')}
-        title={planCount ? `Plan & permissions · ${planCount} pending` : 'Plan & permissions'}
-        onClick={() => onChange('permissions')}
+        className="rail-btn"
+        title={planCount ? `Plan · ${planCount} pending` : 'Plan'}
+        onClick={() => onExpand('plan')}
       >
         ▤
         {planCount !== undefined && planCount > 0 && <span className="dot-badge">{planCount}</span>}
@@ -68,52 +71,25 @@ export function InspectorRail({
             : `Context: ${Math.round(contextFill * 100)}% used`
         }
         style={{ color: ctxColor, borderColor: 'rgba(20,228,162,.18)' }}
-        onClick={() => onChange('repl')}
+        onClick={() => onExpand('context')}
       >
         ◐
       </button>
 
       <button
         type="button"
-        className={'rail-btn' + (activeScreen === 'sessions' ? ' active' : '')}
-        title="Sessions"
-        onClick={() => onChange('sessions')}
+        className="rail-btn"
+        title="Recent files"
+        onClick={() => onExpand('files')}
       >
-        ◫
+        📁
       </button>
 
       <button
         type="button"
-        className={'rail-btn' + (activeScreen === 'plugins' ? ' active' : '')}
-        title="Plugins"
-        onClick={() => onChange('plugins')}
-      >
-        ⊞
-      </button>
-
-      <button
-        type="button"
-        className={'rail-btn' + (activeScreen === 'skills' ? ' active' : '')}
-        title="Skills"
-        onClick={() => onChange('skills')}
-      >
-        ✦
-      </button>
-
-      <button
-        type="button"
-        className={'rail-btn' + (activeScreen === 'mcp' ? ' active' : '')}
-        title="MCP servers"
-        onClick={() => onChange('mcp')}
-      >
-        ⊕
-      </button>
-
-      <button
-        type="button"
-        className={'rail-btn' + (activeScreen === 'about' ? ' active' : '')}
-        title="About / Info"
-        onClick={() => onChange('about')}
+        className="rail-btn"
+        title="Session info"
+        onClick={() => onExpand('session')}
       >
         ⓘ
       </button>
@@ -121,9 +97,9 @@ export function InspectorRail({
       <span className="rail-spacer" />
       <button
         type="button"
-        className={'rail-btn' + (activeScreen === 'settings' ? ' active' : '')}
+        className={'rail-btn' + (settingsActive ? ' active' : '')}
         title="Settings"
-        onClick={() => onChange('settings')}
+        onClick={onSettings}
       >
         ⚙
       </button>

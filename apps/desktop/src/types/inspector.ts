@@ -6,6 +6,12 @@
 // `onInspector` callback; App merges it into one InspectorData object that both
 // the collapsed rail (badges) and the expanded panel render from.
 
+/**
+ * The four inspector sections, in render order. The collapsed rail's middle
+ * icons each map to one — clicking expands the panel and scrolls to it.
+ */
+export type InspectorSection = 'plan' | 'context' | 'files' | 'session';
+
 /** Mirrors core's TodoWrite item shape (kept local to avoid a dist type-dep). */
 export type TodoStatus = 'pending' | 'in_progress' | 'completed';
 export interface TodoItem {

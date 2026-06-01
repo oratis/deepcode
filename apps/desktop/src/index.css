@@ -440,6 +440,13 @@ select {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 4px;
+  /* Sticky so a section scrolled into view via a rail icon lands just below. */
+  position: sticky;
+  top: -18px;
+  margin: -18px -18px 4px;
+  padding: 18px 18px 8px;
+  background: var(--bg-0);
+  z-index: 1;
 }
 .inspector .inspector-title {
   font-size: 12px;
@@ -560,6 +567,79 @@ select {
   height: 100%;
   background: var(--brand);
   transition: width 0.3s;
+}
+
+/* ──────────────────────────────────────────────────────────────────── */
+/* Settings shell — left nav + pane (design spec screen #9)            */
+/* Hosts the settings-family screens (General / Permissions / MCP /     */
+/* Plugins / Skills / About) now that the inspector rail no longer      */
+/* routes to them. Fills the chat-main column.                          */
+/* ──────────────────────────────────────────────────────────────────── */
+
+.settings-shell {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 0;
+  background: var(--bg-1);
+}
+.set-nav {
+  background: var(--bg-0);
+  border-right: 1px solid var(--line);
+  padding: 18px 10px;
+  overflow-y: auto;
+}
+.set-nav .title {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-3);
+  padding: 6px 10px 10px;
+  font-weight: 700;
+}
+.set-nav .nav-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  color: var(--text-1);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+.set-nav .nav-item:hover {
+  background: var(--bg-1);
+}
+.set-nav .nav-item.active {
+  background: rgba(77, 107, 254, 0.12);
+  color: #b4c2ff;
+}
+.set-nav .nav-item .ico {
+  width: 16px;
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: center;
+}
+.set-nav .nav-item.active .ico {
+  color: var(--brand);
+}
+.set-nav .nav-item .num {
+  margin-left: auto;
+  color: var(--text-3);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+/* The pane hosts a screen that brings its own header + scrolling body. */
+.set-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
