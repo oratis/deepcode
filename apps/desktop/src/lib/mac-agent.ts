@@ -15,7 +15,17 @@ import { runAgent } from '@deepcode/core/dist/agent.js';
 import { DeepSeekProvider, EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
 import type { AgentEvent, Effort, Mode, ToolHandler } from '@deepcode/core/dist/types.js';
 import { MAC_TOOLS } from './mac-tools.js';
-import { readCredentials, sessionAppend, sessionCreate } from './tauri-api.js';
+import { readCredentials, sessionAppend, sessionCreate, sessionSetTitle } from './tauri-api.js';
+
+/** First non-empty line of the user message, trimmed to a sidebar-friendly length. */
+function sessionTitleFrom(userMessage: string): string {
+  const firstLine =
+    userMessage
+      .split('\n')
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? userMessage.trim();
+  return firstLine.slice(0, 60);
+}
 
 // Local minimal ToolRegistry — same shape as @deepcode/core's, without
 // the BUILTIN_TOOLS top-level import that drags in fs.
@@ -132,6 +142,7 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
 
   // Lazily create a session JSONL on first turn, so the sidebar can
   // surface it. Failures here are non-fatal — we just don't persist.
+  const isNewSession = !currentSessionId;
   if (!currentSessionId) {
     try {
       currentSessionId = await sessionCreate(args.cwd ?? '/');
@@ -150,6 +161,15 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
       });
     } catch (err) {
       console.warn('session_append (user) failed:', err);
+    }
+    // Title a brand-new session from its first user message (Claude-Code style),
+    // so the sidebar shows a human label immediately rather than the raw id.
+    if (isNewSession) {
+      try {
+        await sessionSetTitle(currentSessionId, sessionTitleFrom(args.userMessage));
+      } catch (err) {
+        console.warn('session_set_title failed:', err);
+      }
     }
   }
 

@@ -203,6 +203,14 @@ export function App(): JSX.Element {
           setActiveSessionId(null);
           setSessionEpoch((k) => k + 1);
         }}
+        onSessionRemoved={() => {
+          // The active session was archived/deleted — reset to a fresh chat.
+          clearAgentHistory();
+          setResumedMessages(undefined);
+          setActiveSessionId(null);
+          setScreen('repl');
+          setSessionEpoch((k) => k + 1);
+        }}
       />
       <main className="chat-main" key={`main-${sessionEpoch}`}>
         {renderScreen(

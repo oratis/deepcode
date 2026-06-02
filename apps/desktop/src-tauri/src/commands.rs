@@ -382,6 +382,45 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     Ok(out)
 }
 
+/// Reject session ids that could escape the sessions directory.
+fn safe_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!("invalid session id: {id}"));
+    }
+    Ok(())
+}
+
+/// Permanently delete a session's JSONL file.
+#[tauri::command]
+pub fn session_delete(id: String) -> Result<(), String> {
+    safe_session_id(&id)?;
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let path = home
+        .join(".deepcode")
+        .join("sessions")
+        .join(format!("{id}.jsonl"));
+    std::fs::remove_file(&path).map_err(|e| format!("delete {}: {}", path.display(), e))
+}
+
+/// Archive a session by moving its JSONL into sessions/archived/ — excluded from
+/// list_sessions but recoverable from disk.
+#[tauri::command]
+pub fn session_archive(id: String) -> Result<(), String> {
+    safe_session_id(&id)?;
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let dir = home.join(".deepcode").join("sessions");
+    let archived = dir.join("archived");
+    std::fs::create_dir_all(&archived)
+        .map_err(|e| format!("mkdir {}: {}", archived.display(), e))?;
+    let from = dir.join(format!("{id}.jsonl"));
+    let to = archived.join(format!("{id}.jsonl"));
+    std::fs::rename(&from, &to).map_err(|e| format!("archive {}: {}", from.display(), e))
+}
+
 /// Path to the `deepcode` CLI so the GUI can drop users into it for advanced
 /// workflows. Resolves a globally-installed `deepcode` on PATH (npm i -g
 /// deepcode-cli). Bundling the CLI inside the .app is separate future work.

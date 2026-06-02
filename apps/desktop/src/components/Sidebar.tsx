@@ -6,7 +6,13 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { projectName } from '../lib/project.js';
-import { listSessions, sessionSetTitle, type SessionMeta } from '../lib/tauri-api.js';
+import {
+  listSessions,
+  sessionArchive,
+  sessionDelete,
+  sessionSetTitle,
+  type SessionMeta,
+} from '../lib/tauri-api.js';
 import { BrandMark } from './BrandMark.js';
 
 interface SidebarProps {
@@ -18,6 +24,8 @@ interface SidebarProps {
   onNewSession: () => void;
   /** Triggers a re-show of the folder picker so the user can switch projects. */
   onSwitchProject: () => void;
+  /** Called after the active session is archived/deleted so the parent resets. */
+  onSessionRemoved?: (id: string) => void;
 }
 
 type Bucket = 'Today' | 'Yesterday' | 'Earlier';
@@ -43,6 +51,7 @@ export function Sidebar({
   onPickSession,
   onNewSession,
   onSwitchProject,
+  onSessionRemoved,
 }: SidebarProps): JSX.Element {
   const [sessions, setSessions] = useState<SessionMeta[]>([]);
   const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
@@ -56,9 +65,17 @@ export function Sidebar({
       .catch(() => setSessions([]));
   }, []);
 
+  // Reload on mount + whenever the active session changes, then poll so a
+  // session's auto-derived title (set on its first message) and freshly-created
+  // sessions surface without needing a remount.
   useEffect(() => {
     reload();
-    const t = setInterval(() => setNow(Math.floor(Date.now() / 1000)), 30_000);
+  }, [reload, activeSessionId]);
+  useEffect(() => {
+    const t = setInterval(() => {
+      setNow(Math.floor(Date.now() / 1000));
+      reload();
+    }, 8_000);
     return () => clearInterval(t);
   }, [reload]);
 
@@ -69,6 +86,29 @@ export function Sidebar({
       reload();
     } catch {
       /* keep the old title on failure */
+    }
+  }
+
+  async function handleArchive(id: string): Promise<void> {
+    try {
+      await sessionArchive(id);
+      if (id === activeSessionId) onSessionRemoved?.(id);
+      reload();
+    } catch {
+      /* ignore — session stays listed */
+    }
+  }
+
+  async function handleDelete(id: string, label: string): Promise<void> {
+    if (!window.confirm(`Delete session "${label}"? This permanently removes its history.`)) {
+      return;
+    }
+    try {
+      await sessionDelete(id);
+      if (id === activeSessionId) onSessionRemoved?.(id);
+      reload();
+    } catch {
+      /* ignore — session stays listed */
     }
   }
 
@@ -204,6 +244,32 @@ export function Sidebar({
                   <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
                 )}
                 <span className="meta">{relTime(s.updated_at_secs, now)}</span>
+                {editingId !== s.id && (
+                  <span className="row-actions">
+                    <button
+                      type="button"
+                      className="row-act"
+                      title="Archive session"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleArchive(s.id);
+                      }}
+                    >
+                      🗄
+                    </button>
+                    <button
+                      type="button"
+                      className="row-act danger"
+                      title="Delete session"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handleDelete(s.id, s.title?.trim() ? s.title : shortTitle(s.id));
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </span>
+                )}
               </div>
             ))}
           </div>
