@@ -24,6 +24,15 @@ describe('parseArgs', () => {
     expect(parseArgs(['upgrade']).upgrade).toBe(true);
   });
 
+  it('-C / --cd <dir> sets working directory', () => {
+    expect(parseArgs(['-C', '/work/dir']).cwd).toBe('/work/dir');
+    expect(parseArgs(['--cd', '/another']).cwd).toBe('/another');
+  });
+  it('cwd is undefined without -C/--cd', () => {
+    expect(parseArgs([]).cwd).toBeUndefined();
+    expect(parseArgs(['--mode', 'plan']).cwd).toBeUndefined();
+  });
+
   it('-p "prompt"', () => {
     expect(parseArgs(['-p', 'do the thing']).prompt).toBe('do the thing');
     expect(parseArgs(['--print', 'foo']).prompt).toBe('foo');
