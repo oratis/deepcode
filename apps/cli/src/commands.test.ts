@@ -117,6 +117,20 @@ describe('built-in command behavior', () => {
     expect(ctx.effort).toBe('high');
   });
 
+  it('/effort table reflects core EFFORT_PARAMS (single source of truth)', async () => {
+    const { EFFORT_PARAMS } = await import('@deepcode/core');
+    const reg = new CommandRegistry();
+    const out = (await reg.match('/effort')!.cmd.run([], makeContext())).join('\n');
+    // Every tier renders the maxTokens/temperature the provider actually uses.
+    for (const tier of ['low', 'medium', 'high', 'xhigh', 'max'] as const) {
+      expect(out).toContain(String(EFFORT_PARAMS[tier].maxTokens));
+      expect(out).toContain(EFFORT_PARAMS[tier].temperature.toFixed(1));
+    }
+    // The old divergent hardcoded numbers must never resurface.
+    expect(out).not.toContain('32768');
+    expect(out).not.toContain('16384');
+  });
+
   it('/status emits session info', async () => {
     const reg = new CommandRegistry();
     const ctx = makeContext({ sessions: new SessionManager({ root: sessRoot }) });
