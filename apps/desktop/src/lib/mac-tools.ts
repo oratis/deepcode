@@ -41,6 +41,20 @@ function pickBool(input: Record<string, unknown>, ...keys: string[]): boolean | 
   return undefined;
 }
 
+/**
+ * Diagnostic suffix for "missing required arg" errors. An empty input almost
+ * always means the model's tool call was cut off at the output-token limit
+ * before it emitted any arguments (DeepSeek caps output at ~8k) — surface that
+ * clearly so the user (and the model, which sees this error) can react.
+ */
+function describeInput(input: Record<string, unknown>): string {
+  const keys = Object.keys(input);
+  if (keys.length === 0) {
+    return ' — the call arrived with NO arguments. The model likely ran out of output tokens before emitting them; raise Effort (try Max) or write a smaller file / split into multiple writes.';
+  }
+  return ` (received keys: ${keys.join(', ')})`;
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Read
 // ──────────────────────────────────────────────────────────────────────────
@@ -65,7 +79,7 @@ export const MacReadTool: ToolHandler = {
     try {
       const filePath = pickStr(input, 'file_path', 'filePath', 'path');
       if (!filePath) {
-        return { content: 'Error: missing file_path', isError: true };
+        return { content: `Error: missing file_path${describeInput(input)}`, isError: true };
       }
       const r = (await invoke('tool_read', {
         filePath,
@@ -111,7 +125,7 @@ export const MacWriteTool: ToolHandler = {
       const filePath = pickStr(input, 'file_path', 'filePath', 'path');
       const content = pickStr(input, 'content', 'text', 'body') ?? '';
       if (!filePath) {
-        return { content: 'Error: missing file_path', isError: true };
+        return { content: `Error: missing file_path${describeInput(input)}`, isError: true };
       }
       await invoke('tool_write', { filePath, content });
       const lines = content.split('\n').length;
@@ -154,7 +168,7 @@ export const MacEditTool: ToolHandler = {
       const replaceAll = pickBool(input, 'replace_all', 'replaceAll') ?? false;
       if (!filePath || oldStr === undefined || newStr === undefined) {
         return {
-          content: 'Error: missing file_path / old_string / new_string',
+          content: `Error: missing file_path / old_string / new_string${describeInput(input)}`,
           isError: true,
         };
       }
