@@ -281,6 +281,7 @@ USAGE
   deepcode plugins install <spec>       Install a plugin (gh:owner/repo | name@npm | ./path)
   deepcode plugins uninstall <name>     Remove an installed plugin
   deepcode skills list [--json]         List available skills
+  deepcode completion <shell>           Print a bash/zsh/fish shell-completion script
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions

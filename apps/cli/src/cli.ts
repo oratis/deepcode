@@ -15,6 +15,7 @@ import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
 import { runPluginsCommand, runSkillsCommand } from './list-cmd.js';
 import { runSetupToken } from './setup-token.js';
+import { runCompletion } from './completion.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -86,6 +87,12 @@ async function main(): Promise<number> {
       output: process.stdout,
       errOutput: process.stderr,
       json: args.json,
+    });
+  }
+  if (args.positional[0] === 'completion') {
+    return runCompletion(args.positional.slice(1), {
+      output: process.stdout,
+      errOutput: process.stderr,
     });
   }
 
