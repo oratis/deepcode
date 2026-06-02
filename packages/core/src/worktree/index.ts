@@ -11,6 +11,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, basename } from 'node:path';
 import type { WorktreeConfig } from '../config/types.js';
+import { gitSpawnEnv } from '../util/git-env.js';
 
 export interface WorktreeHandle {
   /** Absolute path to the worktree dir. */
@@ -87,22 +88,21 @@ export async function removeWorktree(handle: WorktreeHandle): Promise<void> {
   }
   runGit(handle.source, ['worktree', 'remove', '--force', handle.path]);
   // Delete the branch (best-effort)
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const k of Object.keys(env)) {
-    if (k.startsWith('GIT_')) delete env[k];
-  }
-  spawnSync('git', ['-C', handle.source, 'branch', '-D', handle.branch], { stdio: 'pipe', env });
+  spawnSync('git', ['-C', handle.source, 'branch', '-D', handle.branch], {
+    stdio: 'pipe',
+    env: gitSpawnEnv(),
+  });
 }
 
 function runGit(cwd: string, args: string[]): void {
-  // Strip GIT_* env vars that the parent process may have set (e.g. when
-  // running inside a `git commit` hook). Otherwise they hijack the cwd
-  // resolution and we end up operating on the wrong repo's index.
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const k of Object.keys(env)) {
-    if (k.startsWith('GIT_')) delete env[k];
-  }
-  const r = spawnSync('git', ['-C', cwd, ...args], { stdio: 'pipe', encoding: 'utf8', env });
+  // gitSpawnEnv() strips GIT_* vars the parent may have set (e.g. when running
+  // inside a `git commit` hook); otherwise they hijack cwd resolution and we
+  // operate on the wrong repo's index. See git-env.ts.
+  const r = spawnSync('git', ['-C', cwd, ...args], {
+    stdio: 'pipe',
+    encoding: 'utf8',
+    env: gitSpawnEnv(),
+  });
   if (r.status !== 0) {
     throw new Error(`git ${args.join(' ')} failed: ${r.stderr || r.stdout}`);
   }
