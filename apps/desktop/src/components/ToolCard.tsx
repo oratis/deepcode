@@ -22,14 +22,31 @@ interface ToolCardProps {
   body?: ReactNode;
   /** If true, body is a diff (line-by-line; preserves whitespace strictly). */
   diff?: boolean;
+  /**
+   * If set, the target becomes a clickable "open preview" affordance — used for
+   * file tools (Read/Write/Edit) to load the file into the right-side panel.
+   */
+  onOpen?: () => void;
 }
 
-export function ToolCard({ name, target, status, body, diff }: ToolCardProps): JSX.Element {
+export function ToolCard({ name, target, status, body, diff, onOpen }: ToolCardProps): JSX.Element {
   return (
-    <div className="tool-card">
+    <div className={'tool-card' + (onOpen ? ' openable' : '')}>
       <div className="tc-head">
         <span className="name">▸ {name}</span>
-        {target && <span className="target">{target}</span>}
+        {target &&
+          (onOpen ? (
+            <button
+              type="button"
+              className="target tc-open"
+              title="Open preview in the file panel"
+              onClick={onOpen}
+            >
+              {target} <span className="tc-open-caret">›</span>
+            </button>
+          ) : (
+            <span className="target">{target}</span>
+          ))}
         {status && <Badge kind={status.kind}>{status.label}</Badge>}
       </div>
       {body !== undefined && <div className={diff ? 'tc-body diff' : 'tc-body'}>{body}</div>}

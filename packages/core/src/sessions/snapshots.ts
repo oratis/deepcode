@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { sessionFiles } from './storage.js';
+import { gitSpawnEnv } from '../util/git-env.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +33,13 @@ export interface Snapshot {
 }
 
 async function git(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await execFileAsync('git', args, { cwd, maxBuffer: 16 * 1024 * 1024 });
+  // env: gitSpawnEnv() strips inherited GIT_* vars so a leaked GIT_DIR (e.g. from
+  // a surrounding git hook) can't redirect this away from `cwd`. See git-env.ts.
+  const { stdout } = await execFileAsync('git', args, {
+    cwd,
+    env: gitSpawnEnv(),
+    maxBuffer: 16 * 1024 * 1024,
+  });
   return stdout.trim();
 }
 

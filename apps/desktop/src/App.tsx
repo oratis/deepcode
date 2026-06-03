@@ -28,11 +28,7 @@ import { SettingsScreen } from './screens/Settings.js';
 import { SkillsScreen } from './screens/Skills.js';
 import type { ScreenName } from './types/screens.js';
 import type { UpdateInfo } from './types/global.js';
-import {
-  emptyInspectorData,
-  type InspectorData,
-  type InspectorSection,
-} from './types/inspector.js';
+import { emptyInspectorData, type InspectorData } from './types/inspector.js';
 
 export function App(): JSX.Element {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -44,13 +40,15 @@ export function App(): JSX.Element {
   // Reconstructed messages for a resumed session; seeded into ReplScreen on its
   // next remount. Cleared when starting a fresh session.
   const [resumedMessages, setResumedMessages] = useState<Msg[] | undefined>(undefined);
-  // Right inspector: 48 px rail by default, 320 px panel when expanded.
-  const [inspectorExpanded, setInspectorExpanded] = useState(false);
-  // Which section to scroll to when expanding via a rail hint icon (null = top).
-  const [inspectorFocus, setInspectorFocus] = useState<InspectorSection | null>(null);
+  // Right side is an activity bar (48 px rail) that's always present; exactly
+  // one panel opens to its left at a time (VS Code model). `inspectorOpen`
+  // tracks the Inspector panel; the file panel tracks its own tabs + a collapse
+  // flag so it can be hidden without discarding open files.
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const [inspector, setInspector] = useState<InspectorData>(() => emptyInspectorData());
-  // Right-side file panel (§3.11): opens between chat and the inspector rail.
+  // Right-side file panel (§3.11): opens to the left of the rail.
   const fp = useFilePanel();
+  const [filesCollapsed, setFilesCollapsed] = useState(false);
 
   // Drag the panel's left edge to resize (320–800px, persisted by the hook).
   const onFilePanelResizeStart = useCallback(
@@ -69,12 +67,31 @@ export function App(): JSX.Element {
     [fp.state.width, fp.setWidth],
   );
 
-  // Expand the inspector, optionally scrolling to a section. Bumps focus to a
-  // fresh value each time so re-clicking the same icon re-scrolls.
-  const expandInspector = useCallback((section?: InspectorSection) => {
-    setInspectorExpanded(true);
-    setInspectorFocus(section ?? null);
+  // Exactly one right panel at a time. Opening one closes the other; clicking
+  // an active icon closes its panel.
+  const filesVisible = fp.isOpen && !filesCollapsed;
+
+  const toggleInspector = useCallback(() => {
+    setFilesCollapsed(true); // a visible inspector hides the file panel
+    setInspectorOpen((v) => !v);
   }, []);
+
+  const toggleFiles = useCallback(() => {
+    setInspectorOpen(false);
+    if (fp.isOpen) setFilesCollapsed((c) => !c);
+    else void fp.openViaPicker(); // no tabs yet — let the user pick a file
+  }, [fp.isOpen, fp.openViaPicker]);
+
+  // Open a specific file (chat tool card / inspector recent files): surface the
+  // file panel and step the inspector aside for it.
+  const openFile = useCallback(
+    (path: string) => {
+      setInspectorOpen(false);
+      setFilesCollapsed(false);
+      void fp.open(path);
+    },
+    [fp.open],
+  );
 
   // Merge the slice ReplScreen lifts up (usage / model / mode / files / todos).
   // Stable identity so ReplScreen's sync effect doesn't refire every render.
@@ -114,10 +131,10 @@ export function App(): JSX.Element {
   // Re-registered when that context changes so it never reads stale state.
   useEffect(() => {
     return registerShortcut('meta+\\', () => {
-      if (fp.isOpen && fp.state.view === 'diff') fp.toggleDiffMode();
-      else setInspectorExpanded((v) => !v);
+      if (filesVisible && fp.state.view === 'diff') fp.toggleDiffMode();
+      else toggleInspector();
     });
-  }, [fp.isOpen, fp.state.view, fp.toggleDiffMode]);
+  }, [filesVisible, fp.state.view, fp.toggleDiffMode, toggleInspector]);
 
   async function handlePickProject(path: string): Promise<void> {
     await saveProjectPath(path);
@@ -159,11 +176,11 @@ export function App(): JSX.Element {
   const usedTokens = inspector.usage.inputTokens + inspector.usage.outputTokens;
   const contextFill = usedTokens > 0 ? usedTokens / contextWindowFor(inspector.model) : undefined;
 
-  // When the file panel is open it inserts a 4th column and the inspector stays
-  // a 48px rail (§3.11); otherwise the 3-column shell with an optional 320px
-  // inspector panel.
+  // The rail is always the last 48px column. A panel (file OR inspector) opens
+  // to its left, widening the grid so it squeezes chat rather than overlaying.
+  const inspectorShowing = inspectorOpen && !filesVisible;
   const shellClass =
-    'app-shell' + (fp.isOpen ? ' file-open' : inspectorExpanded ? ' inspector-open' : '');
+    'app-shell' + (filesVisible ? ' file-open' : inspectorShowing ? ' inspector-open' : '');
 
   return (
     <div className={shellClass}>
@@ -203,6 +220,14 @@ export function App(): JSX.Element {
           setActiveSessionId(null);
           setSessionEpoch((k) => k + 1);
         }}
+        onSessionRemoved={() => {
+          // The active session was archived/deleted — reset to a fresh chat.
+          clearAgentHistory();
+          setResumedMessages(undefined);
+          setActiveSessionId(null);
+          setScreen('repl');
+          setSessionEpoch((k) => k + 1);
+        }}
       />
       <main className="chat-main" key={`main-${sessionEpoch}`}>
         {renderScreen(
@@ -212,9 +237,10 @@ export function App(): JSX.Element {
           () => setSessionEpoch((k) => k + 1),
           handleInspector,
           resumedMessages,
+          openFile,
         )}
       </main>
-      {fp.isOpen && (
+      {filesVisible ? (
         <FilePanel
           tabs={fp.state.tabs}
           activeIndex={fp.state.activeIndex}
@@ -228,24 +254,25 @@ export function App(): JSX.Element {
           onSelectHistory={() => {}}
           onResizeStart={onFilePanelResizeStart}
         />
-      )}
-      {inspectorExpanded && !fp.isOpen ? (
+      ) : inspectorShowing ? (
         <InspectorPanel
           projectPath={projectPath}
           data={inspector}
-          focusSection={inspectorFocus}
-          onCollapse={() => setInspectorExpanded(false)}
-          onOpenFile={(path) => void fp.open(path)}
+          focusSection={null}
+          onCollapse={() => setInspectorOpen(false)}
+          onOpenFile={openFile}
         />
-      ) : (
-        <InspectorRail
-          onExpand={expandInspector}
-          onSettings={() => setScreen('settings')}
-          settingsActive={SETTINGS_FAMILY.includes(screen)}
-          planCount={planCount}
-          contextFill={contextFill}
-        />
-      )}
+      ) : null}
+      <InspectorRail
+        inspectorActive={inspectorShowing}
+        filesActive={filesVisible}
+        settingsActive={SETTINGS_FAMILY.includes(screen)}
+        planCount={planCount}
+        contextFill={contextFill}
+        onToggleInspector={toggleInspector}
+        onToggleFiles={toggleFiles}
+        onSettings={() => setScreen('settings')}
+      />
     </div>
   );
 }
@@ -257,6 +284,7 @@ function renderScreen(
   onTurnComplete: () => void,
   onInspector: (patch: Partial<InspectorData>) => void,
   initialMessages?: Msg[],
+  onOpenFile?: (path: string) => void,
 ): JSX.Element {
   switch (screen) {
     case 'chat':
@@ -267,6 +295,7 @@ function renderScreen(
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
           onInspector={onInspector}
+          onOpenFile={onOpenFile}
         />
       );
     case 'sessions':
@@ -292,6 +321,7 @@ function renderScreen(
           onTurnComplete={onTurnComplete}
           initialMessages={initialMessages}
           onInspector={onInspector}
+          onOpenFile={onOpenFile}
         />
       );
   }

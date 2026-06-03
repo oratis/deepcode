@@ -15,6 +15,7 @@ import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
 import { runPluginsCommand, runSkillsCommand } from './list-cmd.js';
 import { runSetupToken } from './setup-token.js';
+import { runCompletion } from './completion.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -33,6 +34,22 @@ async function main(): Promise<number> {
     process.stderr.write(`Unknown or invalid flags: ${args.unknownFlags.join(' ')}\n`);
     process.stderr.write(`Run \`deepcode --help\` for the full list.\n`);
     return 2;
+  }
+
+  // -C / --cd <dir>: change the working directory before anything resolves cwd
+  // (Codex parity). Done here — after --help/--version short-circuit but before
+  // every subcommand/REPL/headless path that reads process.cwd() — so a single
+  // chdir covers them all. Validate eagerly so a bad path fails fast (exit 2)
+  // instead of surfacing as a confusing error deep in the agent.
+  if (args.cwd !== undefined) {
+    try {
+      process.chdir(args.cwd);
+    } catch (err) {
+      process.stderr.write(
+        `Cannot change to --cd directory "${args.cwd}": ${(err as Error).message}\n`,
+      );
+      return 2;
+    }
   }
 
   if (args.doctor) {
@@ -86,6 +103,12 @@ async function main(): Promise<number> {
       output: process.stdout,
       errOutput: process.stderr,
       json: args.json,
+    });
+  }
+  if (args.positional[0] === 'completion') {
+    return runCompletion(args.positional.slice(1), {
+      output: process.stdout,
+      errOutput: process.stderr,
     });
   }
 

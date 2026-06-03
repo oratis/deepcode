@@ -27,6 +27,9 @@ export interface ParsedArgs {
   maxTurns?: number;
   bare: boolean;
 
+  /** `-C` / `--cd <dir>`: chdir to this directory before running (Codex parity). */
+  cwd?: string;
+
   // System prompt overrides
   systemPrompt?: string;
   appendSystemPrompt?: string;
@@ -181,6 +184,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case a === '--bare':
         out.bare = true;
         break;
+      case a === '-C' || a === '--cd':
+        out.cwd = next();
+        break;
       case a === '--system-prompt':
         out.systemPrompt = next();
         break;
@@ -281,11 +287,15 @@ USAGE
   deepcode plugins install <spec>       Install a plugin (gh:owner/repo | name@npm | ./path)
   deepcode plugins uninstall <name>     Remove an installed plugin
   deepcode skills list [--json]         List available skills
+  deepcode completion <shell>           Print a bash/zsh/fish shell-completion script
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions
   --permission-mode <name>              Alias for --mode (Claude Code parity)
   --bare                                No plugins / MCP / skills — just kernel + tools
+
+WORKING DIRECTORY
+  -C, --cd <dir>                        Change to <dir> before running (default: current dir)
 
 MODEL & EFFORT
   --model <id>                          deepseek-chat | deepseek-reasoner

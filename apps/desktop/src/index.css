@@ -256,6 +256,13 @@ select {
   grid-template-rows: 1fr;
   height: 100vh;
   background: var(--bg-1);
+  /* Clear the macOS transparent titlebar (titleBarStyle:Transparent +
+     hiddenTitle) so the traffic lights + native drag region don't overlap the
+     sidebar brand / chat-header pills / inspector head. box-sizing is
+     border-box globally, so the grid fits within 100vh − this inset. The native
+     title region (top ~28px) stays OS-draggable; we deliberately do NOT add
+     -webkit-app-region:drag to the shell (it would make chat text unselectable). */
+  padding-top: 30px;
 }
 
 /* ──────────────────────────────────────────────────────────────────── */
@@ -265,7 +272,9 @@ select {
 .sidebar {
   background: var(--bg-0);
   border-right: 1px solid var(--line);
-  padding: 18px 14px;
+  /* Top padding stays small — the shell's 30px titlebar inset already clears
+     the traffic lights, so extra top padding here is pure dead space. */
+  padding: 4px 14px 14px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -274,7 +283,7 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 6px 18px;
+  padding: 2px 6px 14px;
 }
 .sidebar .brand-row .name {
   font-weight: 700;
@@ -301,6 +310,95 @@ select {
 }
 .sidebar .new-btn:hover {
   background: rgba(77, 107, 254, 0.18);
+}
+/* Session search (Claude-Code-style filter) */
+.sidebar .sb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 6px;
+  padding: 6px 9px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+.sidebar .sb-search:focus-within {
+  border-color: var(--line);
+}
+.sidebar .sb-search-icon {
+  color: var(--text-3);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.sidebar .sb-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text-0);
+  font: inherit;
+  font-size: 12px;
+}
+.sidebar .sb-search input::placeholder {
+  color: var(--text-3);
+}
+.sidebar .sb-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.sidebar .sb-search-clear:hover {
+  color: var(--text-0);
+}
+.sidebar .sb-search-empty {
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding: 8px;
+  text-align: center;
+}
+/* Compact active-project row (replaces the big PROJECT box). */
+.sidebar .sb-project {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 4px 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.sidebar .sb-project:hover {
+  background: var(--bg-1);
+}
+.sidebar .sb-project-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.sidebar .sb-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-0);
+  font-weight: 500;
+}
+.sidebar .sb-project-switch {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.sidebar .sb-project-switch:hover {
+  color: var(--text-0);
 }
 .sidebar .new-btn kbd {
   color: var(--text-3);
@@ -357,6 +455,39 @@ select {
   margin-left: auto;
   flex-shrink: 0;
 }
+/* Hover-revealed per-session actions (archive / delete) — they replace the
+   relative-time meta on hover so the row doesn't get crowded. */
+.sidebar .item .row-actions {
+  display: none;
+  margin-left: auto;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.sidebar .item:hover .row-actions {
+  display: inline-flex;
+}
+.sidebar .item:hover .meta {
+  display: none;
+}
+.sidebar .item .row-act {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 5px;
+  opacity: 0.7;
+  filter: grayscale(0.3);
+}
+.sidebar .item .row-act:hover {
+  background: var(--bg-3);
+  opacity: 1;
+  filter: none;
+}
+.sidebar .item .row-act.danger:hover {
+  background: rgba(255, 84, 112, 0.18);
+}
 
 /* ──────────────────────────────────────────────────────────────────── */
 /* Inspector rail (right column)                                       */
@@ -365,7 +496,7 @@ select {
 .inspector-rail {
   background: var(--bg-1);
   border-left: 1px solid var(--line);
-  padding: 14px 0;
+  padding: 6px 0;
   gap: 10px;
   display: flex;
   flex-direction: column;
@@ -426,25 +557,26 @@ select {
 /* ──────────────────────────────────────────────────────────────────── */
 
 .app-shell.inspector-open {
-  grid-template-columns: 240px 1fr 320px;
+  grid-template-columns: 240px 1fr 320px 48px;
 }
 
 .inspector {
   background: var(--bg-0);
   border-left: 1px solid var(--line);
-  padding: 18px;
+  /* No top padding — the sticky head supplies its own; keeps the title aligned
+     with the brand / chat-header just under the titlebar inset. */
+  padding: 0 18px 18px;
   overflow-y: auto;
 }
 .inspector .inspector-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
   /* Sticky so a section scrolled into view via a rail icon lands just below. */
   position: sticky;
-  top: -18px;
-  margin: -18px -18px 4px;
-  padding: 18px 18px 8px;
+  top: 0;
+  margin: 0 -18px 4px;
+  padding: 8px 18px 8px;
   background: var(--bg-0);
   z-index: 1;
 }
@@ -653,7 +785,7 @@ select {
   background: var(--bg-1);
 }
 .chat-header {
-  padding: 12px 22px;
+  padding: 6px 22px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
@@ -678,10 +810,12 @@ select {
 .chat-stream {
   flex: 1;
   overflow-y: auto;
-  padding: 22px;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2px;
+  /* Claude-Code-style centered, readable column rather than full-bleed. */
+  --stream-max: 760px;
 }
 .chat-stream::-webkit-scrollbar {
   width: 8px;
@@ -691,53 +825,52 @@ select {
   border-radius: 4px;
 }
 
-/* Message rows */
+/* Message rows — Claude-Code style: a centered readable column, no heavy
+   avatar chips. The role reads from a subtle label + (for the user) a soft
+   bubble; the assistant is plain prose. */
 .msg {
-  display: flex;
-  gap: 12px;
+  display: block;
+  width: 100%;
+  max-width: var(--stream-max);
+  margin: 0 auto;
+  padding: 10px 22px;
 }
 .msg .avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-.msg.user .avatar {
-  background: var(--bg-3);
-  color: var(--text-1);
-}
-.msg.assistant .avatar {
-  background: linear-gradient(135deg, var(--brand) 0%, #6b86ff 100%);
-  color: #fff;
-}
-.msg.system .avatar {
-  background: var(--bg-2);
-  color: var(--text-2);
-  font-size: 11px;
+  display: none;
 }
 .msg .body {
-  flex: 1;
   min-width: 0;
 }
 .msg .author {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-3);
-  margin-bottom: 4px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  margin-bottom: 5px;
+  letter-spacing: 0.3px;
   font-weight: 600;
 }
 .msg .content {
-  color: var(--text-0);
-  font-size: 13.5px;
-  line-height: 1.65;
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* User turns get a soft bubble; assistant + system are plain prose. */
+.msg.user .body {
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.msg.user .author {
+  display: none;
+}
+.msg.assistant .content {
+  color: var(--text-0);
+}
+.msg.system {
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 .msg .content code {
   background: var(--bg-3);
@@ -774,6 +907,31 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* File-tool cards: the target is a clickable "open preview" affordance. */
+.tool-card .tc-head .tc-open {
+  border: none;
+  background: transparent;
+  font: inherit;
+  cursor: pointer;
+  color: var(--brand);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  max-width: 100%;
+}
+.tool-card .tc-head .tc-open:hover {
+  background: var(--brand-tint);
+  color: #b4c2ff;
+}
+.tool-card .tc-head .tc-open .tc-open-caret {
+  color: var(--text-3);
+  font-weight: 700;
+}
+.tool-card .tc-head .tc-open:hover .tc-open-caret {
+  color: var(--brand);
 }
 .tool-card .tc-head .badge {
   margin-left: auto;
@@ -817,6 +975,14 @@ select {
   border-top: 1px solid var(--line);
   padding: 14px 18px 16px;
   background: var(--bg-1);
+}
+/* Keep the composer aligned with the centered message column (Claude-Code feel)
+   rather than spanning full width. 760px matches .msg's --stream-max. */
+.composer .box,
+.composer .ctx-bar {
+  max-width: 760px;
+  width: 100%;
+  margin-inline: auto;
 }
 .composer .box {
   border: 1px solid var(--line);

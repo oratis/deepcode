@@ -4,6 +4,15 @@
 
 Legend: `✅` matches · `🟡` matches with caveats · `🔄` deferred · `⚠️` deliberately differs · `🆕` DeepCode-only addition
 
+> **2026-06 accuracy pass.** Several per-row tags below had drifted behind the
+> code (the Tools table in particular marked shipped tools as deferred — now
+> corrected). Treat the milestone tags (`M3c`, `M8`, …) as historical notes, not
+> current status. Additions landing in the alignment batch this pass:
+> CLI `-C` / `--cd` (Codex parity); the `/diff`, `/release-notes`, and `/bug`
+> (alias `/feedback`) slash commands; and a fix so the CLI `/effort` table reads
+> its numbers from `EFFORT_PARAMS` instead of a divergent hardcoded copy. The
+> rows below will be flipped to `✅` as those PRs merge.
+
 ---
 
 ## Slash commands (30+ in Claude Code, ~20 shipped in DeepCode)
@@ -131,44 +140,44 @@ Specific deviations:
 
 ## Tools
 
-| Tool                                                                           | Claude Code | DeepCode | Status                                      |
-| ------------------------------------------------------------------------------ | ----------- | -------- | ------------------------------------------- |
-| Read                                                                           | ✓           | ✓        | ✅                                          |
-| Write                                                                          | ✓           | ✓        | ✅                                          |
-| Edit                                                                           | ✓           | ✓        | ✅                                          |
-| Bash                                                                           | ✓           | ✓        | ✅ + M3.5 sandbox wrap                      |
-| Grep                                                                           | ✓           | ✓        | ✅ via ripgrep                              |
-| Glob                                                                           | ✓           | ✓        | ✅ via fs.glob                              |
-| Skill                                                                          | ✓           | ✓        | ✅ M5                                       |
-| Task (subagents)                                                               | ✓           | 🔄       | M4 sub-agent files load; agent dispatch M4+ |
-| NotebookEdit                                                                   | ✓           | 🔄       | M8                                          |
-| AskUserQuestion                                                                | ✓           | 🔄       | M3c+                                        |
-| ExitPlanMode                                                                   | ✓           | 🔄       | enforced via /mode                          |
-| EnterWorktree / ExitWorktree                                                   | ✓           | 🔄       | M8                                          |
-| ToolSearch (deferred load)                                                     | ✓           | 🔄       | M3c+                                        |
-| TaskCreate / Monitor / TaskList / TaskGet / TaskOutput / TaskStop / TaskUpdate | ✓           | 🔄       | M8 (background tasks)                       |
-| CronCreate / CronList / CronDelete                                             | ✓           | 🔄       | M8 (cron daemon)                            |
-| ScheduleWakeup                                                                 | ✓           | 🔄       | M8                                          |
-| WebFetch                                                                       | ✓           | ✅       | shipped M3c-rest — 5 MiB cap + abort        |
-| WebSearch                                                                      | ✓           | ✅       | shipped M3c-rest — DDG default + SearXNG    |
-| TodoWrite                                                                      | ✓           | ✅       | shipped M3c-rest — persists in sessionDir   |
+| Tool                                                                           | Claude Code | DeepCode | Status                                                      |
+| ------------------------------------------------------------------------------ | ----------- | -------- | ----------------------------------------------------------- |
+| Read                                                                           | ✓           | ✓        | ✅                                                          |
+| Write                                                                          | ✓           | ✓        | ✅                                                          |
+| Edit                                                                           | ✓           | ✓        | ✅                                                          |
+| Bash                                                                           | ✓           | ✓        | ✅ + M3.5 sandbox wrap                                      |
+| Grep                                                                           | ✓           | ✓        | ✅ via ripgrep                                              |
+| Glob                                                                           | ✓           | ✓        | ✅ via fs.glob                                              |
+| Skill                                                                          | ✓           | ✓        | ✅ M5                                                       |
+| Task (subagents)                                                               | ✓           | ✅       | `TaskTool` in `BUILTIN_TOOLS` — spawns a sub-agent          |
+| NotebookEdit                                                                   | ✓           | ✅       | shipped (`tools/notebook.ts`)                               |
+| AskUserQuestion                                                                | ✓           | ✅       | shipped; returns null in headless                           |
+| EnterPlanMode / ExitPlanMode                                                   | ✓           | ✅       | shipped; also drivable via `/mode plan`                     |
+| EnterWorktree / ExitWorktree                                                   | ✓           | ✅       | shipped (`tools/worktree-tools.ts`)                         |
+| ToolSearch (deferred load)                                                     | ✓           | ✅       | installed when MCP tools opt out of eager load              |
+| TaskCreate / Monitor / TaskList / TaskGet / TaskOutput / TaskStop / TaskUpdate | ✓           | ✅       | shipped — background tasks (`TASK_TOOLS`)                   |
+| CronCreate / CronList / CronDelete                                             | ✓           | ✅       | shipped — launchd-backed scheduler                          |
+| ScheduleWakeup                                                                 | ✓           | ⚠️       | not a tool in DeepCode — use `CronCreate` / `deepcode cron` |
+| WebFetch                                                                       | ✓           | ✅       | shipped M3c-rest — 5 MiB cap + abort                        |
+| WebSearch                                                                      | ✓           | ✅       | shipped M3c-rest — DDG default + SearXNG                    |
+| TodoWrite                                                                      | ✓           | ✅       | shipped M3c-rest — persists in sessionDir                   |
 
 ## CLI flags
 
-| Flag                                                                         | Status                                                                  |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| `--help` / `--version`                                                       | ✅                                                                      |
-| `--mode` / `--permission-mode`                                               | ✅                                                                      |
-| `--model` / `--effort`                                                       | ✅                                                                      |
-| `--max-turns`                                                                | ✅                                                                      |
-| `--system-prompt` / `--append-system-prompt[-file]`                          | ✅                                                                      |
-| `--allowedTools` / `--disallowedTools`                                       | ✅                                                                      |
-| `--bare`                                                                     | 🔄 (parsed, semantics deferred)                                         |
-| `--settings` / `--agents` / `--mcp-config` / `--plugin-dir` / `--plugin-url` | 🔄 (parsed only)                                                        |
-| `--no-plugins` / `--strict`                                                  | 🔄 (parsed only)                                                        |
-| `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes                                  |
-| `--output-format` / `--json-schema` / `--include-partial-messages`           | 🟡 output-format ✅; json-schema + include-partial-messages parsed only |
-| `--resume <id>` / `--continue` / `--fork-session`                            | 🔄 M3c+                                                                 |
+| Flag                                                                         | Status                                                                                                                       |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--help` / `--version`                                                       | ✅                                                                                                                           |
+| `--mode` / `--permission-mode`                                               | ✅                                                                                                                           |
+| `--model` / `--effort`                                                       | ✅                                                                                                                           |
+| `--max-turns`                                                                | ✅                                                                                                                           |
+| `--system-prompt` / `--append-system-prompt[-file]`                          | ✅                                                                                                                           |
+| `--allowedTools` / `--disallowedTools`                                       | ✅                                                                                                                           |
+| `--bare`                                                                     | 🔄 (parsed, semantics deferred)                                                                                              |
+| `--settings` / `--agents` / `--mcp-config` / `--plugin-dir` / `--plugin-url` | 🔄 (parsed only)                                                                                                             |
+| `--no-plugins` / `--strict`                                                  | 🔄 (parsed only)                                                                                                             |
+| `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes                                                                                       |
+| `--output-format` / `--json-schema` / `--include-partial-messages`           | ✅ output-format + json-schema (lightweight top-level validation) + include-partial-messages all implemented (`headless.ts`) |
+| `--resume <id>` / `--continue` / `--fork-session`                            | 🔄 M3c+                                                                                                                      |
 
 ## What DeepCode adds that Claude Code doesn't have (yet)
 

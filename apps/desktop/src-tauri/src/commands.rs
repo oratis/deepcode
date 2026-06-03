@@ -198,7 +198,14 @@ pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue; // tolerate a partial trailing line
         };
-        if v.get("type").and_then(|t| t.as_str()) == Some("message") {
+        // Desktop sessions tag messages with type:"message"; CLI/headless sessions
+        // write bare {role, content} lines with no type. Accept both, skip meta.
+        let t = v.get("type").and_then(|t| t.as_str());
+        let is_role_msg = matches!(
+            v.get("role").and_then(|r| r.as_str()),
+            Some("user") | Some("assistant")
+        );
+        if t == Some("message") || (t.is_none() && is_role_msg) {
             out.push(v);
         }
     }
@@ -250,34 +257,37 @@ fn derive_session_title(path: &std::path::Path) -> Option<String> {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        match v.get("type").and_then(|t| t.as_str()) {
-            // Manual title wins — return immediately.
-            Some("session_meta") => {
-                if let Some(t) = v.get("title").and_then(|t| t.as_str()) {
-                    let t = t.trim();
-                    if !t.is_empty() {
-                        return Some(clean_title(t));
-                    }
+        let line_type = v.get("type").and_then(|t| t.as_str());
+        // Manual title on the session_meta header wins — return immediately.
+        if line_type == Some("session_meta") {
+            if let Some(t) = v.get("title").and_then(|t| t.as_str()) {
+                let t = t.trim();
+                if !t.is_empty() {
+                    return Some(clean_title(t));
                 }
             }
-            Some("message") if v.get("role").and_then(|r| r.as_str()) == Some("user") => {
-                if from_user.is_none() {
-                    if let Some(content) = v.get("content").and_then(|c| c.as_array()) {
-                        for block in content {
-                            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                                if let Some(txt) = block.get("text").and_then(|t| t.as_str()) {
-                                    let title = clean_title(txt);
-                                    if !title.is_empty() {
-                                        from_user = Some(title);
-                                        break;
-                                    }
-                                }
+            continue;
+        }
+        // First user message → title. Desktop tags type:"message"; CLI/headless
+        // sessions write bare {role,content} with no type — accept both.
+        let is_msg = line_type == Some("message") || line_type.is_none();
+        if is_msg
+            && v.get("role").and_then(|r| r.as_str()) == Some("user")
+            && from_user.is_none()
+        {
+            if let Some(content) = v.get("content").and_then(|c| c.as_array()) {
+                for block in content {
+                    if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                        if let Some(txt) = block.get("text").and_then(|t| t.as_str()) {
+                            let title = clean_title(txt);
+                            if !title.is_empty() {
+                                from_user = Some(title);
+                                break;
                             }
                         }
                     }
                 }
             }
-            _ => {}
         }
     }
     from_user
@@ -380,6 +390,45 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
     }
     out.sort_by(|a, b| b.updated_at_secs.cmp(&a.updated_at_secs));
     Ok(out)
+}
+
+/// Reject session ids that could escape the sessions directory.
+fn safe_session_id(id: &str) -> Result<(), String> {
+    if id.is_empty() || id.contains('/') || id.contains('\\') || id.contains("..") {
+        return Err(format!("invalid session id: {id}"));
+    }
+    Ok(())
+}
+
+/// Permanently delete a session's JSONL file.
+#[tauri::command]
+pub fn session_delete(id: String) -> Result<(), String> {
+    safe_session_id(&id)?;
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let path = home
+        .join(".deepcode")
+        .join("sessions")
+        .join(format!("{id}.jsonl"));
+    std::fs::remove_file(&path).map_err(|e| format!("delete {}: {}", path.display(), e))
+}
+
+/// Archive a session by moving its JSONL into sessions/archived/ — excluded from
+/// list_sessions but recoverable from disk.
+#[tauri::command]
+pub fn session_archive(id: String) -> Result<(), String> {
+    safe_session_id(&id)?;
+    let Some(home) = dirs::home_dir() else {
+        return Err("no home directory".into());
+    };
+    let dir = home.join(".deepcode").join("sessions");
+    let archived = dir.join("archived");
+    std::fs::create_dir_all(&archived)
+        .map_err(|e| format!("mkdir {}: {}", archived.display(), e))?;
+    let from = dir.join(format!("{id}.jsonl"));
+    let to = archived.join(format!("{id}.jsonl"));
+    std::fs::rename(&from, &to).map_err(|e| format!("archive {}: {}", from.display(), e))
 }
 
 /// Path to the `deepcode` CLI so the GUI can drop users into it for advanced

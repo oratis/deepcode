@@ -354,6 +354,10 @@ export {
   type CreateWorktreeOpts,
 } from './worktree/index.js';
 
+// Scrubbed environment for spawning `git` against an explicit cwd (strips
+// inherited GIT_* so a leaked GIT_DIR can't redirect the call).
+export { gitSpawnEnv } from './util/git-env.js';
+
 // launchd LaunchAgent installer (M8 — macOS scheduled tasks daemon)
 export {
   buildPlist,

@@ -9,7 +9,13 @@ import type {
   SessionMeta,
   StoredMessage,
 } from '@deepcode/core';
-import { contextWindowFor, redact, type Credentials } from '@deepcode/core';
+import {
+  contextWindowFor,
+  redact,
+  EFFORT_PARAMS,
+  type Credentials,
+  type Effort,
+} from '@deepcode/core';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -177,19 +183,34 @@ export const ModeCommand: SlashCommand = {
   },
 };
 
-// Effort tier UI metadata — surfaced by `/effort` with no args.
+// Effort tier UI metadata surfaced by `/effort` with no args.
+// why: the maxTokens/temperature numbers are NOT defined here — they are read
+// from EFFORT_PARAMS in @deepcode/core, the single source of truth the REPL and
+// headless paths actually send to the provider. A divergent hardcoded table
+// here previously told users "max = 32768 tokens, temp 0.7" while the provider
+// sent max_tokens=8192, temp=0.8 — pure misinformation. Only the human-readable
+// use-case hint is CLI-local; everything quantitative is derived.
+const EFFORT_ORDER: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+
+const EFFORT_USE: Record<Effort, string> = {
+  low: 'Quick targeted fixes. Cheap.',
+  medium: 'Default. Most tasks.',
+  high: 'Multi-step refactors.',
+  xhigh: 'Plans, architecture decisions.',
+  max: 'Open-ended exploration. Burns tokens.',
+};
+
 const EFFORT_TIERS: Array<{
-  name: string;
+  name: Effort;
   maxTokens: number;
   temperature: number;
   use: string;
-}> = [
-  { name: 'low', maxTokens: 1024, temperature: 0.0, use: 'Quick targeted fixes. Cheap.' },
-  { name: 'medium', maxTokens: 4096, temperature: 0.3, use: 'Default. Most tasks.' },
-  { name: 'high', maxTokens: 8192, temperature: 0.5, use: 'Multi-step refactors.' },
-  { name: 'xhigh', maxTokens: 16384, temperature: 0.6, use: 'Plans, architecture decisions.' },
-  { name: 'max', maxTokens: 32768, temperature: 0.7, use: 'Open-ended exploration. Burns tokens.' },
-];
+}> = EFFORT_ORDER.map((name) => ({
+  name,
+  maxTokens: EFFORT_PARAMS[name].maxTokens,
+  temperature: EFFORT_PARAMS[name].temperature,
+  use: EFFORT_USE[name],
+}));
 
 export const EffortCommand: SlashCommand = {
   name: '/effort',
