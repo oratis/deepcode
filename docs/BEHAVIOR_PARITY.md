@@ -177,7 +177,7 @@ Specific deviations:
 | `--no-plugins` / `--strict`                                                  | 🔄 (parsed only)                                                                                                             |
 | `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes                                                                                       |
 | `--output-format` / `--json-schema` / `--include-partial-messages`           | ✅ output-format + json-schema (lightweight top-level validation) + include-partial-messages all implemented (`headless.ts`) |
-| `--resume <id>` / `--continue` / `--fork-session`                            | 🔄 M3c+                                                                                                                      |
+| `--resume <id>` / `--continue` / `--fork-session`                            | ✅ resume by id (picker if no id, `-r`), most-recent-in-cwd (`-c`), fork-into-new                                            |
 
 ## What DeepCode adds that Claude Code doesn't have (yet)
 
