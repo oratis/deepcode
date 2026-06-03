@@ -272,7 +272,9 @@ select {
 .sidebar {
   background: var(--bg-0);
   border-right: 1px solid var(--line);
-  padding: 18px 14px;
+  /* Top padding stays small — the shell's 30px titlebar inset already clears
+     the traffic lights, so extra top padding here is pure dead space. */
+  padding: 4px 14px 14px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -281,7 +283,7 @@ select {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 6px 18px;
+  padding: 2px 6px 14px;
 }
 .sidebar .brand-row .name {
   font-weight: 700;
@@ -494,7 +496,7 @@ select {
 .inspector-rail {
   background: var(--bg-1);
   border-left: 1px solid var(--line);
-  padding: 14px 0;
+  padding: 6px 0;
   gap: 10px;
   display: flex;
   flex-direction: column;
@@ -561,19 +563,20 @@ select {
 .inspector {
   background: var(--bg-0);
   border-left: 1px solid var(--line);
-  padding: 18px;
+  /* No top padding — the sticky head supplies its own; keeps the title aligned
+     with the brand / chat-header just under the titlebar inset. */
+  padding: 0 18px 18px;
   overflow-y: auto;
 }
 .inspector .inspector-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 4px;
   /* Sticky so a section scrolled into view via a rail icon lands just below. */
   position: sticky;
-  top: -18px;
-  margin: -18px -18px 4px;
-  padding: 18px 18px 8px;
+  top: 0;
+  margin: 0 -18px 4px;
+  padding: 8px 18px 8px;
   background: var(--bg-0);
   z-index: 1;
 }
@@ -782,7 +785,7 @@ select {
   background: var(--bg-1);
 }
 .chat-header {
-  padding: 12px 22px;
+  padding: 6px 22px;
   border-bottom: 1px solid var(--line);
   display: flex;
   align-items: center;
