@@ -138,7 +138,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case a === '-p' || a === '--print':
         out.prompt = next();
         break;
-      case a === '--resume': {
+      case a === '--resume' || a === '-r': {
         const maybeId = argv[i + 1];
         if (maybeId && !maybeId.startsWith('-')) {
           out.resumeId = maybeId;
@@ -147,7 +147,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
         out.resume = true;
         break;
       }
-      case a === '--continue':
+      case a === '--continue' || a === '-c':
         out.continue = true;
         break;
       case a === '--fork-session':
@@ -274,8 +274,9 @@ export function helpText(version: string): string {
 USAGE
   deepcode                              Interactive REPL
   deepcode -p "<prompt>"                Headless one-shot
-  deepcode --resume [<id>]              Resume a session
-  deepcode --continue                   Continue most recent session
+  deepcode --resume, -r [<id>]          Resume a session (picker if no id)
+  deepcode --continue, -c               Continue most recent session here
+  deepcode --resume <id> --fork-session Resume into a new session (keep original)
   deepcode doctor                       Diagnostic checks
   deepcode upgrade                      Self-update (CLI; Mac client auto-updates)
   deepcode setup-token [<token>]        Store a long-lived DeepSeek auth token (CI)

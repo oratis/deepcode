@@ -163,6 +163,10 @@ async function main(): Promise<number> {
     allowedTools: args.allowedTools,
     disallowedTools: args.disallowedTools,
     maxTurns: args.maxTurns,
+    resume: args.resume,
+    resumeId: args.resumeId,
+    continueSession: args.continue,
+    forkSession: args.forkSession,
   });
 }
 

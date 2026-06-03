@@ -44,6 +44,7 @@ import {
   type McpClientHandle,
   type Mode,
   type AgentEvent,
+  type SessionMeta,
   type StoredMessage,
   type WireResult,
 } from '@deepcode/core';
@@ -79,9 +80,120 @@ export interface ReplOpts {
   disallowedTools?: string[];
   /** Cap on agent loop turns. */
   maxTurns?: number;
+  // Session resume (--resume / --continue / --fork-session)
+  /** `--resume` with no id → pick a session interactively. */
+  resume?: boolean;
+  /** `--resume <id>` → resume this specific session (append to it). */
+  resumeId?: string;
+  /** `--continue` → resume the most recently updated session in this cwd. */
+  continueSession?: boolean;
+  /** `--fork-session` → resume into a NEW session, leaving the source intact. */
+  forkSession?: boolean;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
+
+export interface SessionResolution {
+  session: SessionMeta;
+  /** Prior messages to seed into the agent's context (empty for a fresh session). */
+  seededHistory: StoredMessage[];
+  /** One-line status to print (resumed / forked / fell back to fresh). */
+  notice?: string;
+}
+
+/**
+ * Decide which session a REPL launch should use:
+ *   - `resumeId`        → resume that exact session (append to it)
+ *   - `continueSession` → resume the most-recently-updated session in `cwd`
+ *   - `forkSession`     → resume into a NEW session seeded with a copy of the
+ *                         source history, leaving the original untouched
+ *   - otherwise         → a fresh session
+ * Pure over a `SessionManager`, so it's unit-testable without a live REPL.
+ */
+export async function resolveSession(
+  sessions: SessionManager,
+  cwd: string,
+  model: string,
+  opts: { resumeId?: string; continueSession?: boolean; forkSession?: boolean },
+): Promise<SessionResolution> {
+  let sourceId = opts.resumeId;
+
+  if (!sourceId && opts.continueSession) {
+    // Most recent session in THIS directory (list() is updatedAt-desc).
+    const inCwd = (await sessions.list()).filter((m) => m.cwd === cwd);
+    if (inCwd.length === 0) {
+      return {
+        session: await sessions.create(cwd, { model }),
+        seededHistory: [],
+        notice: 'No previous session in this directory — starting a new one.',
+      };
+    }
+    sourceId = inCwd[0]!.id;
+  }
+
+  if (sourceId) {
+    const loaded = await sessions.load(sourceId);
+    if (!loaded) {
+      return {
+        session: await sessions.create(cwd, { model }),
+        seededHistory: [],
+        notice: `Session ${sourceId} not found — starting a new one.`,
+      };
+    }
+    const n = loaded.messages.length;
+    const plural = n === 1 ? '' : 's';
+    if (opts.forkSession) {
+      const forked = await sessions.create(cwd, {
+        model: loaded.meta.model ?? model,
+        title: loaded.meta.title,
+      });
+      for (const m of loaded.messages) await sessions.append(forked.id, m);
+      return {
+        session: forked,
+        seededHistory: loaded.messages,
+        notice: `⎇ Forked ${sourceId} → ${forked.id} (${n} message${plural} copied).`,
+      };
+    }
+    return {
+      session: loaded.meta,
+      seededHistory: loaded.messages,
+      notice: `↻ Resumed ${sourceId} (${n} message${plural}).`,
+    };
+  }
+
+  return { session: await sessions.create(cwd, { model }), seededHistory: [] };
+}
+
+/**
+ * Interactive `--resume` with no id: list recent sessions and read a choice.
+ * Returns the chosen session id, or undefined to start fresh.
+ */
+async function pickSessionId(
+  sessions: SessionManager,
+  input: Readable,
+  output: Writable,
+): Promise<string | undefined> {
+  const list = (await sessions.list()).slice(0, 20);
+  if (list.length === 0) {
+    output.write('  No sessions to resume — starting a new one.\n');
+    return undefined;
+  }
+  output.write('\n  Resume which session?\n');
+  list.forEach((m, i) => {
+    const when = m.updatedAt.slice(0, 16).replace('T', ' ');
+    const label = m.title?.trim() ? m.title.trim() : m.id;
+    output.write(`    ${String(i + 1).padStart(2)}. ${label}  ·  ${when}\n`);
+  });
+  const picker = createInterface({ input, output, terminal: false });
+  const answer = (await picker.question('  Number (blank = new session): ')).trim();
+  picker.close();
+  const n = Number(answer);
+  if (!Number.isInteger(n) || n < 1 || n > list.length) {
+    if (answer) output.write('  No match — starting a new one.\n');
+    return undefined;
+  }
+  return list[n - 1]!.id;
+}
 
 export async function startRepl(opts: ReplOpts): Promise<number> {
   const { output, cwd } = opts;
@@ -125,7 +237,19 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
 
   const sessions = new SessionManager();
-  const session = await sessions.create(cwd, { model });
+  // Resolve which session to use: resume an explicit id, continue the most
+  // recent in this cwd, fork either into a new session, or start fresh.
+  let resumeId = opts.resumeId;
+  if (opts.resume && !resumeId && !opts.continueSession) {
+    resumeId = await pickSessionId(sessions, opts.input, output);
+  }
+  const resolved = await resolveSession(sessions, cwd, model, {
+    resumeId,
+    continueSession: opts.continueSession,
+    forkSession: opts.forkSession,
+  });
+  const session = resolved.session;
+  if (resolved.notice) output.write(`  ${resolved.notice}\n`);
 
   const provider = new DeepSeekProvider({
     apiKey: creds.apiKey ?? '',
@@ -286,7 +410,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     output.write(`  ⊞ Plugins: wire-up failed — ${(err as Error).message}\n`);
   }
 
-  let history: StoredMessage[] = [];
+  let history: StoredMessage[] = resolved.seededHistory;
   const ctx: SessionContext = {
     cwd,
     model,
