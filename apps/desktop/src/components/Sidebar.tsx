@@ -58,6 +58,7 @@ export function Sidebar({
   // Inline rename: which session is being edited + its draft title.
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [query, setQuery] = useState('');
 
   const reload = useCallback(() => {
     void listSessions()
@@ -112,12 +113,18 @@ export function Sidebar({
     }
   }
 
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? sessions.filter(
+        (s) => (s.title || '').toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
+      )
+    : sessions;
   const grouped: Record<Bucket, SessionMeta[]> = {
     Today: [],
     Yesterday: [],
     Earlier: [],
   };
-  for (const s of sessions) {
+  for (const s of visible) {
     grouped[bucketFor(s.updated_at_secs, now)].push(s);
   }
 
@@ -128,74 +135,51 @@ export function Sidebar({
         <span className="name">DeepCode</span>
       </div>
 
-      {/* Active project chip */}
-      <div
-        style={{
-          margin: '4px 4px 12px',
-          padding: '8px 10px',
-          background: 'var(--bg-1)',
-          border: '1px solid var(--line)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 11,
-          color: 'var(--text-2)',
-        }}
-        title={projectPath}
-      >
-        <div
-          style={{
-            fontSize: 9,
-            textTransform: 'uppercase',
-            letterSpacing: 1,
-            color: 'var(--text-3)',
-            marginBottom: 3,
-          }}
+      {/* Active project — compact row (the breadcrumb in the header carries the path). */}
+      <div className="sb-project" title={projectPath}>
+        <span className="sb-project-icon">📁</span>
+        <span className="sb-project-name">{projectName(projectPath)}</span>
+        <button
+          type="button"
+          className="sb-project-switch"
+          onClick={onSwitchProject}
+          title="Switch to another folder"
         >
-          Project
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            color: 'var(--text-0)',
-            fontSize: 12,
-            fontWeight: 500,
-          }}
-        >
-          <span>📁</span>
-          <span
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              flex: 1,
-              minWidth: 0,
-            }}
-          >
-            {projectName(projectPath)}
-          </span>
-          <button
-            type="button"
-            onClick={onSwitchProject}
-            title="Switch to another folder"
-            style={{
-              background: 'transparent',
-              border: 0,
-              color: 'var(--text-3)',
-              cursor: 'pointer',
-              fontSize: 11,
-              padding: 2,
-            }}
-          >
-            ⇄
-          </button>
-        </div>
+          ⇄
+        </button>
       </div>
 
       <button type="button" className="new-btn" onClick={onNewSession}>
         <span>+ New session</span>
         <kbd>⌘N</kbd>
       </button>
+
+      {sessions.length > 0 && (
+        <div className="sb-search">
+          <span className="sb-search-icon">⌕</span>
+          <input
+            type="text"
+            placeholder="Search sessions"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            spellCheck={false}
+          />
+          {query && (
+            <button
+              type="button"
+              className="sb-search-clear"
+              onClick={() => setQuery('')}
+              title="Clear"
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
+
+      {q && visible.length === 0 && (
+        <div className="sb-search-empty">No sessions match “{query}”.</div>
+      )}
 
       {(['Today', 'Yesterday', 'Earlier'] as const).map((bucket) => {
         const items = grouped[bucket];

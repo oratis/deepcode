@@ -309,6 +309,95 @@ select {
 .sidebar .new-btn:hover {
   background: rgba(77, 107, 254, 0.18);
 }
+/* Session search (Claude-Code-style filter) */
+.sidebar .sb-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 4px 6px;
+  padding: 6px 9px;
+  background: var(--bg-0);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
+.sidebar .sb-search:focus-within {
+  border-color: var(--line);
+}
+.sidebar .sb-search-icon {
+  color: var(--text-3);
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.sidebar .sb-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text-0);
+  font: inherit;
+  font-size: 12px;
+}
+.sidebar .sb-search input::placeholder {
+  color: var(--text-3);
+}
+.sidebar .sb-search-clear {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.sidebar .sb-search-clear:hover {
+  color: var(--text-0);
+}
+.sidebar .sb-search-empty {
+  color: var(--text-3);
+  font-size: 11.5px;
+  padding: 8px;
+  text-align: center;
+}
+/* Compact active-project row (replaces the big PROJECT box). */
+.sidebar .sb-project {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 4px 10px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  color: var(--text-1);
+  font-size: 12.5px;
+}
+.sidebar .sb-project:hover {
+  background: var(--bg-1);
+}
+.sidebar .sb-project-icon {
+  font-size: 13px;
+  flex-shrink: 0;
+}
+.sidebar .sb-project-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-0);
+  font-weight: 500;
+}
+.sidebar .sb-project-switch {
+  border: 0;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+.sidebar .sb-project-switch:hover {
+  color: var(--text-0);
+}
 .sidebar .new-btn kbd {
   color: var(--text-3);
   font-family: inherit;
@@ -883,6 +972,14 @@ select {
   border-top: 1px solid var(--line);
   padding: 14px 18px 16px;
   background: var(--bg-1);
+}
+/* Keep the composer aligned with the centered message column (Claude-Code feel)
+   rather than spanning full width. 760px matches .msg's --stream-max. */
+.composer .box,
+.composer .ctx-bar {
+  max-width: 760px;
+  width: 100%;
+  margin-inline: auto;
 }
 .composer .box {
   border: 1px solid var(--line);
