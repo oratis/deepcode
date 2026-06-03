@@ -35,6 +35,22 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  // -C / --cd <dir>: change the working directory before anything resolves cwd
+  // (Codex parity). Done here — after --help/--version short-circuit but before
+  // every subcommand/REPL/headless path that reads process.cwd() — so a single
+  // chdir covers them all. Validate eagerly so a bad path fails fast (exit 2)
+  // instead of surfacing as a confusing error deep in the agent.
+  if (args.cwd !== undefined) {
+    try {
+      process.chdir(args.cwd);
+    } catch (err) {
+      process.stderr.write(
+        `Cannot change to --cd directory "${args.cwd}": ${(err as Error).message}\n`,
+      );
+      return 2;
+    }
+  }
+
   if (args.doctor) {
     return doctor();
   }
