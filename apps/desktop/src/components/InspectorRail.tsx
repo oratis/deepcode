@@ -1,97 +1,69 @@
-// Right-column collapsed inspector rail (48 px).
-// Design spec screen #3 (line ~1220).
+// Right-column activity bar (48 px) — always present on the far right.
 //
-// Per the spec the rail is intentionally minimal: it hints at the inspector's
-// contents with four small icons (▤ Plan · ◐ Context · 📁 Recent files ·
-// ⓘ Session info) and nothing else but the ‹ expand chevron and a ⚙ Settings
-// shortcut. Clicking ‹ — or any of the four hint icons — expands the 320 px
-// panel (the icon picks which section to scroll to). The settings cog is the
-// rail's one piece of navigation; everything else (Permissions / MCP / Plugins
-// / Skills / About) lives inside the Settings shell's left nav.
-
-import type { InspectorSection } from '../types/inspector.js';
+// Each icon opens its OWN distinct right-side panel (VS Code activity-bar
+// model), so it's no longer "everything opens the inspector":
+//   • ⓘ Inspector — plan / context / recent files / session (toggles the panel)
+//   • ▤ Files     — the file preview panel (Source / Diff / History)
+//   • ⚙ Settings  — the Settings shell (a main-area screen, not a right panel)
+// The active panel's icon is highlighted; clicking it again closes the panel.
 
 interface InspectorRailProps {
-  /** Plan items pending — shown as a badge on ▤. */
-  planCount?: number;
-  /** Context fill 0..1 — drives the ◐ color (mint if < 0.6, warn ≥ 0.8). */
-  contextFill?: number;
-  /** Expand the rail into the 320 px panel, optionally focusing a section. */
-  onExpand: (section?: InspectorSection) => void;
-  /** Open the Settings shell. */
-  onSettings: () => void;
-  /** Highlight the cog when the user is on any settings-family screen. */
+  /** Inspector panel is the visible right panel. */
+  inspectorActive: boolean;
+  /** File preview panel is the visible right panel. */
+  filesActive: boolean;
+  /** On any settings-family screen (highlights the cog). */
   settingsActive: boolean;
+  /** Plan items pending — badge on the Inspector icon. */
+  planCount?: number;
+  /** Context fill 0..1 — tints the Inspector icon (warn ≥ 0.8). */
+  contextFill?: number;
+  onToggleInspector: () => void;
+  onToggleFiles: () => void;
+  onSettings: () => void;
 }
 
 export function InspectorRail({
+  inspectorActive,
+  filesActive,
+  settingsActive,
   planCount,
   contextFill,
-  onExpand,
+  onToggleInspector,
+  onToggleFiles,
   onSettings,
-  settingsActive,
 }: InspectorRailProps): JSX.Element {
   const ctxColor =
     contextFill === undefined
-      ? 'var(--text-2)'
+      ? undefined
       : contextFill > 0.8
         ? 'var(--warn)'
         : contextFill > 0.6
-          ? 'var(--text-1)'
-          : 'var(--accent)';
+          ? 'var(--text-0)'
+          : undefined;
+
+  const ctxTitle = contextFill === undefined ? '' : ` · context ${Math.round(contextFill * 100)}%`;
 
   return (
     <aside className="inspector-rail">
       <button
         type="button"
-        className="rail-btn expand"
-        title="Expand inspector (⌘\\)"
-        onClick={() => onExpand()}
+        className={'rail-btn' + (inspectorActive ? ' active' : '')}
+        title={`Inspector${planCount ? ` · ${planCount} pending` : ''}${ctxTitle}`}
+        style={ctxColor && !inspectorActive ? { color: ctxColor } : undefined}
+        onClick={onToggleInspector}
       >
-        ‹
-      </button>
-      <div className="rail-divider" />
-
-      <button
-        type="button"
-        className="rail-btn"
-        title={planCount ? `Plan · ${planCount} pending` : 'Plan'}
-        onClick={() => onExpand('plan')}
-      >
-        ▤
+        <IconInspector />
         {planCount !== undefined && planCount > 0 && <span className="dot-badge">{planCount}</span>}
       </button>
 
       <button
         type="button"
-        className="rail-btn"
-        title={
-          contextFill === undefined
-            ? 'Context: idle'
-            : `Context: ${Math.round(contextFill * 100)}% used`
-        }
-        style={{ color: ctxColor, borderColor: 'rgba(20,228,162,.18)' }}
-        onClick={() => onExpand('context')}
+        className={'rail-btn' + (filesActive ? ' active' : '')}
+        title="Files — preview, diff & history"
+        onClick={onToggleFiles}
       >
-        ◐
-      </button>
-
-      <button
-        type="button"
-        className="rail-btn"
-        title="Recent files"
-        onClick={() => onExpand('files')}
-      >
-        📁
-      </button>
-
-      <button
-        type="button"
-        className="rail-btn"
-        title="Session info"
-        onClick={() => onExpand('session')}
-      >
-        ⓘ
+        <IconFiles />
       </button>
 
       <span className="rail-spacer" />
@@ -101,8 +73,69 @@ export function InspectorRail({
         title="Settings"
         onClick={onSettings}
       >
-        ⚙
+        <IconSettings />
       </button>
     </aside>
+  );
+}
+
+/** Inspector — info/details glyph. */
+function IconInspector(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 7.4v3.2" />
+      <circle cx="8" cy="5.1" r="0.65" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+/** Files — document with a folded corner + text lines. */
+function IconFiles(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 2.6h4.4L12 6.1v7.1a.7.7 0 0 1-.7.7H4a.7.7 0 0 1-.7-.7V3.3A.7.7 0 0 1 4 2.6Z" />
+      <path d="M8.3 2.7V6.1H12" />
+      <path d="M5.6 9.1h4.8M5.6 11.2h3" />
+    </svg>
+  );
+}
+
+/** Settings — gear. */
+function IconSettings(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.4"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="8" cy="8" r="2.1" />
+      <path d="M8 1.6v1.9M8 12.5v1.9M3.5 3.5l1.35 1.35M11.15 11.15l1.35 1.35M1.6 8h1.9M12.5 8h1.9M3.5 12.5l1.35-1.35M11.15 4.85l1.35-1.35" />
+    </svg>
   );
 }

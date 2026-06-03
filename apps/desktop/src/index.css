@@ -555,7 +555,7 @@ select {
 /* ──────────────────────────────────────────────────────────────────── */
 
 .app-shell.inspector-open {
-  grid-template-columns: 240px 1fr 320px;
+  grid-template-columns: 240px 1fr 320px 48px;
 }
 
 .inspector {

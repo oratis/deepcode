@@ -81,6 +81,31 @@ const MOCK_MESSAGES = [
       case 'list_plugins':
       case 'list_skills':
         return [];
+      // The file picker (⌘O / Files-with-no-tabs) goes through the dialog plugin.
+      case 'plugin:dialog|open':
+        return '/Users/oratis/Projects/DeepCode/test/打飞机.html';
+      // toolRead unwraps `.content` (see lib/tauri-api.ts).
+      case 'tool_read':
+        return {
+          content: [
+            '<!doctype html>',
+            '<html lang="zh">',
+            '  <head>',
+            '    <meta charset="utf-8" />',
+            '    <title>打飞机</title>',
+            '  </head>',
+            '  <body>',
+            '    <canvas id="game" width="480" height="640"></canvas>',
+            '    <script>',
+            '      const cvs = document.getElementById("game");',
+            '      const ctx = cvs.getContext("2d");',
+            '      let score = 0;',
+            '      // … 游戏主循环 …',
+            '    </script>',
+            '  </body>',
+            '</html>',
+          ].join('\n'),
+        };
       default:
         console.warn('[preview] unmocked invoke:', cmd);
         return null;
