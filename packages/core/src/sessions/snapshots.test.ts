@@ -11,17 +11,22 @@ import {
   listSnapshots,
   restoreSnapshot,
 } from './snapshots.js';
+import { gitSpawnEnv } from '../util/git-env.js';
 
 const exec = promisify(execFile);
+// env: gitSpawnEnv() is essential here — without it, running this test inside a
+// git hook (a contributor's pre-commit running `pnpm test`) makes `git init`
+// target the leaked GIT_DIR and re-initialize the real repo as bare.
+const GIT = { env: gitSpawnEnv() };
 async function gitInit(dir: string): Promise<void> {
-  await exec('git', ['init', '-q'], { cwd: dir });
-  await exec('git', ['config', 'user.email', 't@t.dev'], { cwd: dir });
-  await exec('git', ['config', 'user.name', 'Test'], { cwd: dir });
-  await exec('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir });
+  await exec('git', ['init', '-q'], { cwd: dir, ...GIT });
+  await exec('git', ['config', 'user.email', 't@t.dev'], { cwd: dir, ...GIT });
+  await exec('git', ['config', 'user.name', 'Test'], { cwd: dir, ...GIT });
+  await exec('git', ['config', 'commit.gpgsign', 'false'], { cwd: dir, ...GIT });
 }
 async function gitCommitAll(dir: string, msg: string): Promise<void> {
-  await exec('git', ['add', '-A'], { cwd: dir });
-  await exec('git', ['commit', '-q', '-m', msg], { cwd: dir });
+  await exec('git', ['add', '-A'], { cwd: dir, ...GIT });
+  await exec('git', ['commit', '-q', '-m', msg], { cwd: dir, ...GIT });
 }
 
 describe('snapshots', () => {

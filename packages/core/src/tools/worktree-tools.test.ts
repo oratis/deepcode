@@ -5,20 +5,24 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { EnterWorktreeTool, ExitWorktreeTool } from './worktree-tools.js';
+import { gitSpawnEnv } from '../util/git-env.js';
 import type { ToolContext } from '../types.js';
 
 const exec = promisify(execFile);
+// env: gitSpawnEnv() strips inherited GIT_* so this setup can't be hijacked when
+// the suite runs inside a git hook (which would re-init the real repo as bare).
+const GIT = { env: gitSpawnEnv() };
 
 describe('EnterWorktree / ExitWorktree', () => {
   let repo: string;
   beforeEach(async () => {
     repo = await mkdtemp(join(tmpdir(), 'dc-wt-'));
-    await exec('git', ['init', '-q'], { cwd: repo });
-    await exec('git', ['config', 'user.email', 't@t'], { cwd: repo });
-    await exec('git', ['config', 'user.name', 't'], { cwd: repo });
+    await exec('git', ['init', '-q'], { cwd: repo, ...GIT });
+    await exec('git', ['config', 'user.email', 't@t'], { cwd: repo, ...GIT });
+    await exec('git', ['config', 'user.name', 't'], { cwd: repo, ...GIT });
     await writeFile(join(repo, 'a.txt'), 'hi');
-    await exec('git', ['add', '.'], { cwd: repo });
-    await exec('git', ['commit', '-qm', 'init'], { cwd: repo });
+    await exec('git', ['add', '.'], { cwd: repo, ...GIT });
+    await exec('git', ['commit', '-qm', 'init'], { cwd: repo, ...GIT });
   });
   afterEach(async () => {
     await rm(repo, { recursive: true, force: true });
