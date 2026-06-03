@@ -16,6 +16,36 @@ import {
   type Credentials,
   type Effort,
 } from '@deepcode/core';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFile);
+
+/** Environment for spawning git: strips inherited GIT_* (e.g. a GIT_DIR leaked
+ *  from a parent git hook) so the call targets `cwd`, not the hook's repo. */
+function gitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k];
+  return env;
+}
+
+/** Run a git subcommand in `cwd`, never throwing. */
+async function runGit(
+  cwd: string,
+  args: string[],
+): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('git', args, {
+      cwd,
+      env: gitEnv(),
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return { ok: true, stdout, stderr };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string };
+    return { ok: false, stdout: e.stdout ?? '', stderr: e.stderr ?? e.message ?? 'git failed' };
+  }
+}
 
 export interface SessionContext {
   cwd: string;
@@ -749,6 +779,97 @@ function historyToMarkdown(history: StoredMessage[]): string {
   return out.join('\n');
 }
 
+export const DiffCommand: SlashCommand = {
+  name: '/diff',
+  description: 'Show uncommitted changes in the working tree (git diff + untracked files).',
+  async run(_args, ctx) {
+    const inside = await runGit(ctx.cwd, ['rev-parse', '--is-inside-work-tree']);
+    if (!inside.ok || inside.stdout.trim() !== 'true') {
+      return ['Not a git repository (or git is unavailable) — nothing to diff.'];
+    }
+    const status = await runGit(ctx.cwd, ['status', '--short']);
+    if (status.ok && status.stdout.trim() === '') {
+      return ['Working tree clean — no uncommitted changes.'];
+    }
+    const lines: string[] = ['Uncommitted changes:', ''];
+    if (status.stdout.trim()) {
+      lines.push(...status.stdout.trimEnd().split('\n'), '');
+    }
+    // `diff HEAD` covers staged + unstaged edits to tracked files. It fails in a
+    // repo with no commits yet (no HEAD) — that's fine, status/untracked still show.
+    const diff = await runGit(ctx.cwd, ['--no-pager', 'diff', 'HEAD']);
+    const MAX = 300;
+    if (diff.ok && diff.stdout.trim()) {
+      const diffLines = diff.stdout.split('\n');
+      lines.push(...diffLines.slice(0, MAX));
+      if (diffLines.length > MAX) {
+        lines.push(`… (${diffLines.length - MAX} more lines — run \`git diff\` for the full diff)`);
+      }
+    }
+    const untracked = await runGit(ctx.cwd, ['ls-files', '--others', '--exclude-standard']);
+    if (untracked.ok && untracked.stdout.trim()) {
+      lines.push('', 'Untracked files:');
+      for (const f of untracked.stdout.trim().split('\n')) lines.push(`  ? ${f}`);
+    }
+    return lines;
+  },
+};
+
+export const ReleaseNotesCommand: SlashCommand = {
+  name: '/release-notes',
+  description: 'Show the latest CHANGELOG entry.',
+  async run(_args, ctx) {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    // Walk up from cwd looking for CHANGELOG.md (repo root may be above cwd).
+    let dir = ctx.cwd;
+    let changelog: string | null = null;
+    for (let i = 0; i < 8; i++) {
+      try {
+        changelog = await fs.readFile(path.join(dir, 'CHANGELOG.md'), 'utf8');
+        break;
+      } catch {
+        const parent = path.dirname(dir);
+        if (parent === dir) break;
+        dir = parent;
+      }
+    }
+    if (!changelog) {
+      return ['No CHANGELOG.md found (searched from cwd up to the filesystem root).'];
+    }
+    const all = changelog.split('\n');
+    const firstH2 = all.findIndex((l) => l.startsWith('## '));
+    if (firstH2 === -1) return all.slice(0, 40);
+    const afterFirst = all.slice(firstH2 + 1);
+    const nextRel = afterFirst.findIndex((l) => l.startsWith('## '));
+    const end = nextRel === -1 ? all.length : firstH2 + 1 + nextRel;
+    const section = all.slice(firstH2, end);
+    while (section.length && section[section.length - 1]!.trim() === '') section.pop();
+    return section;
+  },
+};
+
+export const BugCommand: SlashCommand = {
+  name: '/bug',
+  aliases: ['/feedback'],
+  description: 'Report a bug or give feedback (prints a prefilled GitHub issue link).',
+  run(args, ctx) {
+    const title = args.join(' ').trim();
+    const params = new URLSearchParams();
+    if (title) params.set('title', title);
+    params.set(
+      'body',
+      `<!-- Describe the issue above. -->\n\n---\nModel: ${ctx.model} · Mode: ${ctx.mode} · Effort: ${ctx.effort}`,
+    );
+    return [
+      'Report a bug or request a feature:',
+      `  https://github.com/oratis/deepcode/issues/new?${params.toString()}`,
+      '',
+      'Or browse existing issues: https://github.com/oratis/deepcode/issues',
+    ];
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -775,6 +896,9 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   SkillsCommand,
   ExportCommand,
   CompactCommand,
+  DiffCommand,
+  ReleaseNotesCommand,
+  BugCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────

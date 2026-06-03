@@ -1,9 +1,22 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SessionManager } from '@deepcode/core';
 import { CommandRegistry, type SessionContext } from './commands.js';
+
+const exec = promisify(execFile);
+
+// Strip inherited GIT_* so this test's `git init` can't be hijacked by a leaked
+// GIT_DIR when the suite runs inside a git hook (which would re-init the real
+// repo as bare). Mirrors the inline scrub in commands.ts.
+function gitEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { ...process.env };
+  for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k];
+  return env;
+}
 
 function makeContext(overrides: Partial<SessionContext> = {}): SessionContext {
   return {
@@ -156,6 +169,73 @@ describe('built-in command behavior', () => {
     const out = await reg.match('/context')!.cmd.run([], makeContext());
     expect(out.join('\n')).toMatch(/128,000/);
     expect(out.join('\n')).toMatch(/Context:/);
+  });
+
+  it('/bug prints a prefilled GitHub issue link', async () => {
+    const reg = new CommandRegistry();
+    const out = (
+      await reg.match('/bug it crashed')!.cmd.run(['it', 'crashed'], makeContext())
+    ).join('\n');
+    expect(out).toMatch(/github\.com\/oratis\/deepcode\/issues/);
+    expect(out).toMatch(/title=it\+crashed/);
+  });
+
+  it('/feedback is an alias for /bug', () => {
+    const reg = new CommandRegistry();
+    expect(reg.match('/feedback')?.cmd.name).toBe('/bug');
+  });
+
+  it('/release-notes prints the latest CHANGELOG section only', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dc-cl-'));
+    await writeFile(
+      join(dir, 'CHANGELOG.md'),
+      '# Changelog\n\n## 1.2.0\n\n- new thing\n\n## 1.1.0\n\n- old thing\n',
+    );
+    const reg = new CommandRegistry();
+    const out = (await reg.match('/release-notes')!.cmd.run([], makeContext({ cwd: dir }))).join(
+      '\n',
+    );
+    expect(out).toMatch(/## 1\.2\.0/);
+    expect(out).toMatch(/new thing/);
+    expect(out).not.toMatch(/old thing/);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('/release-notes reports a missing CHANGELOG cleanly', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dc-nocl-'));
+    const reg = new CommandRegistry();
+    const out = (await reg.match('/release-notes')!.cmd.run([], makeContext({ cwd: dir }))).join(
+      '\n',
+    );
+    expect(out).toMatch(/No CHANGELOG/);
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  it('/diff shows uncommitted changes (tracked edit + untracked file)', async () => {
+    const repo = await mkdtemp(join(tmpdir(), 'dc-diff-'));
+    const GIT = { cwd: repo, env: gitEnv() };
+    await exec('git', ['init', '-q'], GIT);
+    await exec('git', ['config', 'user.email', 't@t'], GIT);
+    await exec('git', ['config', 'user.name', 't'], GIT);
+    await writeFile(join(repo, 'f.txt'), 'one\n');
+    await exec('git', ['add', '-A'], GIT);
+    await exec('git', ['commit', '-qm', 'init'], GIT);
+    await writeFile(join(repo, 'f.txt'), 'two\n'); // tracked modification
+    await writeFile(join(repo, 'new.txt'), 'fresh\n'); // untracked
+    const reg = new CommandRegistry();
+    const out = (await reg.match('/diff')!.cmd.run([], makeContext({ cwd: repo }))).join('\n');
+    expect(out).toMatch(/Uncommitted changes/);
+    expect(out).toMatch(/f\.txt/);
+    expect(out).toMatch(/new\.txt/);
+    await rm(repo, { recursive: true, force: true });
+  });
+
+  it('/diff handles a non-git directory', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dc-nogit-'));
+    const reg = new CommandRegistry();
+    const out = (await reg.match('/diff')!.cmd.run([], makeContext({ cwd: dir }))).join('\n');
+    expect(out).toMatch(/Not a git repository/);
+    await rm(dir, { recursive: true, force: true });
   });
 
   it('/config dumps settings', async () => {
