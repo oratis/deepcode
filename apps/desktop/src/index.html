@@ -4,6 +4,44 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>DeepCode</title>
+    <!--
+      Critical, render-blocking styles applied BEFORE index.css loads. In dev,
+      Vite injects index.css via JS, so the first paint is otherwise unstyled —
+      which ballooned the BrandMark <svg> into a full-size black silhouette on a
+      white background (the "big B&W cat" startup flash). Pinning the dark
+      surface + the brand-mark box here makes the first paint match the app.
+    -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #0b0d12;
+        color: #f2f4f8;
+      }
+      #root {
+        height: 100%;
+      }
+      .mark {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+        background: linear-gradient(135deg, #4d6bfe 0%, #6b86ff 100%);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .mark.mark-lg {
+        width: 64px;
+        height: 64px;
+        border-radius: 16px;
+      }
+      .mark svg {
+        width: 72%;
+        height: 72%;
+        color: #fff;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

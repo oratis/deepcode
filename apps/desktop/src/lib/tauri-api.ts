@@ -167,6 +167,16 @@ export async function sessionSetTitle(id: string, title: string): Promise<void> 
   await invoke('session_set_title', { id, title });
 }
 
+/** Permanently delete a session's JSONL file. */
+export async function sessionDelete(id: string): Promise<void> {
+  await invoke('session_delete', { id });
+}
+
+/** Archive a session (moved to sessions/archived/, hidden from the list). */
+export async function sessionArchive(id: string): Promise<void> {
+  await invoke('session_archive', { id });
+}
+
 /** Append one JSON message line to a session's JSONL file. */
 export async function sessionAppend(id: string, message: Record<string, unknown>): Promise<void> {
   await invoke('session_append', { id, message });
