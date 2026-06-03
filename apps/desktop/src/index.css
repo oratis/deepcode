@@ -718,10 +718,12 @@ select {
 .chat-stream {
   flex: 1;
   overflow-y: auto;
-  padding: 22px;
+  padding: 20px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 2px;
+  /* Claude-Code-style centered, readable column rather than full-bleed. */
+  --stream-max: 760px;
 }
 .chat-stream::-webkit-scrollbar {
   width: 8px;
@@ -731,53 +733,52 @@ select {
   border-radius: 4px;
 }
 
-/* Message rows */
+/* Message rows — Claude-Code style: a centered readable column, no heavy
+   avatar chips. The role reads from a subtle label + (for the user) a soft
+   bubble; the assistant is plain prose. */
 .msg {
-  display: flex;
-  gap: 12px;
+  display: block;
+  width: 100%;
+  max-width: var(--stream-max);
+  margin: 0 auto;
+  padding: 10px 22px;
 }
 .msg .avatar {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-.msg.user .avatar {
-  background: var(--bg-3);
-  color: var(--text-1);
-}
-.msg.assistant .avatar {
-  background: linear-gradient(135deg, var(--brand) 0%, #6b86ff 100%);
-  color: #fff;
-}
-.msg.system .avatar {
-  background: var(--bg-2);
-  color: var(--text-2);
-  font-size: 11px;
+  display: none;
 }
 .msg .body {
-  flex: 1;
   min-width: 0;
 }
 .msg .author {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--text-3);
-  margin-bottom: 4px;
-  letter-spacing: 0.5px;
-  text-transform: uppercase;
+  margin-bottom: 5px;
+  letter-spacing: 0.3px;
   font-weight: 600;
 }
 .msg .content {
-  color: var(--text-0);
-  font-size: 13.5px;
-  line-height: 1.65;
+  color: var(--text-1);
+  font-size: 14px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
+}
+/* User turns get a soft bubble; assistant + system are plain prose. */
+.msg.user .body {
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.msg.user .author {
+  display: none;
+}
+.msg.assistant .content {
+  color: var(--text-0);
+}
+.msg.system {
+  padding-top: 4px;
+  padding-bottom: 4px;
 }
 .msg .content code {
   background: var(--bg-3);
