@@ -134,3 +134,23 @@ describe('/pr_comments', () => {
     expect(out).toMatch(/no open pull request|needs the github cli|failed/i);
   });
 });
+
+describe('/upgrade + /privacy-settings', () => {
+  it('/upgrade shows the version + update instructions', async () => {
+    const out = (await reg.match('/upgrade')!.cmd.run([], ctx())).join('\n');
+    expect(out).toMatch(/DeepCode CLI v\d/);
+    expect(out).toMatch(/npm i -g deepcode-cli@latest/);
+  });
+
+  it('/privacy-settings shows data locations + the DeepSeek endpoint', async () => {
+    const out = (
+      await reg
+        .match('/privacy-settings')!
+        .cmd.run([], ctx({ creds: { apiKey: 'x', baseURL: 'https://api.deepseek.com/v1' } }))
+    ).join('\n');
+    expect(out).toMatch(/credentials\.json/);
+    expect(out).toMatch(/sessions/);
+    expect(out).toMatch(/api\.deepseek\.com/);
+    expect(out).toMatch(/security-model\.md/);
+  });
+});
