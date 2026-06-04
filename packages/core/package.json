@@ -20,6 +20,10 @@
       "types": "./dist/providers/deepseek.d.ts",
       "import": "./dist/providers/deepseek.js"
     },
+    "./dist/providers/pricing.js": {
+      "types": "./dist/providers/pricing.d.ts",
+      "import": "./dist/providers/pricing.js"
+    },
     "./dist/types.js": {
       "types": "./dist/types.d.ts",
       "import": "./dist/types.js"

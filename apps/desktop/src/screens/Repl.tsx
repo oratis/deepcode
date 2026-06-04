@@ -25,6 +25,7 @@ import {
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
 import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { estimateCost } from '@deepcode/core/dist/providers/pricing.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
 import { PlusMenu } from '../components/PlusMenu.js';
@@ -177,6 +178,7 @@ interface AgentEvt {
   inputTokens?: number;
   outputTokens?: number;
   reasoningTokens?: number;
+  cacheReadTokens?: number;
   // permission_request fields
   requestId?: string;
   toolName?: string;
@@ -236,6 +238,11 @@ export function ReplScreen({
   // Overridden by a persisted effortLevel in settings on mount.
   const [effort, setEffort] = useState<Effort>('high');
   const [model, setModel] = useState<string>('deepseek-chat');
+  // The agent.onEvent subscription below is created once on mount, so it would
+  // close over a stale `model`. A ref keeps the per-turn cost calc on the
+  // current model (deepseek-reasoner output is ¥16/M vs chat's ¥2/M).
+  const modelRef = useRef(model);
+  modelRef.current = model;
   const [mode, setMode] = useState<
     'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
   >('default');
@@ -349,7 +356,18 @@ export function ReplScreen({
           // drives the context bar (overwrite, not accumulate).
           setUsage({ inputTokens: inTok, outputTokens: outTok });
           // Cost bills every turn, so it accrues across the whole conversation.
-          setCostYuan((c) => c + (inTok / 1_000_000) * 1.0 + (outTok / 1_000_000) * 2.0);
+          // estimateCost credits cheaper cache-hit input tokens (¥0.1/M vs ¥1/M)
+          // and applies the right per-model output + reasoning rates.
+          const turnCost = estimateCost(
+            {
+              inputTokens: inTok,
+              outputTokens: outTok,
+              reasoningTokens: e.reasoningTokens ?? 0,
+              cacheReadTokens: e.cacheReadTokens ?? 0,
+            },
+            modelRef.current,
+          ).totalYuan;
+          setCostYuan((c) => c + turnCost);
           break;
         }
         case 'error':
