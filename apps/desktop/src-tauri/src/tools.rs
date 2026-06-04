@@ -3,11 +3,68 @@
 // these Tauri commands for actual fs / subprocess work (the webview can't
 // do node:fs / node:child_process itself).
 
+use crate::snapshots;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+
+// ──────────────────────────────────────────────────────────────────────────
+// Snapshot capture
+// ──────────────────────────────────────────────────────────────────────────
+// Edit/Write record a pre- and post-mutation snapshot so the desktop file
+// panel's Diff/History tabs (and `/rewind`) have data — mirroring core's
+// agent.ts, which never runs for desktop sessions (no SessionManager in the
+// renderer). Best-effort: capture failures are logged and ignored so a
+// snapshot hiccup never fails the user's edit.
+
+/// Capture the pre + post pair for one file mutation under the user's home dir.
+fn capture_pair(session_id: &str, file_path: &str, pre: &[u8], post: &[u8], tool: &str) {
+    let Some(home) = dirs::home_dir() else {
+        return;
+    };
+    capture_pair_in(&home, session_id, file_path, pre, post, tool);
+}
+
+/// home-parameterized body of `capture_pair` (testable without the real home).
+/// `pre`/`post` are the file bytes before/after the change. The post snapshot is
+/// stamped 1ms after the pre so the two never collide on a millisecond timeline
+/// (the renderer keys history entries by timestamp).
+fn capture_pair_in(
+    home: &Path,
+    session_id: &str,
+    file_path: &str,
+    pre: &[u8],
+    post: &[u8],
+    tool: &str,
+) {
+    let dir = snapshots::snapshots_dir(home, session_id);
+    let base = snapshots::next_seq(&dir);
+    let t = snapshots::now_ms();
+    if let Err(e) = snapshots::capture_file_snapshot(
+        home,
+        session_id,
+        file_path,
+        pre,
+        &format!("pre-{tool}"),
+        base,
+        t,
+    ) {
+        eprintln!("snapshot pre-{tool} {file_path}: {e}");
+    }
+    if let Err(e) = snapshots::capture_file_snapshot(
+        home,
+        session_id,
+        file_path,
+        post,
+        &format!("post-{tool}"),
+        base + 1,
+        t + 1,
+    ) {
+        eprintln!("snapshot post-{tool} {file_path}: {e}");
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Read
@@ -75,7 +132,14 @@ pub async fn tool_read(
 // ──────────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
-pub async fn tool_write(file_path: String, content: String) -> Result<(), String> {
+pub async fn tool_write(
+    file_path: String,
+    content: String,
+    session_id: Option<String>,
+) -> Result<(), String> {
+    // Pre-state: the existing file bytes (empty when the file is new) — read
+    // before the overwrite so the post-Write diff has a baseline.
+    let pre = tokio::fs::read(&file_path).await.unwrap_or_default();
     if let Some(parent) = Path::new(&file_path).parent() {
         if !parent.as_os_str().is_empty() {
             tokio::fs::create_dir_all(parent)
@@ -83,9 +147,13 @@ pub async fn tool_write(file_path: String, content: String) -> Result<(), String
                 .map_err(|e| format!("mkdir {}: {}", parent.display(), e))?;
         }
     }
-    tokio::fs::write(&file_path, content)
+    tokio::fs::write(&file_path, &content)
         .await
-        .map_err(|e| format!("write {}: {}", file_path, e))
+        .map_err(|e| format!("write {}: {}", file_path, e))?;
+    if let Some(sid) = session_id.as_deref() {
+        capture_pair(sid, &file_path, &pre, content.as_bytes(), "Write");
+    }
+    Ok(())
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -109,7 +177,7 @@ pub struct EditOk {
 }
 
 #[tauri::command]
-pub async fn tool_edit(input: EditInput) -> Result<EditOk, String> {
+pub async fn tool_edit(input: EditInput, session_id: Option<String>) -> Result<EditOk, String> {
     let raw = tokio::fs::read_to_string(&input.file_path)
         .await
         .map_err(|e| format!("read {}: {}", input.file_path, e))?;
@@ -133,6 +201,15 @@ pub async fn tool_edit(input: EditInput) -> Result<EditOk, String> {
     tokio::fs::write(&input.file_path, &new_content)
         .await
         .map_err(|e| format!("write {}: {}", input.file_path, e))?;
+    if let Some(sid) = session_id.as_deref() {
+        capture_pair(
+            sid,
+            &input.file_path,
+            raw.as_bytes(),
+            new_content.as_bytes(),
+            "Edit",
+        );
+    }
     let diff_preview = format!(
         "- {}\n+ {}",
         input.old_string.lines().next().unwrap_or(""),
@@ -323,7 +400,6 @@ pub async fn tool_grep(input: GrepInput) -> Result<GrepOk, String> {
     Ok(GrepOk { matches, truncated })
 }
 
-
 // ── Serde casing contract ──────────────────────────────────────────────
 // Regression guard for HANDOFF §8a: Tauri's serde does NOT auto-convert case
 // between Rust and JS. Every multi-word *output* field must serialize as
@@ -350,7 +426,10 @@ mod casing_tests {
         let k = keys(&v);
         assert!(k.contains(&"linesTotal".to_string()), "got {k:?}");
         assert!(k.contains(&"linesShown".to_string()), "got {k:?}");
-        assert!(!k.contains(&"lines_total".to_string()), "snake_case leaked: {k:?}");
+        assert!(
+            !k.contains(&"lines_total".to_string()),
+            "snake_case leaked: {k:?}"
+        );
     }
 
     #[test]
@@ -362,7 +441,10 @@ mod casing_tests {
         .unwrap();
         let k = keys(&v);
         assert!(k.contains(&"diffPreview".to_string()), "got {k:?}");
-        assert!(!k.contains(&"diff_preview".to_string()), "snake_case leaked: {k:?}");
+        assert!(
+            !k.contains(&"diff_preview".to_string()),
+            "snake_case leaked: {k:?}"
+        );
     }
 
     #[test]
@@ -378,6 +460,64 @@ mod casing_tests {
         // The exit-code badge bug: renderer compares r.exitCode !== 0.
         assert!(k.contains(&"exitCode".to_string()), "got {k:?}");
         assert!(k.contains(&"timedOut".to_string()), "got {k:?}");
-        assert!(!k.contains(&"exit_code".to_string()), "snake_case leaked: {k:?}");
+        assert!(
+            !k.contains(&"exit_code".to_string()),
+            "snake_case leaked: {k:?}"
+        );
+    }
+}
+
+// ── snapshot capture path ───────────────────────────────────────────────
+// End-to-end coverage of the Edit/Write → manifest path (against a real temp
+// fs) via the home-injectable `capture_pair_in`.
+#[cfg(test)]
+mod snapshot_capture_tests {
+    use super::*;
+
+    #[test]
+    fn capture_pair_writes_pre_then_post_with_distinct_ms() {
+        let home = std::env::temp_dir().join(format!("dc-cap-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let sid = "2026-06-04-cap01";
+        let file = "/tmp/example/app.ts";
+
+        capture_pair_in(&home, sid, file, b"old\n", b"new\n", "Edit");
+
+        let dir = snapshots::snapshots_dir(&home, sid);
+        let rows = snapshots::list_file_snapshots(&dir, file).unwrap();
+        let _ = std::fs::remove_dir_all(&home);
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].reason, "pre-Edit");
+        assert_eq!(rows[0].content, "old\n");
+        assert_eq!(rows[0].seq, 0);
+        assert_eq!(rows[1].reason, "post-Edit");
+        assert_eq!(rows[1].content, "new\n");
+        assert_eq!(rows[1].seq, 1);
+        // Distinct timestamps so the renderer's history keys never collide.
+        assert_eq!(rows[1].captured_at_ms, rows[0].captured_at_ms + 1);
+    }
+
+    #[test]
+    fn capture_pair_appends_across_calls_with_monotonic_seq() {
+        let home = std::env::temp_dir().join(format!("dc-cap2-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&home);
+        let sid = "2026-06-04-cap02";
+        let file = "/tmp/x.ts";
+
+        capture_pair_in(&home, sid, file, b"a", b"b", "Write");
+        capture_pair_in(&home, sid, file, b"b", b"c", "Edit");
+
+        let dir = snapshots::snapshots_dir(&home, sid);
+        let rows = snapshots::list_file_snapshots(&dir, file).unwrap();
+        let _ = std::fs::remove_dir_all(&home);
+
+        assert_eq!(
+            rows.iter().map(|r| r.seq).collect::<Vec<_>>(),
+            vec![0, 1, 2, 3]
+        );
+        assert_eq!(rows[0].reason, "pre-Write");
+        assert_eq!(rows[3].reason, "post-Edit");
+        assert_eq!(rows[3].content, "c");
     }
 }

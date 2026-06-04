@@ -6,6 +6,7 @@
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import { installTauriShim } from './lib/window-shim.js';
+import { setActiveSessionId } from './lib/mac-session.js';
 import './index.css';
 
 const now = Math.floor(Date.now() / 1000);
@@ -39,6 +40,85 @@ const MOCK_SESSIONS = [
     title: 'hi',
   },
 ];
+// The file the panel opens (⌘O / dialog mock below) and its session-snapshot
+// history, so the preview exercises the Diff + History tabs. CURRENT_HTML is
+// what tool_read returns (the live file); the snapshots are earlier revisions.
+const CURRENT_HTML = [
+  '<!doctype html>',
+  '<html lang="zh">',
+  '  <head>',
+  '    <meta charset="utf-8" />',
+  '    <title>打飞机</title>',
+  '  </head>',
+  '  <body>',
+  '    <canvas id="game" width="480" height="640"></canvas>',
+  '    <script>',
+  '      const cvs = document.getElementById("game");',
+  '      const ctx = cvs.getContext("2d");',
+  '      let score = 0;',
+  '      // … 游戏主循环 …',
+  '    </script>',
+  '  </body>',
+  '</html>',
+].join('\n');
+
+const ORIGINAL_HTML = [
+  '<!doctype html>',
+  '<html lang="zh">',
+  '  <head>',
+  '    <title>打飞机</title>',
+  '  </head>',
+  '  <body>',
+  '    <canvas id="game"></canvas>',
+  '  </body>',
+  '</html>',
+].join('\n');
+
+const INTERMEDIATE_HTML = [
+  '<!doctype html>',
+  '<html lang="zh">',
+  '  <head>',
+  '    <meta charset="utf-8" />',
+  '    <title>打飞机</title>',
+  '  </head>',
+  '  <body>',
+  '    <canvas id="game" width="480" height="640"></canvas>',
+  '  </body>',
+  '</html>',
+].join('\n');
+
+const snapTime = Date.now();
+const MOCK_SNAPSHOTS = [
+  {
+    seq: 0,
+    capturedAtMs: snapTime - 600_000,
+    reason: 'pre-Write',
+    hash: 'h0',
+    content: ORIGINAL_HTML,
+  },
+  {
+    seq: 1,
+    capturedAtMs: snapTime - 599_999,
+    reason: 'post-Write',
+    hash: 'h1',
+    content: INTERMEDIATE_HTML,
+  },
+  {
+    seq: 2,
+    capturedAtMs: snapTime - 120_000,
+    reason: 'pre-Edit',
+    hash: 'h1',
+    content: INTERMEDIATE_HTML,
+  },
+  {
+    seq: 3,
+    capturedAtMs: snapTime - 119_999,
+    reason: 'post-Edit',
+    hash: 'h3',
+    content: CURRENT_HTML,
+  },
+];
+
 const MOCK_MESSAGES = [
   { type: 'message', role: 'user', content: [{ type: 'text', text: '制作一个打飞机的小游戏' }] },
   {
@@ -86,26 +166,10 @@ const MOCK_MESSAGES = [
         return '/Users/oratis/Projects/DeepCode/test/打飞机.html';
       // toolRead unwraps `.content` (see lib/tauri-api.ts).
       case 'tool_read':
-        return {
-          content: [
-            '<!doctype html>',
-            '<html lang="zh">',
-            '  <head>',
-            '    <meta charset="utf-8" />',
-            '    <title>打飞机</title>',
-            '  </head>',
-            '  <body>',
-            '    <canvas id="game" width="480" height="640"></canvas>',
-            '    <script>',
-            '      const cvs = document.getElementById("game");',
-            '      const ctx = cvs.getContext("2d");',
-            '      let score = 0;',
-            '      // … 游戏主循环 …',
-            '    </script>',
-            '  </body>',
-            '</html>',
-          ].join('\n'),
-        };
+        return { content: CURRENT_HTML };
+      // Session snapshots back the file panel's Diff + History tabs.
+      case 'session_snapshots':
+        return MOCK_SNAPSHOTS;
       default:
         console.warn('[preview] unmocked invoke:', cmd);
         return null;
@@ -115,5 +179,7 @@ const MOCK_MESSAGES = [
 };
 
 installTauriShim();
+// Pretend a session is active so the file panel fetches the mock snapshots above.
+setActiveSessionId('preview-session');
 const rootEl = document.getElementById('root');
 if (rootEl) createRoot(rootEl).render(<App />);

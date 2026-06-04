@@ -90,4 +90,21 @@ describe('filePanelReducer', () => {
     expect(filePanelReducer(s, { type: 'nextTab' })).toBe(s);
     expect(filePanelReducer(s, { type: 'prevTab' })).toBe(s);
   });
+
+  it('setDiff replaces the matching tab’s diff and leaves others intact', () => {
+    let s = initialFilePanelState();
+    for (const p of ['/a.ts', '/b.ts']) s = filePanelReducer(s, { type: 'open', tab: tab(p) });
+    const diff = [{ kind: 'add' as const, oldNo: null, newNo: 1, text: 'x' }];
+    s = filePanelReducer(s, { type: 'setDiff', path: '/a.ts', diff });
+    expect(s.tabs[0]?.diff).toEqual(diff);
+    expect(s.tabs[1]?.diff).toBeNull();
+  });
+
+  it('setDiff is a no-op for an unopened path', () => {
+    let s = initialFilePanelState();
+    s = filePanelReducer(s, { type: 'open', tab: tab('/a.ts') });
+    const before = s;
+    s = filePanelReducer(s, { type: 'setDiff', path: '/missing.ts', diff: [] });
+    expect(s).toBe(before);
+  });
 });

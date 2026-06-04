@@ -11,6 +11,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import type { ToolHandler, ToolResult } from '@deepcode/core/dist/types.js';
+import { getActiveSessionId } from './mac-session.js';
 
 /**
  * Tolerant key pick — accepts either snake_case or camelCase. DeepSeek
@@ -127,7 +128,13 @@ export const MacWriteTool: ToolHandler = {
       if (!filePath) {
         return { content: `Error: missing file_path${describeInput(input)}`, isError: true };
       }
-      await invoke('tool_write', { filePath, content });
+      // sessionId lets Rust snapshot the file (file panel Diff/History); omitted
+      // before the first turn creates a session — capture is best-effort.
+      await invoke('tool_write', {
+        filePath,
+        content,
+        sessionId: getActiveSessionId() ?? undefined,
+      });
       const lines = content.split('\n').length;
       return {
         content: `Wrote ${filePath} (${lines} lines).`,
@@ -179,6 +186,7 @@ export const MacEditTool: ToolHandler = {
           new_string: newStr,
           replace_all: replaceAll,
         },
+        sessionId: getActiveSessionId() ?? undefined,
       })) as { replaced: number; diffPreview: string };
       return {
         content: `Replaced ${r.replaced} occurrence(s) in ${filePath}.\n${r.diffPreview}`,

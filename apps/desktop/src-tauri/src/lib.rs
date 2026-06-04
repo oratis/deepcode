@@ -12,6 +12,7 @@
 mod commands;
 mod credentials;
 mod settings;
+mod snapshots;
 mod tools;
 
 use commands::{
@@ -20,8 +21,9 @@ use commands::{
     save_credentials, save_keybindings, save_settings_file, session_append, session_archive,
     session_create, session_delete, session_read, session_set_title,
 };
-use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
+use snapshots::session_snapshots;
 use tauri::Manager;
+use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -59,6 +61,7 @@ pub fn run() {
             tool_bash,
             tool_glob,
             tool_grep,
+            session_snapshots,
         ])
         .setup(|app| {
             // macOS: hide window menu items we don't use.

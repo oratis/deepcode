@@ -54,6 +54,7 @@ export function InspectorRail({
         onClick={onToggleInspector}
       >
         <IconInspector />
+        <span className="rail-label">Inspector</span>
         {planCount !== undefined && planCount > 0 && <span className="dot-badge">{planCount}</span>}
       </button>
 
@@ -64,6 +65,7 @@ export function InspectorRail({
         onClick={onToggleFiles}
       >
         <IconFiles />
+        <span className="rail-label">Files</span>
       </button>
 
       <span className="rail-spacer" />
@@ -74,6 +76,7 @@ export function InspectorRail({
         onClick={onSettings}
       >
         <IconSettings />
+        <span className="rail-label">Settings</span>
       </button>
     </aside>
   );
