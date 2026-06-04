@@ -418,6 +418,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     effort,
     settings,
     creds,
+    credsStore,
     sessionId: session.id,
     sessions,
     usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
