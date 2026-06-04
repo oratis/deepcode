@@ -63,6 +63,23 @@ describe('parseArgs', () => {
     expect(p.unknownFlags).toContain('--mode invalid');
   });
 
+  it('--permission-mode is a true alias for --mode (sets mode, is wired)', () => {
+    // Regression: previously parsed into a separate field that cli.ts never read,
+    // so --permission-mode was silently ignored. It must set `mode` like --mode.
+    expect(parseArgs(['--permission-mode', 'plan']).mode).toBe('plan');
+    expect(parseArgs(['--permission-mode', 'bypassPermissions']).mode).toBe('bypassPermissions');
+    const p = parseArgs(['--permission-mode', 'invalid']);
+    expect(p.mode).toBeUndefined();
+    expect(p.unknownFlags).toContain('--permission-mode invalid');
+  });
+
+  it('--mode and --permission-mode: last flag wins', () => {
+    expect(parseArgs(['--mode', 'plan', '--permission-mode', 'acceptEdits']).mode).toBe(
+      'acceptEdits',
+    );
+    expect(parseArgs(['--permission-mode', 'acceptEdits', '--mode', 'plan']).mode).toBe('plan');
+  });
+
   it('--effort validation', () => {
     expect(parseArgs(['--effort', 'high']).effort).toBe('high');
     expect(parseArgs(['--effort', 'wrong']).unknownFlags).toContain('--effort wrong');
