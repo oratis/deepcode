@@ -45,15 +45,13 @@ const mockProvider = {
 
 describe('/recap', () => {
   it('summarizes the conversation via the provider', async () => {
-    const out = await reg
-      .match('/recap')!
-      .cmd.run(
-        [],
-        ctx({
-          provider: mockProvider,
-          history: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
-        }),
-      );
+    const out = await reg.match('/recap')!.cmd.run(
+      [],
+      ctx({
+        provider: mockProvider,
+        history: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
+      }),
+    );
     expect(out.join('\n')).toContain('explored repo');
   });
 
