@@ -16,6 +16,7 @@ import {
   estimateCost,
   redact,
   EFFORT_PARAMS,
+  VERSION,
   type Credentials,
   type Effort,
 } from '@deepcode/core';
@@ -1023,6 +1024,34 @@ export const PrCommentsCommand: SlashCommand = {
   },
 };
 
+export const UpgradeCommand: SlashCommand = {
+  name: '/upgrade',
+  description: 'Show the current version and how to update.',
+  run() {
+    return [
+      `DeepCode CLI v${VERSION}`,
+      'Update the CLI:  npm i -g deepcode-cli@latest',
+      'The macOS desktop app auto-updates via GitHub Releases.',
+    ];
+  },
+};
+
+export const PrivacySettingsCommand: SlashCommand = {
+  name: '/privacy-settings',
+  description: 'Show where your data lives and what is sent to DeepSeek.',
+  run(_args, ctx) {
+    const base = ctx.creds?.baseURL || 'https://api.deepseek.com';
+    return [
+      'Privacy — DeepCode is local-first:',
+      '  • Credentials: ~/.deepcode/credentials.json (chmod 600), or an OS keychain via apiKeyHelper.',
+      '  • Sessions, history & snapshots: ~/.deepcode/sessions/ — local files on this machine.',
+      `  • Prompts, file contents & tool output are sent to the DeepSeek API (${base}) to generate responses, handled per DeepSeek's policy.`,
+      '  • Plugin / hook subprocesses run with DeepSeek credentials stripped from their env.',
+      '  • Full threat model: docs/security-model.md.',
+    ];
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -1056,6 +1085,8 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   LoginCommand,
   LogoutCommand,
   PrCommentsCommand,
+  UpgradeCommand,
+  PrivacySettingsCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
