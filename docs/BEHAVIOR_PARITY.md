@@ -4,66 +4,71 @@
 
 Legend: `✅` matches · `🟡` matches with caveats · `🔄` deferred · `⚠️` deliberately differs · `🆕` DeepCode-only addition
 
-> **2026-06 accuracy pass.** Several per-row tags below had drifted behind the
-> code (the Tools table in particular marked shipped tools as deferred — now
-> corrected). Treat the milestone tags (`M3c`, `M8`, …) as historical notes, not
-> current status. Additions landing in the alignment batch this pass:
-> CLI `-C` / `--cd` (Codex parity); the `/diff`, `/release-notes`, and `/bug`
-> (alias `/feedback`) slash commands; and a fix so the CLI `/effort` table reads
-> its numbers from `EFFORT_PARAMS` instead of a divergent hardcoded copy. The
-> rows below will be flipped to `✅` as those PRs merge.
+> **2026-06 accuracy pass (audited against code).** Several per-row tags below
+> had drifted behind the code. This pass reconciles the **Slash-command**,
+> **CLI-flag**, and **Tools** tables with the actual source. Treat the milestone
+> tags (`M3c`, `M8`, …) as historical notes, not current status. Highlights now
+> landed on `main`: CLI `-C` / `--cd` (Codex parity, PR #148); the `/diff`,
+> `/release-notes`, and `/bug` (alias `/feedback`) slash commands (PR #150);
+> `--resume` / `--continue` / `--fork-session` wired to real session resume
+> (PR #153); the `/init` 3-phase REPL flow; and the CLI `/effort` table reading
+> its numbers from `EFFORT_PARAMS` (PR #147). Caveat: `--permission-mode` is
+> parsed but **not yet wired**. The Tools table (de-staled in PR #151) was
+> re-verified row-by-row this pass — all markers hold.
 
 ---
 
-## Slash commands (30+ in Claude Code, ~20 shipped in DeepCode)
+## Slash commands (30+ in Claude Code, ~32 shipped in DeepCode)
 
-| Command               | Claude Code | DeepCode           | Status                                                                                     |
-| --------------------- | ----------- | ------------------ | ------------------------------------------------------------------------------------------ |
-| `/help`               | ✓           | ✓                  | ✅                                                                                         |
-| `/clear`              | ✓           | ✓                  | ✅                                                                                         |
-| `/exit` / `/quit`     | ✓           | ✓                  | ✅                                                                                         |
-| `/status` / `/doctor` | ✓           | ✓                  | ✅                                                                                         |
-| `/model`              | ✓           | ✓                  | ✅ DeepCode constrains to deepseek-\* (model picker doesn't show foreign providers)        |
-| `/mode`               | ✓           | ✓                  | ✅                                                                                         |
-| `/effort`             | ✓           | ✓                  | 🟡 — UI selector deferred to GUI (M6); CLI works                                           |
-| `/cost` / `/usage`    | ✓           | ✓                  | ✅                                                                                         |
-| `/context`            | ✓           | ✓                  | ✅                                                                                         |
-| `/config`             | ✓           | ✓ (read-only)      | 🟡 — Claude Code's `/config` is interactive editor; ours is JSON dump (M3c-ext for editor) |
-| `/resume`             | ✓           | ✓ (list only)      | 🟡 — Claude Code has fuzzy picker; ours lists; pick via `--resume <id>`                    |
-| `/init`               | ✓           | ✓ (stub)           | 🔄 — multi-phase interactive flow deferred to M3c-ext                                      |
-| `/mcp`                | ✓           | ✓                  | ✅                                                                                         |
-| `/add-dir`            | ✓           | ✓ (records intent) | 🟡 — M3 will enforce                                                                       |
-| `/todos`              | ✓           | ✓                  | ✅ — reads `<sessionDir>/todos.json` written by TodoWrite tool                             |
-| `/plugins`            | ✓           | ✓                  | ✅ — lists wired plugins + contributed hook events + warnings (M5.2)                       |
-| `/compact`            | ✓           | ✓                  | ✅ — manual `/compact` + automatic threshold trigger in the agent loop                     |
-| `/btw`                | ✓           | ✗                  | 🔄                                                                                         |
-| `/recap`              | ✓           | ✓                  | ✅ — provider-summarized recap of the session so far                                       |
-| `/rewind`             | ✓           | ✓                  | ✅ — 5 ops (code/conversation/both/summarize-from/up-to); `Esc Esc` bound                  |
-| `/voice`              | ✓           | ✗                  | 🔄 M8                                                                                      |
-| `/teleport`           | ✓           | ✗                  | 🔄 M8                                                                                      |
-| `/desktop`            | ✓           | ✗                  | 🔄 M6                                                                                      |
-| `/background`         | ✓           | ✗                  | 🔄 (paired with TaskCreate M3.15.3)                                                        |
-| `/batch`              | ✓           | ✗                  | 🔄                                                                                         |
-| `/tasks`              | ✓           | ✗                  | 🔄                                                                                         |
-| `/plan`               | ✓           | ✗                  | 🔄 — set via `/mode plan` in DeepCode                                                      |
-| `/login` / `/logout`  | ✓           | ✓                  | ✅ — /logout clears creds + exits; /login <key> stores a new key (next launch)             |
-| `/export`             | ✓           | ✓                  | ✅ — writes the conversation to a markdown file                                            |
-| `/bug`                | ✓           | ✗                  | 🔄                                                                                         |
-| `/upgrade`            | ✓           | ✓ (hint only)      | 🟡                                                                                         |
-| `/pr_comments`        | ✓           | ✓                  | ✅ — `gh pr view` comments for the current branch's PR                                     |
-| `/review`             | ✓           | ✗ (skill avail)    | 🟡 — via Skill tool                                                                        |
-| `/security-review`    | ✓           | ✗ (skill avail)    | 🟡 — via Skill tool                                                                        |
-| `/schedule`           | ✓           | ✗ (skill avail)    | 🟡                                                                                         |
-| `/loop`               | ✓           | ✗ (skill avail)    | 🟡                                                                                         |
-| `/terminal-setup`     | ✓           | ✗                  | 🔄                                                                                         |
-| `/vim`                | ✓           | ✓                  | ✅ — toggles Vim mode (persists to `~/.deepcode/keybindings.json`)                         |
-| `/agents`             | ✓           | ✓                  | ✅ — lists sub-agents from `.deepcode/agents/`                                             |
-| `/hooks`              | ✓           | ✓                  | ✅ — lists hooks configured in settings.json                                               |
-| `/skills`             | ✓           | ✓                  | ✅ — lists built-in + user + project skills                                                |
-| `/permissions`        | ✓           | ✓ (read-only)      | 🟡 — shows rules + default mode (interactive editor deferred)                              |
-| `/privacy-settings`   | ✓           | ✗                  | 🔄                                                                                         |
-| `/migrate-installer`  | ✓           | ✗                  | 🔄                                                                                         |
-| `/release-notes`      | ✓           | ✗                  | 🔄                                                                                         |
+| Command                    | Claude Code | DeepCode           | Status                                                                                                                               |
+| -------------------------- | ----------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `/help`                    | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/clear`                   | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/exit` / `/quit`          | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/status` / `/doctor`      | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/model`                   | ✓           | ✓                  | ✅ DeepCode constrains to deepseek-\* (model picker doesn't show foreign providers)                                                  |
+| `/mode`                    | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/effort`                  | ✓           | ✓                  | 🟡 — CLI prints the tier table (numbers from `EFFORT_PARAMS` SSOT); switch via `/effort <tier>`; arrow-key selector is GUI-only (M6) |
+| `/cost` / `/usage`         | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/context`                 | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/config`                  | ✓           | ✓ (read-only)      | 🟡 — Claude Code's `/config` is interactive editor; ours is JSON dump (M3c-ext for editor)                                           |
+| `/resume`                  | ✓           | ✓ (list only)      | 🟡 — Claude Code has fuzzy picker; ours lists; pick via `--resume <id>`                                                              |
+| `/init`                    | ✓           | ✓                  | ✅ — interactive 3-phase REPL flow (scan → draft → approve-write `AGENTS.md`)                                                        |
+| `/mcp`                     | ✓           | ✓                  | ✅                                                                                                                                   |
+| `/add-dir`                 | ✓           | ✓ (records intent) | 🟡 — M3 will enforce                                                                                                                 |
+| `/todos`                   | ✓           | ✓                  | ✅ — reads `<sessionDir>/todos.json` written by TodoWrite tool                                                                       |
+| `/plugins`                 | ✓           | ✓                  | ✅ — lists wired plugins + contributed hook events + warnings (M5.2)                                                                 |
+| `/compact`                 | ✓           | ✓                  | ✅ — manual `/compact` + automatic threshold trigger in the agent loop                                                               |
+| `/diff`                    | ✓           | ✓                  | ✅ — git diff + untracked files in the working tree (PR #150)                                                                        |
+| `/btw`                     | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/recap`                   | ✓           | ✓                  | ✅ — provider-summarized recap of the session so far                                                                                 |
+| `/rewind`                  | ✓           | ✓                  | ✅ — 5 ops (code/conversation/both/summarize-from/up-to); `Esc Esc` bound                                                            |
+| `/voice`                   | ✓           | ✗                  | 🔄 M8                                                                                                                                |
+| `/teleport`                | ✓           | ✗                  | 🔄 M8                                                                                                                                |
+| `/desktop`                 | ✓           | ✗                  | 🔄 M6                                                                                                                                |
+| `/background`              | ✓           | ✗                  | 🔄 (paired with TaskCreate M3.15.3)                                                                                                  |
+| `/batch`                   | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/tasks`                   | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/plan`                    | ✓           | ✗                  | 🔄 — set via `/mode plan` in DeepCode                                                                                                |
+| `/login` / `/logout`       | ✓           | ✓                  | ✅ — /logout clears creds + exits; /login <key> stores a new key (next launch)                                                       |
+| `/export`                  | ✓           | ✓                  | ✅ — writes the conversation to a markdown file                                                                                      |
+| `/bug` (alias `/feedback`) | ✓           | ✓                  | ✅ — prints a prefilled GitHub issue link (model/mode/effort in the body)                                                            |
+| `/upgrade`                 | ✓           | ✗                  | 🔄 — no slash command; the `deepcode upgrade` CLI subcommand prints an upgrade hint                                                  |
+| `/pr_comments`             | ✓           | ✓                  | ✅ — `gh pr view` comments for the current branch's PR                                                                               |
+| `/review`                  | ✓           | ✗ (skill avail)    | 🟡 — via Skill tool                                                                                                                  |
+| `/security-review`         | ✓           | ✗ (skill avail)    | 🟡 — via Skill tool                                                                                                                  |
+| `/schedule`                | ✓           | ✗ (skill avail)    | 🟡                                                                                                                                   |
+| `/loop`                    | ✓           | ✗ (skill avail)    | 🟡                                                                                                                                   |
+| `/terminal-setup`          | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/vim`                     | ✓           | ✓                  | ✅ — toggles Vim mode (persists to `~/.deepcode/keybindings.json`)                                                                   |
+| `/keybindings`             | ✓           | ✓ (read-only)      | 🟡 — Claude Code opens/creates the keybindings config; ours lists bindings (edit `~/.deepcode/keybindings.json` manually)            |
+| `/agents`                  | ✓           | ✓                  | ✅ — lists sub-agents from `.deepcode/agents/`                                                                                       |
+| `/hooks`                   | ✓           | ✓                  | ✅ — lists hooks configured in settings.json                                                                                         |
+| `/skills`                  | ✓           | ✓                  | ✅ — lists built-in + user + project skills                                                                                          |
+| `/permissions`             | ✓           | ✓ (read-only)      | 🟡 — shows rules + default mode (interactive editor deferred)                                                                        |
+| `/privacy-settings`        | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/migrate-installer`       | ✓           | ✗                  | 🔄                                                                                                                                   |
+| `/release-notes`           | ✓           | ✓                  | ✅ — prints the latest `CHANGELOG.md` entry                                                                                          |
 
 ---
 
@@ -167,9 +172,11 @@ Specific deviations:
 | Flag                                                                         | Status                                                                                                                       |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `--help` / `--version`                                                       | ✅                                                                                                                           |
-| `--mode` / `--permission-mode`                                               | ✅                                                                                                                           |
+| `--mode`                                                                     | ✅                                                                                                                           |
+| `--permission-mode`                                                          | 🔄 — parsed + validated as a `--mode` alias, but **not wired**: the value is currently ignored (pass `--mode`)               |
 | `--model` / `--effort`                                                       | ✅                                                                                                                           |
 | `--max-turns`                                                                | ✅                                                                                                                           |
+| `-C` / `--cd <dir>`                                                          | ✅ — chdir before running (Codex parity); validated eagerly, bad path exits 2                                                |
 | `--system-prompt` / `--append-system-prompt[-file]`                          | ✅                                                                                                                           |
 | `--allowedTools` / `--disallowedTools`                                       | ✅                                                                                                                           |
 | `--bare`                                                                     | 🔄 (parsed, semantics deferred)                                                                                              |
