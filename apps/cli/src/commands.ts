@@ -2,6 +2,8 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §3.6 (30+ commands; M2 ships a core subset)
 
 import type {
+  ContentBlock,
+  CredentialsStore,
   DeepCodeSettings,
   McpClientHandle,
   Provider,
@@ -47,6 +49,57 @@ async function runGit(
   }
 }
 
+/** Run a `gh` (GitHub CLI) subcommand in `cwd`, never throwing. `code` is the
+ *  spawn errno (e.g. 'ENOENT' when gh isn't installed). */
+async function runGh(
+  cwd: string,
+  args: string[],
+): Promise<{ ok: boolean; stdout: string; stderr: string; code?: string }> {
+  try {
+    const { stdout, stderr } = await execFileAsync('gh', args, {
+      cwd,
+      env: gitEnv(),
+      maxBuffer: 8 * 1024 * 1024,
+    });
+    return { ok: true, stdout, stderr };
+  } catch (err) {
+    const e = err as { stdout?: string; stderr?: string; message?: string; code?: string };
+    return {
+      ok: false,
+      stdout: e.stdout ?? '',
+      stderr: e.stderr ?? e.message ?? 'gh failed',
+      code: e.code,
+    };
+  }
+}
+
+/** PR comments payload from `gh pr view --json`. */
+interface PrCommentsData {
+  number: number;
+  title: string;
+  comments?: Array<{ author?: { login?: string }; body?: string; createdAt?: string }>;
+}
+
+/** Render the `gh pr view` comments JSON into display lines (pure — unit-tested). */
+export function formatPrComments(data: PrCommentsData): string[] {
+  const comments = data.comments ?? [];
+  if (comments.length === 0) {
+    return [`PR #${data.number} — ${data.title}`, '', 'No comments yet.'];
+  }
+  const lines: string[] = [
+    `PR #${data.number} — ${data.title}  (${comments.length} comment${comments.length === 1 ? '' : 's'})`,
+    '',
+  ];
+  for (const c of comments) {
+    const who = c.author?.login ? `@${c.author.login}` : '(unknown)';
+    const when = c.createdAt ? ` · ${c.createdAt.slice(0, 10)}` : '';
+    lines.push(`${who}${when}`);
+    for (const ln of (c.body ?? '').trim().split('\n')) lines.push(`  ${ln}`);
+    lines.push('');
+  }
+  return lines;
+}
+
 export interface SessionContext {
   cwd: string;
   model: string;
@@ -54,6 +107,8 @@ export interface SessionContext {
   effort: string;
   settings: DeepCodeSettings;
   creds: Credentials;
+  /** Credentials store (REPL-injected) — backs /login and /logout. */
+  credsStore?: CredentialsStore;
   sessionId: string;
   sessions: SessionManager;
   usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
@@ -870,6 +925,97 @@ export const BugCommand: SlashCommand = {
   },
 };
 
+export const RecapCommand: SlashCommand = {
+  name: '/recap',
+  description: 'Summarize the conversation so far.',
+  async run(_args, ctx) {
+    if (!ctx.provider) return ['(/recap requires a provider — none configured.)'];
+    const history = ctx.history ?? [];
+    if (history.length === 0) return ['Nothing to recap yet — the conversation is empty.'];
+    const result = await ctx.provider.runTurn({
+      model: ctx.model,
+      systemPrompt:
+        'Recap this coding session for the user: the goal, what was explored or changed ' +
+        '(files, key findings), decisions made, and what is still in progress. Use short ' +
+        'bullet points. No preamble.',
+      tools: [],
+      messages: [
+        ...history,
+        {
+          role: 'user',
+          content: [{ type: 'text', text: 'Recap where we are in this session so far.' }],
+        },
+      ],
+    });
+    const text = result.content
+      .filter((b: ContentBlock) => b.type === 'text')
+      .map((b: ContentBlock) => (b as { text: string }).text)
+      .join('\n')
+      .trim();
+    return text ? text.split('\n') : ['(no recap produced)'];
+  },
+};
+
+export const LoginCommand: SlashCommand = {
+  name: '/login',
+  description: 'Set or replace the stored DeepSeek API key.',
+  async run(args, ctx) {
+    if (!ctx.credsStore) return ['(/login unavailable — no credentials store.)'];
+    const key = args[0]?.trim();
+    if (!key) {
+      const authed = !!(ctx.creds?.apiKey || ctx.creds?.authToken);
+      return [
+        authed ? 'Authenticated with a DeepSeek API key.' : 'Not authenticated.',
+        'Usage: /login <DEEPSEEK_API_KEY>   — stores a new key (applies on next launch).',
+      ];
+    }
+    await ctx.credsStore.save({ ...ctx.creds, apiKey: key });
+    return [
+      'Saved a new DeepSeek API key.',
+      'Restart `deepcode` for it to take effect in a new session.',
+    ];
+  },
+};
+
+export const LogoutCommand: SlashCommand = {
+  name: '/logout',
+  description: 'Clear stored DeepSeek credentials and exit.',
+  async run(_args, ctx) {
+    if (!ctx.credsStore) return ['(/logout unavailable — no credentials store.)'];
+    await ctx.credsStore.clear();
+    ctx.exitRequested = true;
+    return [
+      'Logged out — stored DeepSeek credentials cleared.',
+      'Run `deepcode` to sign in again.',
+    ];
+  },
+};
+
+export const PrCommentsCommand: SlashCommand = {
+  name: '/pr_comments',
+  description: "Show comments on the current branch's pull request (needs gh).",
+  async run(_args, ctx) {
+    const res = await runGh(ctx.cwd, ['pr', 'view', '--json', 'number,title,comments']);
+    if (!res.ok) {
+      if (res.code === 'ENOENT') {
+        return ['/pr_comments needs the GitHub CLI (`gh`). Install: https://cli.github.com'];
+      }
+      const err = res.stderr.trim();
+      if (/no (pull requests|default remote|open)|not found|no git remotes/i.test(err)) {
+        return ['No open pull request found for the current branch.'];
+      }
+      return [`/pr_comments failed: ${err || 'unknown error'}`];
+    }
+    let data: PrCommentsData;
+    try {
+      data = JSON.parse(res.stdout) as PrCommentsData;
+    } catch {
+      return ['/pr_comments: could not parse gh output.'];
+    }
+    return formatPrComments(data);
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -899,6 +1045,10 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   DiffCommand,
   ReleaseNotesCommand,
   BugCommand,
+  RecapCommand,
+  LoginCommand,
+  LogoutCommand,
+  PrCommentsCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
