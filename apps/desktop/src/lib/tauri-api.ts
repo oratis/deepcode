@@ -213,3 +213,28 @@ export async function openUrl(url: string): Promise<void> {
   const { openUrl: openerOpen } = await import('@tauri-apps/plugin-opener');
   await openerOpen(url);
 }
+
+/** One file snapshot from a session — the `session_snapshots` command's row. */
+export interface SessionSnapshot {
+  /** Sequence within the session (ascending = chronological). */
+  seq: number;
+  /** Capture time, unix ms. */
+  capturedAtMs: number;
+  /** "pre-Edit" / "post-Write" / … */
+  reason: string;
+  /** sha256[:16] of the blob (used to collapse duplicate states). */
+  hash: string;
+  /** The captured file contents. */
+  content: string;
+}
+
+/**
+ * List a file's session snapshots for the Diff/History tabs. Returns the rows
+ * seq-ascending; an empty array when the session has none (file untouched).
+ */
+export async function sessionSnapshots(
+  sessionId: string,
+  filePath: string,
+): Promise<SessionSnapshot[]> {
+  return (await invoke('session_snapshots', { sessionId, filePath })) as SessionSnapshot[];
+}

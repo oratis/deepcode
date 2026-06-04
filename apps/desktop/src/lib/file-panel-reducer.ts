@@ -5,6 +5,7 @@
 
 import {
   clampPanelWidth,
+  type DiffLine,
   FILE_PANEL_DEFAULT_WIDTH,
   type FilePanelState,
   type FileTab,
@@ -19,7 +20,10 @@ export type FilePanelAction =
   | { type: 'toggleDiffMode' }
   | { type: 'width'; width: number }
   | { type: 'nextTab' }
-  | { type: 'prevTab' };
+  | { type: 'prevTab' }
+  // Replace a tab's precomputed diff (selecting a History entry recomputes it
+  // against the chosen revision). No-op when the path isn't open.
+  | { type: 'setDiff'; path: string; diff: DiffLine[] | null };
 
 export function initialFilePanelState(width = FILE_PANEL_DEFAULT_WIDTH): FilePanelState {
   return {
@@ -61,6 +65,13 @@ export function filePanelReducer(state: FilePanelState, action: FilePanelAction)
       return { ...state, diffMode: state.diffMode === 'split' ? 'inline' : 'split' };
     case 'width':
       return { ...state, width: clampPanelWidth(action.width) };
+    case 'setDiff': {
+      const idx = state.tabs.findIndex((t) => t.path === action.path);
+      if (idx < 0) return state;
+      const tabs = state.tabs.slice();
+      tabs[idx] = { ...tabs[idx], diff: action.diff };
+      return { ...state, tabs };
+    }
     case 'nextTab':
       if (state.tabs.length === 0) return state;
       return { ...state, activeIndex: (state.activeIndex + 1) % state.tabs.length };

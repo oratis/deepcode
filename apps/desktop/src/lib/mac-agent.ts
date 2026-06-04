@@ -15,6 +15,7 @@ import { runAgent } from '@deepcode/core/dist/agent.js';
 import { DeepSeekProvider, EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
 import type { AgentEvent, Effort, Mode, ToolHandler } from '@deepcode/core/dist/types.js';
 import { MAC_TOOLS } from './mac-tools.js';
+import { setActiveSessionId } from './mac-session.js';
 import { readCredentials, sessionAppend, sessionCreate, sessionSetTitle } from './tauri-api.js';
 
 /** First non-empty line of the user message, trimmed to a sidebar-friendly length. */
@@ -73,6 +74,7 @@ let currentSessionId: string | null = null;
 
 export function clearSession(): void {
   currentSessionId = null;
+  setActiveSessionId(null);
   history = [];
 }
 
@@ -86,6 +88,7 @@ export function resumeSession(
   loadedHistory: import('@deepcode/core/dist/types.js').StoredMessage[],
 ): void {
   currentSessionId = sessionId;
+  setActiveSessionId(sessionId);
   history = loadedHistory;
 }
 
@@ -146,6 +149,8 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
   if (!currentSessionId) {
     try {
       currentSessionId = await sessionCreate(args.cwd ?? '/');
+      // Publish so the tools snapshot under this id and the file panel can read them.
+      setActiveSessionId(currentSessionId);
     } catch (err) {
       console.warn('session_create failed (continuing without persistence):', err);
     }
@@ -252,6 +257,7 @@ export function abortAgentTurn(turnId: string): boolean {
 export function clearHistory(): void {
   history = [];
   currentSessionId = null;
+  setActiveSessionId(null);
 }
 
 export function getHistoryLength(): number {

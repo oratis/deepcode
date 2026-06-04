@@ -251,7 +251,7 @@ export function App(): JSX.Element {
           onCloseTab={fp.close}
           onSelectView={fp.setView}
           onToggleDiffMode={fp.toggleDiffMode}
-          onSelectHistory={() => {}}
+          onSelectHistory={fp.selectHistory}
           onResizeStart={onFilePanelResizeStart}
         />
       ) : inspectorShowing ? (
