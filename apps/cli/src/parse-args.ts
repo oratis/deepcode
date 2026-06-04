@@ -21,7 +21,6 @@ export interface ParsedArgs {
 
   // Session shaping
   mode?: Mode;
-  permissionMode?: Mode;
   model?: string;
   effort?: Effort;
   maxTurns?: number;
@@ -159,9 +158,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
         else out.unknownFlags.push(`--mode ${v ?? ''}`);
         break;
       }
+      // Claude Code alias for --mode: set out.mode directly so it's actually
+      // wired through cli.ts (which only forwards args.mode). Last flag wins if
+      // both --mode and --permission-mode are given.
       case a === '--permission-mode': {
         const v = next();
-        if (v && (VALID_MODES as string[]).includes(v)) out.permissionMode = v as Mode;
+        if (v && (VALID_MODES as string[]).includes(v)) out.mode = v as Mode;
         else out.unknownFlags.push(`--permission-mode ${v ?? ''}`);
         break;
       }
