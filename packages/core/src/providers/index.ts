@@ -16,3 +16,5 @@ export {
   contextWindowFor,
 } from './deepseek.js';
 export type { DeepSeekProviderOpts } from './deepseek.js';
+export { estimateCost } from './pricing.js';
+export type { CostBreakdown } from './pricing.js';

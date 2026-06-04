@@ -28,7 +28,7 @@ function makeContext(overrides: Partial<SessionContext> = {}): SessionContext {
     creds: { apiKey: 'sk-abcdefghij' },
     sessionId: 'sess-xyz',
     sessions: new SessionManager({ root: '/tmp/x' }),
-    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0 },
+    usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cacheReadTokens: 0 },
     ...overrides,
   };
 }
@@ -157,11 +157,21 @@ describe('built-in command behavior', () => {
   it('/cost computes pricing', async () => {
     const reg = new CommandRegistry();
     const ctx = makeContext({
-      usage: { inputTokens: 1_000_000, outputTokens: 500_000, reasoningTokens: 0 },
+      usage: {
+        inputTokens: 1_000_000,
+        outputTokens: 500_000,
+        reasoningTokens: 0,
+        cacheReadTokens: 400_000,
+      },
     });
     const out = await reg.match('/cost')!.cmd.run([], ctx);
-    expect(out.join('\n')).toMatch(/Tokens/);
-    expect(out.join('\n')).toMatch(/Total/);
+    const text = out.join('\n');
+    expect(text).toMatch(/Tokens/);
+    expect(text).toMatch(/Total/);
+    // Cache-aware: 400k of 1M input were cache hits → shown + credited.
+    expect(text).toMatch(/cache hits: 400,000/);
+    expect(text).toMatch(/40%/);
+    expect(text).toMatch(/cache saved/i);
   });
 
   it('/context shows window usage', async () => {

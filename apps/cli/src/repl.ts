@@ -421,7 +421,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     credsStore,
     sessionId: session.id,
     sessions,
-    usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+    usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
     mcpServers,
     mcpErrors,
     wiredPlugins: pluginsWire?.plugins.map((p) => ({
@@ -637,6 +637,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     ctx.usage.inputTokens += result.usage.inputTokens;
     ctx.usage.outputTokens += result.usage.outputTokens;
     ctx.usage.reasoningTokens += result.usage.reasoningTokens;
+    ctx.usage.cacheReadTokens += result.usage.cacheReadTokens;
     // M3c-rest: honor ExitPlanMode tool signal — flip plan → default
     if (result.modeSignal?.exitPlanMode && ctx.mode === 'plan') {
       ctx.mode = 'default';

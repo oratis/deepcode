@@ -30,7 +30,7 @@ function ctx(overrides: Partial<SessionContext> = {}): SessionContext {
     creds: { apiKey: 'sk-test' },
     sessionId: 's1',
     sessions: new SessionManager({ root: '/tmp/x' }),
-    usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 },
+    usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
     ...overrides,
   };
 }
