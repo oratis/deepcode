@@ -176,14 +176,22 @@ export function App(): JSX.Element {
   const usedTokens = inspector.usage.inputTokens + inspector.usage.outputTokens;
   const contextFill = usedTokens > 0 ? usedTokens / contextWindowFor(inspector.model) : undefined;
 
-  // The rail is always the last 48px column. A panel (file OR inspector) opens
+  // The rail is always the last 64px column. A panel (file OR inspector) opens
   // to its left, widening the grid so it squeezes chat rather than overlaying.
   const inspectorShowing = inspectorOpen && !filesVisible;
   const shellClass =
     'app-shell' + (filesVisible ? ' file-open' : inspectorShowing ? ' inspector-open' : '');
+  // Name of the right-side panel currently showing — surfaced in the otherwise
+  // empty macOS titlebar strip so the rail toggles gain a visible, labeled echo.
+  const activePanelName = filesVisible ? 'Files' : inspectorShowing ? 'Inspector' : null;
 
   return (
     <div className={shellClass}>
+      {activePanelName && (
+        <div className="titlebar-status" aria-hidden="true">
+          {activePanelName}
+        </div>
+      )}
       {update && <UpdateBanner info={update} />}
       <Sidebar
         key={`sb-${sessionEpoch}`}
