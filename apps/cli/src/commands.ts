@@ -13,6 +13,7 @@ import type {
 } from '@deepcode/core';
 import {
   contextWindowFor,
+  estimateCost,
   redact,
   EFFORT_PARAMS,
   type Credentials,
@@ -111,7 +112,12 @@ export interface SessionContext {
   credsStore?: CredentialsStore;
   sessionId: string;
   sessions: SessionManager;
-  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cacheReadTokens: number;
+  };
   /** Set true to terminate the REPL after this command. */
   exitRequested?: boolean;
   /** Replace history entirely (used by /clear, /resume). */
@@ -304,20 +310,21 @@ export const CostCommand: SlashCommand = {
   aliases: ['/usage'],
   description: 'Show token usage and cost estimate.',
   run(_args, ctx) {
-    // Pricing per docs/design/effort-levels.md §2.4
-    const inputYuan = (ctx.usage.inputTokens / 1_000_000) * 1.0;
-    const outputYuan =
-      ctx.model === 'deepseek-reasoner'
-        ? (ctx.usage.outputTokens / 1_000_000) * 16.0
-        : (ctx.usage.outputTokens / 1_000_000) * 2.0;
-    const reasoningYuan =
-      ctx.model === 'deepseek-reasoner' ? (ctx.usage.reasoningTokens / 1_000_000) * 4.0 : 0;
-    const total = inputYuan + outputYuan + reasoningYuan;
-    return [
-      `Tokens — in: ${ctx.usage.inputTokens.toLocaleString()}, out: ${ctx.usage.outputTokens.toLocaleString()}, reasoning: ${ctx.usage.reasoningTokens.toLocaleString()}`,
-      `Estimate — input: ¥${inputYuan.toFixed(4)}, output: ¥${outputYuan.toFixed(4)}, reasoning: ¥${reasoningYuan.toFixed(4)}`,
-      `Total this session: ¥${total.toFixed(4)}`,
+    // Cache-aware pricing per docs/design/effort-levels.md §2.4. DeepSeek's
+    // prompt caching is automatic server-side; cache-hit input tokens bill at
+    // ~10% of a miss, so a stable prompt prefix across turns saves real money.
+    const c = estimateCost(ctx.usage, ctx.model);
+    const cacheHits = Math.min(ctx.usage.cacheReadTokens, ctx.usage.inputTokens);
+    const hitPct = (c.cacheHitRate * 100).toFixed(0);
+    const lines = [
+      `Tokens — in: ${ctx.usage.inputTokens.toLocaleString()} (cache hits: ${cacheHits.toLocaleString()}, ${hitPct}%), out: ${ctx.usage.outputTokens.toLocaleString()}, reasoning: ${ctx.usage.reasoningTokens.toLocaleString()}`,
+      `Estimate — input ¥${(c.cacheMissYuan + c.cacheHitYuan).toFixed(4)} (miss ¥${c.cacheMissYuan.toFixed(4)} + cache ¥${c.cacheHitYuan.toFixed(4)}), output ¥${c.outputYuan.toFixed(4)}, reasoning ¥${c.reasoningYuan.toFixed(4)}`,
+      `Total this session: ¥${c.totalYuan.toFixed(4)}`,
     ];
+    if (c.cacheSavingsYuan > 0) {
+      lines.push(`Prompt cache saved ¥${c.cacheSavingsYuan.toFixed(4)} vs no caching.`);
+    }
+    return lines;
   },
 };
 

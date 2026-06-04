@@ -15,6 +15,8 @@ export {
   DEFAULT_CONTEXT_WINDOW,
   EFFORT_PARAMS,
   contextWindowFor,
+  estimateCost,
+  type CostBreakdown,
   type DeepSeekProviderOpts,
   type Provider,
   type ProviderResult,

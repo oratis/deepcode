@@ -121,7 +121,12 @@ export interface RunAgentResult {
   /** Total provider round-trips executed. */
   turnsUsed: number;
   /** Aggregate token usage. */
-  usage: { inputTokens: number; outputTokens: number; reasoningTokens: number };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens: number;
+    cacheReadTokens: number;
+  };
   /** Reason the loop terminated. */
   stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
   /** Mode-control signals flipped by tools during this run (M3c-rest). */
@@ -380,7 +385,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     });
   }
 
-  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0 };
+  const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
   let turnsUsed = 0;
 
   // Stop hook — fires when the TOP-LEVEL agent finishes a run (a sub-agent's
@@ -437,6 +442,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     totalUsage.inputTokens += result.usage.inputTokens;
     totalUsage.outputTokens += result.usage.outputTokens;
     totalUsage.reasoningTokens += result.usage.reasoningTokens;
+    totalUsage.cacheReadTokens += result.usage.cacheReadTokens;
     opts.onEvent?.({
       type: 'usage',
       inputTokens: result.usage.inputTokens,
