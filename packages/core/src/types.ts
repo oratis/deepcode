@@ -182,7 +182,13 @@ export type AgentEvent =
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; result: ToolResult }
   | { type: 'turn_complete'; message: StoredMessage }
-  | { type: 'usage'; inputTokens: number; outputTokens: number; reasoningTokens: number }
+  | {
+      type: 'usage';
+      inputTokens: number;
+      outputTokens: number;
+      reasoningTokens: number;
+      cacheReadTokens: number;
+    }
   | { type: 'error'; error: string };
 
 /**

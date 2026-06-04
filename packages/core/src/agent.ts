@@ -448,6 +448,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       inputTokens: result.usage.inputTokens,
       outputTokens: result.usage.outputTokens,
       reasoningTokens: result.usage.reasoningTokens,
+      cacheReadTokens: result.usage.cacheReadTokens,
     });
 
     const assistantMsg: StoredMessage = {
@@ -685,6 +686,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           inputTokens: compactResult.usage.inputTokens,
           outputTokens: compactResult.usage.outputTokens,
           reasoningTokens: 0,
+          cacheReadTokens: 0,
         });
         if (opts.hooks) {
           await opts.hooks.dispatch({
