@@ -89,6 +89,10 @@ export interface ReplOpts {
   continueSession?: boolean;
   /** `--fork-session` → resume into a NEW session, leaving the source intact. */
   forkSession?: boolean;
+  /** `--bare` → suppress the startup banner (scripting / minimal output). */
+  bare?: boolean;
+  /** `--no-plugins` → skip discovering + wiring installed plugins. */
+  noPlugins?: boolean;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -274,10 +278,17 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   const commands = new CommandRegistry();
   // Trusted+enabled plugins contribute skills / sub-agents / commands (their
   // dirs) + MCP servers. Hooks are merged separately by wirePlugins.
-  const pluginContrib = await collectPluginContributions({
-    home: opts.home,
-    disabled: settings.disabledPlugins,
-  });
+  // `--no-plugins` skips discovery entirely (faster start / bypass a bad plugin).
+  const emptyContrib: Awaited<ReturnType<typeof collectPluginContributions>> = {
+    dirs: [],
+    mcpServers: {},
+  };
+  const pluginContrib = opts.noPlugins
+    ? emptyContrib
+    : await collectPluginContributions({
+        home: opts.home,
+        disabled: settings.disabledPlugins,
+      });
   // Custom prompt-template commands from plugin + user + project commands dirs.
   const customCommands = await loadSlashCommands({
     cwd,
@@ -395,19 +406,22 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     allowedHttpHookUrls: settings.allowedHttpHookUrls,
   });
 
-  // M5.2: wire installed plugins (discover + spawn + merge contributed hooks)
+  // M5.2: wire installed plugins (discover + spawn + merge contributed hooks).
+  // `--no-plugins` skips this entirely.
   let pluginsWire: WireResult | null = null;
-  try {
-    pluginsWire = await wirePlugins({
-      home: opts.home,
-      disabled: settings.disabledPlugins,
-      hooks,
-      capabilities: buildPluginCapabilities(cwd),
-      sandbox: settings.sandbox,
-      log: (s) => output.write(s + '\n'),
-    });
-  } catch (err) {
-    output.write(`  ⊞ Plugins: wire-up failed — ${(err as Error).message}\n`);
+  if (!opts.noPlugins) {
+    try {
+      pluginsWire = await wirePlugins({
+        home: opts.home,
+        disabled: settings.disabledPlugins,
+        hooks,
+        capabilities: buildPluginCapabilities(cwd),
+        sandbox: settings.sandbox,
+        log: (s) => output.write(s + '\n'),
+      });
+    } catch (err) {
+      output.write(`  ⊞ Plugins: wire-up failed — ${(err as Error).message}\n`);
+    }
   }
 
   let history: StoredMessage[] = resolved.seededHistory;
@@ -439,9 +453,13 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     history,
   };
 
-  output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
-  output.write(`  Working in ${cwd}\n`);
-  output.write(`  Type /help for commands, /exit to quit.\n\n`);
+  if (!opts.bare) {
+    output.write(
+      `\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`,
+    );
+    output.write(`  Working in ${cwd}\n`);
+    output.write(`  Type /help for commands, /exit to quit.\n\n`);
+  }
 
   const rl = createInterface({ input: opts.input, output, terminal: true });
 
