@@ -15,12 +15,14 @@ import {
   contextWindowFor,
   estimateCost,
   redact,
+  writeSettings,
   EFFORT_PARAMS,
   VERSION,
   type Credentials,
   type Effort,
 } from '@deepcode/core';
 import { execFile } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -102,6 +104,18 @@ export function formatPrComments(data: PrCommentsData): string[] {
   return lines;
 }
 
+/** Set a possibly-dotted key path on an object, creating intermediate objects. */
+function setDeep(obj: Record<string, unknown>, path: string, value: unknown): void {
+  const keys = path.split('.');
+  let o = obj;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i]!;
+    if (typeof o[k] !== 'object' || o[k] === null || Array.isArray(o[k])) o[k] = {};
+    o = o[k] as Record<string, unknown>;
+  }
+  o[keys[keys.length - 1]!] = value;
+}
+
 export interface SessionContext {
   cwd: string;
   model: string;
@@ -111,6 +125,8 @@ export interface SessionContext {
   creds: Credentials;
   /** Credentials store (REPL-injected) — backs /login and /logout. */
   credsStore?: CredentialsStore;
+  /** User settings.json path (REPL-injected, honors --home) — backs /config set. */
+  userSettingsPath?: string;
   sessionId: string;
   sessions: SessionManager;
   usage: {
@@ -345,12 +361,45 @@ export const ContextCommand: SlashCommand = {
 
 export const ConfigCommand: SlashCommand = {
   name: '/config',
-  description: 'Show resolved settings (read-only in M2).',
-  run(_args, ctx) {
+  description: 'Show settings, or `/config set <key> <value>` to edit (dotted keys ok).',
+  async run(args, ctx) {
+    if (args[0] === 'set') {
+      const key = args[1]?.trim();
+      const valueRaw = args.slice(2).join(' ').trim();
+      if (!key || !valueRaw) {
+        return [
+          'Usage: /config set <key> <value>',
+          '  key may be dotted (e.g. permissions.defaultMode); value is parsed as JSON, else kept as a string.',
+        ];
+      }
+      if (!ctx.userSettingsPath) return ['(/config set is unavailable here.)'];
+      let value: unknown;
+      try {
+        value = JSON.parse(valueRaw);
+      } catch {
+        value = valueRaw;
+      }
+      let current: Record<string, unknown> = {};
+      try {
+        current = JSON.parse(await readFile(ctx.userSettingsPath, 'utf8')) as Record<
+          string,
+          unknown
+        >;
+      } catch {
+        /* missing/empty → start fresh */
+      }
+      setDeep(current, key, value);
+      await writeSettings(ctx.userSettingsPath, current as DeepCodeSettings);
+      return [
+        `Set ${key} = ${JSON.stringify(value)}`,
+        `→ ${ctx.userSettingsPath}`,
+        'Applies to new sessions (model / mode / effort change live via /model, /mode, /effort).',
+      ];
+    }
     const out = ['Current settings (merged):'];
     out.push(JSON.stringify(ctx.settings, null, 2).split('\n').slice(0, 40).join('\n'));
     out.push('');
-    out.push('Edit ~/.deepcode/settings.json (user) or .deepcode/settings.json (project).');
+    out.push('Edit with `/config set <key> <value>`, or ~/.deepcode/settings.json directly.');
     return out;
   },
 };
