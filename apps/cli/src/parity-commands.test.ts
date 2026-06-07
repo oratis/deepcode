@@ -208,3 +208,18 @@ describe('/resume <id> (live switch)', () => {
     expect(out.join('\n')).toMatch(/Recent sessions/);
   });
 });
+
+describe('/btw', () => {
+  it('queues a context note into newHistory', async () => {
+    const c = ctx({ history: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] });
+    const out = await reg.match('/btw')!.cmd.run(['use', 'tabs'], c);
+    expect(out.join('\n')).toMatch(/Noted/);
+    expect(c.newHistory).toHaveLength(2);
+    expect(JSON.stringify(c.newHistory)).toContain('use tabs');
+  });
+
+  it('shows usage with no note', async () => {
+    const out = await reg.match('/btw')!.cmd.run([], ctx());
+    expect(out.join('\n')).toMatch(/Usage: \/btw/);
+  });
+});
