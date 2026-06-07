@@ -167,6 +167,8 @@ async function main(): Promise<number> {
     resumeId: args.resumeId,
     continueSession: args.continue,
     forkSession: args.forkSession,
+    bare: args.bare,
+    noPlugins: args.noPlugins,
   });
 }
 
