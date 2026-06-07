@@ -1117,6 +1117,23 @@ export const PrivacySettingsCommand: SlashCommand = {
   },
 };
 
+export const BtwCommand: SlashCommand = {
+  name: '/btw',
+  description: 'Add a "by the way" note to the context (no agent turn fired).',
+  run(args, ctx) {
+    const note = args.join(' ').trim();
+    if (!note) {
+      return ['Usage: /btw <note> — queues a side-note the agent sees with your next message.'];
+    }
+    const base = ctx.history ?? [];
+    ctx.newHistory = [
+      ...base,
+      { role: 'user', content: [{ type: 'text', text: `(By the way: ${note})` }] },
+    ];
+    return [`Noted — the agent will see this with your next message.`];
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -1152,6 +1169,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   PrCommentsCommand,
   UpgradeCommand,
   PrivacySettingsCommand,
+  BtwCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
