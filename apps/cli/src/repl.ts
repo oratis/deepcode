@@ -609,7 +609,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       temperature,
       maxTurns: opts.maxTurns,
       cwd: ctx.cwd,
-      session: { manager: sessions, id: session.id },
+      // ctx.sessionId (not the launch `session.id`) so a live `/resume <id>`
+      // switch redirects new messages to the resumed session.
+      session: { manager: sessions, id: ctx.sessionId },
       mode: ctx.mode as Mode,
       permissions: settings.permissions,
       hooks,

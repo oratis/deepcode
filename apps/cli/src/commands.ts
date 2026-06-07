@@ -415,9 +415,25 @@ export const AddDirCommand: SlashCommand = {
 
 export const ResumeCommand: SlashCommand = {
   name: '/resume',
-  description: 'List recent sessions.',
-  async run(_args, ctx) {
+  description: 'List recent sessions, or `/resume <id|number>` to switch live.',
+  async run(args, ctx) {
     const sessions = await ctx.sessions.list();
+    if (args[0]) {
+      // Accept a full id, or a 1-based index into the recent list below.
+      let id = args[0].trim();
+      const n = Number(id);
+      if (Number.isInteger(n) && n >= 1 && n <= sessions.length) id = sessions[n - 1]!.id;
+      const loaded = await ctx.sessions.load(id);
+      if (!loaded) return [`Session ${id} not found. Run /resume to list recent sessions.`];
+      // Swap the live conversation (REPL applies newHistory) + the append target.
+      ctx.sessionId = id;
+      ctx.newHistory = loaded.messages;
+      const c = loaded.messages.length;
+      return [
+        `↻ Switched to session ${id} (${c} message${c === 1 ? '' : 's'}).`,
+        'New messages now append to this session.',
+      ];
+    }
     if (sessions.length === 0) return ['No previous sessions.'];
     const top = sessions.slice(0, 10);
     return [
@@ -426,7 +442,7 @@ export const ResumeCommand: SlashCommand = {
         (s, i) => `  ${String(i + 1).padStart(2)}. ${s.id}  ${s.title ?? s.cwd}  (${s.updatedAt})`,
       ),
       '',
-      'To resume: deepcode --resume <id> (M2 picker in next iteration).',
+      'Switch live with `/resume <id-or-number>`, or `deepcode --resume <id>` at launch.',
     ];
   },
 };
