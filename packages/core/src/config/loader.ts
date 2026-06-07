@@ -17,11 +17,14 @@ export interface LoadedSettings {
     user?: DeepCodeSettings;
     project?: DeepCodeSettings;
     local?: DeepCodeSettings;
+    /** `--settings <file>` override — highest precedence, treated as trusted. */
+    override?: DeepCodeSettings;
   };
   sources: {
     userPath: string;
     projectPath: string;
     localPath: string;
+    overridePath?: string;
   };
 }
 
@@ -29,6 +32,8 @@ export interface LoadSettingsOpts {
   cwd: string;
   /** Override $HOME for tests. */
   home?: string;
+  /** `--settings <file>`: a settings file that wins over all discovered layers. */
+  settingsPath?: string;
 }
 
 export function settingsPaths(opts: LoadSettingsOpts): LoadedSettings['sources'] {
@@ -51,21 +56,40 @@ async function readJson(path: string): Promise<DeepCodeSettings | undefined> {
   }
 }
 
+/** Like readJson but the file is REQUIRED (explicit --settings path): a missing
+ *  or unparseable file is a hard error, not a silent skip. */
+async function readJsonRequired(path: string): Promise<DeepCodeSettings> {
+  try {
+    const raw = await fs.readFile(path, 'utf8');
+    return JSON.parse(raw) as DeepCodeSettings;
+  } catch (err) {
+    throw new Error(`--settings: cannot load ${path}: ${(err as Error).message}`);
+  }
+}
+
 export async function loadSettings(opts: LoadSettingsOpts): Promise<LoadedSettings> {
   const sources = settingsPaths(opts);
-  const [user, project, local] = await Promise.all([
+  const [user, project, local, override] = await Promise.all([
     readJson(sources.userPath),
     readJson(sources.projectPath),
     readJson(sources.localPath),
+    opts.settingsPath ? readJsonRequired(opts.settingsPath) : Promise.resolve(undefined),
   ]);
-  const merged = deepMerge(
+  let merged = deepMerge(
     deepMerge({}, (user ?? {}) as Record<string, unknown>),
     deepMerge((project ?? {}) as Record<string, unknown>, (local ?? {}) as Record<string, unknown>),
   ) as DeepCodeSettings;
+  // --settings wins over everything discovered on disk.
+  if (override) {
+    merged = deepMerge(
+      merged as Record<string, unknown>,
+      override as Record<string, unknown>,
+    ) as DeepCodeSettings;
+  }
   return {
     merged,
-    layers: { user, project, local },
-    sources,
+    layers: { user, project, local, override },
+    sources: { ...sources, overridePath: opts.settingsPath },
   };
 }
 

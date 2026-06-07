@@ -93,6 +93,8 @@ export interface ReplOpts {
   bare?: boolean;
   /** `--no-plugins` → skip discovering + wiring installed plugins. */
   noPlugins?: boolean;
+  /** `--settings <file>` → a settings file that wins over discovered layers. */
+  settingsPath?: string;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -205,7 +207,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   // Load config + creds. Trust-gate first: in an untrusted directory, project
   // /local hooks·mcpServers·apiKeyHelper·statusLine are stripped (the user-global
   // layer is always trusted) so a freshly-cloned repo can't run code on launch.
-  const loaded = await loadSettings({ cwd, home: opts.home });
+  const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
   const trustStore = new TrustStore({ home: opts.home });
   const trustStatus = await trustStore.statusFor(cwd);
   const { settings, gated } = gateUntrustedSettings(loaded, trustStatus);

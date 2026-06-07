@@ -170,22 +170,22 @@ Specific deviations:
 
 ## CLI flags
 
-| Flag                                                                         | Status                                                                                                                       |
-| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `--help` / `--version`                                                       | ✅                                                                                                                           |
-| `--mode`                                                                     | ✅                                                                                                                           |
-| `--permission-mode`                                                          | ✅ — true `--mode` alias (sets `mode`; last of `--mode`/`--permission-mode` wins), wired in PR #159                          |
-| `--model` / `--effort`                                                       | ✅                                                                                                                           |
-| `--max-turns`                                                                | ✅                                                                                                                           |
-| `-C` / `--cd <dir>`                                                          | ✅ — chdir before running (Codex parity); validated eagerly, bad path exits 2                                                |
-| `--system-prompt` / `--append-system-prompt[-file]`                          | ✅                                                                                                                           |
-| `--allowedTools` / `--disallowedTools`                                       | ✅                                                                                                                           |
-| `--bare`                                                                     | ✅ — suppresses the REPL startup banner (scripting / minimal output)                                                         |
-| `--settings` / `--agents` / `--mcp-config` / `--plugin-dir` / `--plugin-url` | 🔄 (parsed only)                                                                                                             |
-| `--no-plugins` / `--strict`                                                  | 🟡 — `--no-plugins` skips plugin discovery + wiring; `--strict` still parsed-only                                            |
-| `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes                                                                                       |
-| `--output-format` / `--json-schema` / `--include-partial-messages`           | ✅ output-format + json-schema (lightweight top-level validation) + include-partial-messages all implemented (`headless.ts`) |
-| `--resume <id>` / `--continue` / `--fork-session`                            | ✅ resume by id (picker if no id, `-r`), most-recent-in-cwd (`-c`), fork-into-new                                            |
+| Flag                                                                         | Status                                                                                                                                             |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `--help` / `--version`                                                       | ✅                                                                                                                                                 |
+| `--mode`                                                                     | ✅                                                                                                                                                 |
+| `--permission-mode`                                                          | ✅ — true `--mode` alias (sets `mode`; last of `--mode`/`--permission-mode` wins), wired in PR #159                                                |
+| `--model` / `--effort`                                                       | ✅                                                                                                                                                 |
+| `--max-turns`                                                                | ✅                                                                                                                                                 |
+| `-C` / `--cd <dir>`                                                          | ✅ — chdir before running (Codex parity); validated eagerly, bad path exits 2                                                                      |
+| `--system-prompt` / `--append-system-prompt[-file]`                          | ✅                                                                                                                                                 |
+| `--allowedTools` / `--disallowedTools`                                       | ✅                                                                                                                                                 |
+| `--bare`                                                                     | ✅ — suppresses the REPL startup banner (scripting / minimal output)                                                                               |
+| `--settings` / `--agents` / `--mcp-config` / `--plugin-dir` / `--plugin-url` | 🟡 — `--settings <file>` is a trusted highest-precedence override layer; `--agents`/`--mcp-config`/`--plugin-dir`/`--plugin-url` still parsed-only |
+| `--no-plugins` / `--strict`                                                  | 🟡 — `--no-plugins` skips plugin discovery + wiring; `--strict` still parsed-only                                                                  |
+| `-p` headless                                                                | ✅ text/json/stream-json, 5 exit codes                                                                                                             |
+| `--output-format` / `--json-schema` / `--include-partial-messages`           | ✅ output-format + json-schema (lightweight top-level validation) + include-partial-messages all implemented (`headless.ts`)                       |
+| `--resume <id>` / `--continue` / `--fork-session`                            | ✅ resume by id (picker if no id, `-r`), most-recent-in-cwd (`-c`), fork-into-new                                                                  |
 
 ## What DeepCode adds that Claude Code doesn't have (yet)
 
