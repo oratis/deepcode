@@ -40,6 +40,29 @@ describe('settings loader', () => {
     expect(s.merged.effortLevel).toBe('low');
   });
 
+  it('--settings overrides all discovered layers (highest precedence)', async () => {
+    await writeSettings(join(home, '.deepcode', 'settings.json'), {
+      model: 'deepseek-chat',
+      effortLevel: 'low',
+    });
+    await writeSettings(join(cwd, '.deepcode', 'settings.local.json'), {
+      model: 'deepseek-reasoner',
+    });
+    const overridePath = join(cwd, 'custom-settings.json');
+    await writeSettings(overridePath, { effortLevel: 'max' });
+    const s = await loadSettings({ cwd, home, settingsPath: overridePath });
+    expect(s.merged.model).toBe('deepseek-reasoner'); // override didn't set model → local wins
+    expect(s.merged.effortLevel).toBe('max'); // override wins over user's low
+    expect(s.layers.override).toEqual({ effortLevel: 'max' });
+    expect(s.sources.overridePath).toBe(overridePath);
+  });
+
+  it('--settings with a missing file is a hard error', async () => {
+    await expect(
+      loadSettings({ cwd, home, settingsPath: join(cwd, 'does-not-exist.json') }),
+    ).rejects.toThrow(/--settings/);
+  });
+
   it('project overrides user', async () => {
     await writeSettings(join(home, '.deepcode', 'settings.json'), {
       model: 'deepseek-chat',

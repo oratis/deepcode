@@ -129,6 +129,7 @@ async function main(): Promise<number> {
       allowedTools: args.allowedTools,
       disallowedTools: args.disallowedTools,
       maxTurns: args.maxTurns,
+      settingsPath: args.settingsFile,
       jsonSchema: args.jsonSchema,
       includePartialMessages: args.includePartialMessages,
     });
@@ -169,6 +170,7 @@ async function main(): Promise<number> {
     forkSession: args.forkSession,
     bare: args.bare,
     noPlugins: args.noPlugins,
+    settingsPath: args.settingsFile,
   });
 }
 

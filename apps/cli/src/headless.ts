@@ -70,6 +70,8 @@ export interface HeadlessOpts {
   allowedTools?: string[];
   disallowedTools?: string[];
   maxTurns?: number;
+  /** `--settings <file>` → a settings file that wins over discovered layers. */
+  settingsPath?: string;
   /** Path to a JSON schema file. Final output (text in `text` mode, JSON
    *  object in `json` mode) is validated against it; mismatch → exit 1. */
   jsonSchema?: string;
@@ -89,7 +91,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   // Trust-gate: a headless run against an untrusted checkout (e.g. a PR branch)
   // must not execute that project's hooks/mcpServers/apiKeyHelper/statusLine.
   // The user-global layer stays trusted. Pre-trust with `deepcode trust`.
-  const loaded = await loadSettings({ cwd, home: opts.home });
+  const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
   const trustStore = new TrustStore({ home: opts.home });
   const trustStatus = await trustStore.statusFor(cwd);
   const { settings, gated } = gateUntrustedSettings(loaded, trustStatus);

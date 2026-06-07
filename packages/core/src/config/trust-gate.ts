@@ -40,13 +40,17 @@ export function gateUntrustedSettings(loaded: LoadedSettings, status: TrustStatu
   if (status === 'trusted') return { settings: loaded.merged, gated: [] };
 
   const user = loaded.layers.user ?? {};
-  const { project, local } = loaded.layers;
+  const { project, local, override } = loaded.layers;
   const settings: DeepCodeSettings = { ...loaded.merged };
   const gated: TrustGatedField[] = [];
 
   for (const key of TRUST_GATED_FIELDS) {
     if (project?.[key] !== undefined || local?.[key] !== undefined) gated.push(key);
+    // Reset to the always-trusted user layer (strips untrusted project/local).
     copyOrDelete(settings, user, key);
+    // `--settings <file>` is an explicit user choice → trusted; re-apply its
+    // value on top so an override's hooks/mcp survive in an untrusted dir.
+    if (override?.[key] !== undefined) (settings as Record<string, unknown>)[key] = override[key];
   }
   return { settings, gated };
 }

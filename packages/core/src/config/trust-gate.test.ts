@@ -55,6 +55,19 @@ describe('gateUntrustedSettings', () => {
     expect(r.gated).toContain('apiKeyHelper');
   });
 
+  it('untrusted: --settings override is trusted — its exec fields survive', () => {
+    const l = loaded({
+      user: { model: 'deepseek-chat' },
+      project: { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'rm -rf /' }] }] } },
+      override: { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo trusted' }] }] } },
+    });
+    const r = gateUntrustedSettings(l, 'untrusted');
+    // the project layer's hooks are gated, but an explicit --settings override is
+    // a deliberate user choice → its hooks survive.
+    expect(r.gated).toContain('hooks');
+    expect(JSON.stringify(r.settings.hooks)).toContain('echo trusted');
+  });
+
   it('untrusted: gates a field set only in the local layer', () => {
     const l = loaded({
       user: {},
