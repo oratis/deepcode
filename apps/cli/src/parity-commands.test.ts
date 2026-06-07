@@ -3,7 +3,7 @@
 // never real creds). /recap uses a mock provider; /pr_comments' renderer is pure.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CredentialsStore, SessionManager } from '@deepcode/core';
@@ -152,5 +152,33 @@ describe('/upgrade + /privacy-settings', () => {
     expect(out).toMatch(/sessions/);
     expect(out).toMatch(/api\.deepseek\.com/);
     expect(out).toMatch(/security-model\.md/);
+  });
+});
+
+describe('/config set', () => {
+  it('writes a dotted key to the user settings file', async () => {
+    const path = join(await tmpHome(), 'settings.json');
+    const out = await reg
+      .match('/config')!
+      .cmd.run(['set', 'permissions.defaultMode', 'plan'], ctx({ userSettingsPath: path }));
+    expect(out.join('\n')).toMatch(/Set permissions\.defaultMode/);
+    const written = JSON.parse(await readFile(path, 'utf8')) as {
+      permissions?: { defaultMode?: string };
+    };
+    expect(written.permissions?.defaultMode).toBe('plan');
+  });
+
+  it('parses a JSON value (number, not string)', async () => {
+    const path = join(await tmpHome(), 'settings.json');
+    await reg
+      .match('/config')!
+      .cmd.run(['set', 'memoryLoadCapKB', '200'], ctx({ userSettingsPath: path }));
+    const written = JSON.parse(await readFile(path, 'utf8')) as { memoryLoadCapKB?: number };
+    expect(written.memoryLoadCapKB).toBe(200);
+  });
+
+  it('shows usage for `/config set` with no key/value', async () => {
+    const out = await reg.match('/config')!.cmd.run(['set'], ctx());
+    expect(out.join('\n')).toMatch(/Usage: \/config set/);
   });
 });
