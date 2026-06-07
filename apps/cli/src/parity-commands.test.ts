@@ -182,3 +182,29 @@ describe('/config set', () => {
     expect(out.join('\n')).toMatch(/Usage: \/config set/);
   });
 });
+
+describe('/resume <id> (live switch)', () => {
+  it('switches the live session: sets sessionId + newHistory', async () => {
+    const sm = new SessionManager({ root: await tmpHome() });
+    const s = await sm.create('/proj', { title: 'old chat' });
+    await sm.append(s.id, { role: 'user', content: [{ type: 'text', text: 'hi' }] });
+    const c = ctx({ sessions: sm, sessionId: 'current-session' });
+    const out = await reg.match('/resume')!.cmd.run([s.id], c);
+    expect(out.join('\n')).toMatch(/Switched to session/);
+    expect(c.sessionId).toBe(s.id);
+    expect(c.newHistory).toHaveLength(1);
+  });
+
+  it('errors on an unknown id', async () => {
+    const sm = new SessionManager({ root: await tmpHome() });
+    const out = await reg.match('/resume')!.cmd.run(['nope-xyz'], ctx({ sessions: sm }));
+    expect(out.join('\n')).toMatch(/not found/i);
+  });
+
+  it('lists sessions with no args', async () => {
+    const sm = new SessionManager({ root: await tmpHome() });
+    await sm.create('/proj', { title: 'a' });
+    const out = await reg.match('/resume')!.cmd.run([], ctx({ sessions: sm }));
+    expect(out.join('\n')).toMatch(/Recent sessions/);
+  });
+});
