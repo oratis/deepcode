@@ -39,6 +39,7 @@ import {
   runAgent,
   settingsPaths,
   wirePlugins,
+  withAdditionalWritableDirs,
   collectPluginContributions,
   type Effort,
   type McpClientHandle,
@@ -616,7 +617,10 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       pluginDirs: pluginContrib.dirs,
       autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
       autoMode: settings.autoMode,
-      sandboxConfig: settings.sandbox,
+      sandboxConfig: withAdditionalWritableDirs(
+        settings.sandbox,
+        settings.permissions?.additionalDirectories,
+      ),
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
         const answer = (await rl.question('     [y]es / [n]o / [a]lways: ')).trim().toLowerCase();

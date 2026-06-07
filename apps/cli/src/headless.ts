@@ -36,6 +36,7 @@ import {
   loadMemory,
   loadOutputStyles,
   loadSettings,
+  withAdditionalWritableDirs,
   loadSkills,
   makeSkillTool,
   resolveCredentials,
@@ -289,7 +290,10 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       pluginDirs: pluginContrib.dirs,
       autoCompact: { contextWindow: contextWindowFor(model), threshold: 0.8 },
       autoMode: settings.autoMode,
-      sandboxConfig: settings.sandbox,
+      sandboxConfig: withAdditionalWritableDirs(
+        settings.sandbox,
+        settings.permissions?.additionalDirectories,
+      ),
       // In headless mode there's no human to ask: auto-deny anything that
       // would normally need approval. Users wanting auto-yes should pass
       // --mode dontAsk or --mode bypassPermissions (gated by trust).

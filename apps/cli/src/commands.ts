@@ -22,7 +22,8 @@ import {
   type Effort,
 } from '@deepcode/core';
 import { execFile } from 'node:child_process';
-import { readFile } from 'node:fs/promises';
+import { readFile, stat } from 'node:fs/promises';
+import { isAbsolute, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 const execFileAsync = promisify(execFile);
@@ -406,10 +407,38 @@ export const ConfigCommand: SlashCommand = {
 
 export const AddDirCommand: SlashCommand = {
   name: '/add-dir',
-  description: 'Add an additional allowed directory (M3 enforced; M2 records intent).',
-  run(args) {
-    if (args.length === 0) return ['Usage: /add-dir <path>'];
-    return [`Recorded ${args[0]} as additional allowed directory (effective in M3).`];
+  description: 'Add a directory the agent may write to (persists; sandbox-enforced).',
+  async run(args, ctx) {
+    const current = ctx.settings.permissions?.additionalDirectories ?? [];
+    if (args.length === 0) {
+      return current.length > 0
+        ? ['Additional writable directories:', ...current.map((d) => `  ${d}`)]
+        : ['No additional directories yet. Usage: /add-dir <path>'];
+    }
+    if (!ctx.userSettingsPath) return ['(/add-dir is unavailable here.)'];
+    const dir = isAbsolute(args[0]!) ? args[0]! : resolve(ctx.cwd, args[0]!);
+    try {
+      if (!(await stat(dir)).isDirectory()) return [`Not a directory: ${dir}`];
+    } catch {
+      return [`No such directory: ${dir}`];
+    }
+    let onDisk: Record<string, unknown> = {};
+    try {
+      onDisk = JSON.parse(await readFile(ctx.userSettingsPath, 'utf8')) as Record<string, unknown>;
+    } catch {
+      /* missing → start fresh */
+    }
+    const perms = (onDisk.permissions ?? {}) as Record<string, unknown>;
+    const existing = Array.isArray(perms.additionalDirectories)
+      ? (perms.additionalDirectories as string[])
+      : [];
+    perms.additionalDirectories = [...new Set([...existing, dir])];
+    onDisk.permissions = perms;
+    await writeSettings(ctx.userSettingsPath, onDisk as DeepCodeSettings);
+    return [
+      `Added ${dir} as an additional writable directory.`,
+      'The sandboxed Bash tool can write there (restart for it to take effect in a new session).',
+    ];
   },
 };
 

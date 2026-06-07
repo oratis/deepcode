@@ -182,3 +182,31 @@ describe('/config set', () => {
     expect(out.join('\n')).toMatch(/Usage: \/config set/);
   });
 });
+
+describe('/add-dir', () => {
+  it('persists a validated directory to permissions.additionalDirectories', async () => {
+    const home = await tmpHome(); // a real, existing directory
+    const path = join(home, 'settings.json');
+    const out = await reg.match('/add-dir')!.cmd.run([home], ctx({ userSettingsPath: path }));
+    expect(out.join('\n')).toMatch(/Added .* writable directory/i);
+    const written = JSON.parse(await readFile(path, 'utf8')) as {
+      permissions?: { additionalDirectories?: string[] };
+    };
+    expect(written.permissions?.additionalDirectories).toContain(home);
+  });
+
+  it('rejects a non-existent directory', async () => {
+    const home = await tmpHome();
+    const out = await reg
+      .match('/add-dir')!
+      .cmd.run([join(home, 'nope')], ctx({ userSettingsPath: join(home, 'settings.json') }));
+    expect(out.join('\n')).toMatch(/no such directory/i);
+  });
+
+  it('lists current directories with no args', async () => {
+    const out = await reg
+      .match('/add-dir')!
+      .cmd.run([], ctx({ settings: { permissions: { additionalDirectories: ['/x/y'] } } }));
+    expect(out.join('\n')).toContain('/x/y');
+  });
+});

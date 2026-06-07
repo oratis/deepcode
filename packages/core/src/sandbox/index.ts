@@ -45,6 +45,21 @@ export interface SandboxedCommand {
 }
 
 /**
+ * Return a sandbox config with `dirs` added to the writable filesystem roots —
+ * this is how `/add-dir` (settings.permissions.additionalDirectories) grants the
+ * sandboxed Bash tool write access beyond cwd. A no-op when the sandbox is off
+ * (undefined config) or there are no dirs. Pure — never mutates the input.
+ */
+export function withAdditionalWritableDirs(
+  config: SandboxConfig | undefined,
+  dirs: string[] | undefined,
+): SandboxConfig | undefined {
+  if (!config || !dirs?.length) return config;
+  const allowWrite = [...new Set([...(config.filesystem?.allowWrite ?? []), ...dirs])];
+  return { ...config, filesystem: { ...config.filesystem, allowWrite } };
+}
+
+/**
  * Wrap a user-supplied shell command under platform sandbox.
  *
  * Returns the wrapped (command, args) to pass to child_process.spawn.

@@ -188,6 +188,7 @@ export {
 // selective per-domain network allowlist)
 export {
   wrapBashCommand,
+  withAdditionalWritableDirs,
   buildMacOsProfile,
   buildLinuxBwrapArgs,
   detectPlatform,
