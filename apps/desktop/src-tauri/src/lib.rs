@@ -14,6 +14,7 @@ mod credentials;
 mod settings;
 mod snapshots;
 mod tools;
+mod voice;
 
 use commands::{
     append_allow_matcher, cli_path, get_app_info, get_settings_path, list_plugins, list_sessions,
@@ -24,6 +25,7 @@ use commands::{
 use snapshots::session_snapshots;
 use tauri::Manager;
 use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
+use voice::{voice_cancel, voice_start, voice_status, voice_stop, VoiceState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -34,6 +36,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .manage(VoiceState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             read_credentials,
@@ -62,6 +65,10 @@ pub fn run() {
             tool_glob,
             tool_grep,
             session_snapshots,
+            voice_status,
+            voice_start,
+            voice_stop,
+            voice_cancel,
         ])
         .setup(|app| {
             // macOS: hide window menu items we don't use.

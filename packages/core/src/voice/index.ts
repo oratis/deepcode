@@ -137,3 +137,31 @@ export class StubVoiceProvider implements VoiceProvider {
     return { text: '', latencyMs: 0 };
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Setup detection — is whisper.cpp + a model installed and configured?
+// ──────────────────────────────────────────────────────────────────────────
+
+export {
+  detectVoice,
+  expandHome,
+  WHISPER_BIN_CANDIDATES,
+  DEFAULT_MODEL_RELPATH,
+  type VoiceProbe,
+  type VoiceStatus,
+} from './detect.js';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Microphone capture — record a WAV for whisper.cpp to transcribe.
+// ──────────────────────────────────────────────────────────────────────────
+
+export {
+  detectRecorder,
+  recordToWav,
+  buildRecordArgs,
+  RECORDER_CANDIDATES,
+  type RecorderBin,
+  type RecorderStatus,
+  type RecordToWavOpts,
+  type RecordArgsOpts,
+} from './record.js';

@@ -108,6 +108,24 @@ export interface AutoModeConfig {
   fallback?: 'ask' | 'deny';
 }
 
+export interface VoiceConfig {
+  /**
+   * Speech-to-text engine. Only 'whisper.cpp' is a real local engine; 'stub'
+   * returns an empty transcript (tests / "disabled"). Spec: docs/VOICE_INPUT.md.
+   */
+  provider?: 'whisper.cpp' | 'stub';
+  /** Path to the whisper CLI binary. Defaults to `whisper-cli`/`whisper` on PATH. */
+  binPath?: string;
+  /** Path to the ggml model file (e.g. ~/.deepcode/models/whisper-base.en.bin). */
+  modelPath?: string;
+  /**
+   * Override the mic input device passed to ffmpeg (e.g. ':1' for avfoundation,
+   * 'hw:0' for alsa). Default: ':default' (macOS) / 'default' (Linux). sox/rec
+   * ignore this and use the system default device.
+   */
+  inputDevice?: string;
+}
+
 export interface DeepCodeSettings {
   // Identity
   model?: string;
@@ -165,6 +183,9 @@ export interface DeepCodeSettings {
 
   // Worktree
   worktree?: WorktreeConfig;
+
+  // Voice input (M8 — local whisper.cpp ASR; see docs/VOICE_INPUT.md)
+  voice?: VoiceConfig;
 
   // Plugins (M5)
   plugins?: {

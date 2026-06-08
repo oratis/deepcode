@@ -170,6 +170,20 @@ const MOCK_MESSAGES = [
       // Session snapshots back the file panel's Diff + History tabs.
       case 'session_snapshots':
         return MOCK_SNAPSHOTS;
+      // Voice input (🎙 composer button). Pretend it's set up; stop returns text.
+      case 'voice_status':
+        return {
+          ready: true,
+          binPath: '/opt/homebrew/bin/whisper-cli',
+          modelPath: '/Users/oratis/.deepcode/models/whisper-base.en.bin',
+          recorderPath: '/opt/homebrew/bin/ffmpeg',
+          problems: [],
+        };
+      case 'voice_start':
+      case 'voice_cancel':
+        return null;
+      case 'voice_stop':
+        return 'add a dark mode toggle to the settings screen';
       default:
         console.warn('[preview] unmocked invoke:', cmd);
         return null;

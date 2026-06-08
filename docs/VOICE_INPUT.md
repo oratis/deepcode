@@ -63,6 +63,19 @@ mkdir -p ~/.deepcode/models
 cp models/ggml-base.en.bin ~/.deepcode/models/whisper-base.en.bin
 ```
 
+## Install a mic recorder
+
+DeepCode records your microphone with whichever recorder it finds on PATH —
+`ffmpeg` is tried first, then sox's `rec` / `sox`:
+
+```bash
+# macOS
+brew install ffmpeg   # or: brew install sox
+
+# Linux (Debian/Ubuntu)
+sudo apt install ffmpeg   # or: sudo apt install sox
+```
+
 ## Configure DeepCode
 
 In `~/.deepcode/settings.json`:
@@ -77,20 +90,28 @@ In `~/.deepcode/settings.json`:
 }
 ```
 
-(The `binPath` defaults to `whisper` on PATH if you omit it.)
+(The `binPath` defaults to `whisper-cli` / `whisper` on PATH if you omit it.)
+If ffmpeg captures from the wrong input, set `voice.inputDevice` — e.g.
+`":1"` for avfoundation (macOS) or `"hw:1"` for ALSA (Linux). sox/rec always
+use the system default device.
 
 ## Usage
 
-In the CLI REPL, press the voice toggle key (default `Ctrl+V`; remap in
-`~/.deepcode/keybindings.json`). DeepCode:
+In the CLI REPL, type `/voice` and press Enter. DeepCode:
 
-1. Records audio from your default mic into a temp `.wav` file.
-2. Stops recording on the next key press OR after 60 s of silence.
-3. Spawns whisper.cpp to transcribe the .wav.
-4. Inserts the transcribed text into the input box (you can edit before
-   submitting).
+1. Records audio from your default mic (via ffmpeg or sox) into a temp
+   `.wav` file.
+2. Stops when you press Enter again (or after a 60 s safety cap).
+3. Spawns whisper.cpp to transcribe the `.wav` locally.
+4. Pre-fills the input line with the transcript — edit it if needed, then
+   press Enter to send.
 
-In the Mac client (M6-rest), the same flow appears as a 🎙 button.
+Run `/voice setup` any time to print install steps and what's detected.
+
+In the Mac desktop client, the same flow is a 🎙 button in the composer:
+click to record, click again to stop and transcribe. The desktop path uses
+ffmpeg specifically (it stops recording by sending `q` to ffmpeg's stdin) and
+prompts for microphone access on first use.
 
 ## Privacy
 

@@ -15,6 +15,7 @@ export type {
   UpdateConfig,
   WorktreeConfig,
   AutoModeConfig,
+  VoiceConfig,
 } from './types.js';
 
 export {

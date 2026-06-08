@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Shown in the macOS permission prompt when /voice first records the mic.
+       Tauri merges this file into the bundled Info.plist. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>DeepCode records your microphone locally to transcribe voice input with whisper.cpp. Audio never leaves your machine.</string>
+</dict>
+</plist>

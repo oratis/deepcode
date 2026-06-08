@@ -11,6 +11,7 @@ import type {
   SessionMeta,
   StoredMessage,
   TaskManager,
+  VoiceStatus,
 } from '@deepcode/core';
 import {
   contextWindowFor,
@@ -128,6 +129,17 @@ export interface SessionContext {
   credsStore?: CredentialsStore;
   /** User settings.json path (REPL-injected, honors --home) — backs /config set. */
   userSettingsPath?: string;
+  /** Home dir override (REPL-injected from --home) — backs default-path lookups
+   *  like /voice's `~/.deepcode/models/...` model probe. Defaults to os.homedir(). */
+  home?: string;
+  /**
+   * Interactive voice capture, wired by the REPL (it owns readline + the mic):
+   * record → press Enter to stop → transcribe → return the text + display lines.
+   * `transcript` is null on cancel / not-ready / error. Absent in headless mode.
+   */
+  voiceCapture?: () => Promise<{ transcript: string | null; lines: string[] }>;
+  /** Set by /voice — the REPL pre-fills the next input line with this text. */
+  prefillInput?: string;
   sessionId: string;
   sessions: SessionManager;
   usage: {
@@ -1169,6 +1181,74 @@ export const TasksCommand: SlashCommand = {
   },
 };
 
+/** "Ready" status lines for /voice (non-interactive / headless fallback). */
+export function voiceReadyLines(status: VoiceStatus): string[] {
+  return [
+    '🎙  Voice input is ready — whisper.cpp, fully local (no audio leaves your machine).',
+    `      binary: ${status.binPath}`,
+    `      model:  ${status.modelPath}`,
+    '',
+    'Type /voice in the interactive REPL to dictate (record → Enter to stop → transcribe).',
+  ];
+}
+
+/** Setup/troubleshooting instructions for /voice, driven by a detection result. */
+export function voiceSetupLines(status: VoiceStatus): string[] {
+  const lines: string[] = [
+    status.ready
+      ? '🎙  Voice input is ready. Setup reference below.'
+      : '🎙  Voice input is not set up yet. Enable local dictation (whisper.cpp — no cloud):',
+    '',
+    'Detected:',
+    `  ${status.binPath ? '✓' : '✗'} whisper binary  ${status.binPath ?? '(not found)'}`,
+    `  ${status.modelPath ? '✓' : '✗'} model           ${status.modelPath ?? '(not found)'}`,
+  ];
+  if (status.problems.length) {
+    lines.push('', 'Issues:');
+    for (const p of status.problems) lines.push(`  • ${p}`);
+  }
+  lines.push(
+    '',
+    'Setup:',
+    '  1. Install whisper.cpp',
+    '       macOS:  brew install whisper-cpp',
+    '       Linux:  build https://github.com/ggerganov/whisper.cpp, put `whisper` on PATH',
+    '  2. Download a model (base.en ≈ 140 MB is a good default) and save it:',
+    '       mkdir -p ~/.deepcode/models',
+    '       cp ggml-base.en.bin ~/.deepcode/models/whisper-base.en.bin',
+    '  3. Install a mic recorder (either):  brew install ffmpeg   ·   brew install sox',
+    '  4. (optional) Point DeepCode at custom paths in ~/.deepcode/settings.json:',
+    '       { "voice": { "binPath": "/opt/homebrew/bin/whisper-cli",',
+    '                    "modelPath": "~/.deepcode/models/whisper-base.en.bin" } }',
+    '',
+    'Full guide: docs/VOICE_INPUT.md',
+  );
+  return lines;
+}
+
+export const VoiceCommand: SlashCommand = {
+  name: '/voice',
+  description:
+    'Dictate via local whisper.cpp (record → Enter → transcribe); `/voice setup` for steps.',
+  async run(args, ctx) {
+    const forceSetup = (args[0] ?? '').toLowerCase() === 'setup';
+
+    // Interactive REPL: record + transcribe via the wired callback, then let the
+    // REPL pre-fill the input line with the transcript for the user to edit.
+    if (!forceSetup && ctx.voiceCapture) {
+      const r = await ctx.voiceCapture();
+      if (r.transcript) ctx.prefillInput = r.transcript;
+      return r.lines;
+    }
+
+    // Headless / `/voice setup`: report readiness or print setup instructions.
+    const { detectVoice } = await import('@deepcode/core');
+    const status = await detectVoice(ctx.settings.voice, { home: ctx.home });
+    if (status.ready && !forceSetup) return voiceReadyLines(status);
+    return voiceSetupLines(status);
+  },
+};
+
 export const BackgroundCommand: SlashCommand = {
   name: '/background',
   aliases: ['/bg'],
@@ -1229,6 +1309,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   BtwCommand,
   TasksCommand,
   BackgroundCommand,
+  VoiceCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
