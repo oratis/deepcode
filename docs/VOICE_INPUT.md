@@ -108,8 +108,10 @@ In the CLI REPL, type `/voice` and press Enter. DeepCode:
 
 Run `/voice setup` any time to print install steps and what's detected.
 
-In the Mac client (M6-rest), the same flow appears as a 🎙 button in the
-composer.
+In the Mac desktop client, the same flow is a 🎙 button in the composer:
+click to record, click again to stop and transcribe. The desktop path uses
+ffmpeg specifically (it stops recording by sending `q` to ffmpeg's stdin) and
+prompts for microphone access on first use.
 
 ## Privacy
 

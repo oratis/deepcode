@@ -17,7 +17,7 @@
 // CSS class names (which now match the design tokens) and the addition
 // of richer tool-card rendering.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_KEYBINDINGS,
   VimState,
@@ -31,6 +31,8 @@ import { Pill } from '../components/Pill.js';
 import { PlusMenu } from '../components/PlusMenu.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { projectName } from '../lib/project.js';
+import { useVoice } from '../lib/use-voice.js';
+import { insertTranscript } from '../lib/voice.js';
 import {
   appendTextDelta,
   appendToolUse,
@@ -263,6 +265,26 @@ export function ReplScreen({
   const bindingsRef = useRef<KeyBinding[]>(DEFAULT_KEYBINDINGS);
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── Voice input (🎙) — record + transcribe locally, splice into the composer ──
+  const handleTranscript = useCallback((text: string) => {
+    const ta = composerRef.current;
+    if (!ta) {
+      setInput((v) => insertTranscript(v, v.length, text).value);
+      return;
+    }
+    const { value, caret } = insertTranscript(ta.value, ta.selectionStart, text);
+    setInput(value);
+    ta.focus();
+    requestAnimationFrame(() => {
+      try {
+        ta.setSelectionRange(caret, caret);
+      } catch {
+        /* element gone */
+      }
+    });
+  }, []);
+  const voice = useVoice(handleTranscript);
 
   // ── Load settings + keybindings on mount ──
   useEffect(() => {
@@ -743,6 +765,38 @@ export function ReplScreen({
                   },
                 ]}
               />
+
+              <button
+                type="button"
+                className={
+                  'mic-btn' +
+                  (voice.state === 'recording'
+                    ? ' recording'
+                    : voice.state === 'transcribing'
+                      ? ' transcribing'
+                      : '')
+                }
+                disabled={
+                  controlsLocked || voice.available === false || voice.state === 'transcribing'
+                }
+                title={
+                  voice.available === false
+                    ? 'Voice not set up — ' + (voice.problems[0] ?? 'see docs/VOICE_INPUT.md')
+                    : voice.state === 'recording'
+                      ? 'Stop & transcribe'
+                      : voice.state === 'transcribing'
+                        ? 'Transcribing…'
+                        : 'Dictate with local whisper.cpp'
+                }
+                onClick={() => voice.toggle()}
+              >
+                {voice.state === 'recording' ? '⏹' : voice.state === 'transcribing' ? '…' : '🎙'}
+              </button>
+              {voice.error && (
+                <span className="voice-error" title={voice.error}>
+                  ⚠ voice
+                </span>
+              )}
 
               <Dropdown<typeof mode>
                 value={mode}

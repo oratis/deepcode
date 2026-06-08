@@ -20,5 +20,8 @@
   <!-- File access — Tauri's plugin-dialog asks the user per-folder -->
   <key>com.apple.security.files.user-selected.read-write</key>
   <true/>
+  <!-- Microphone — /voice records locally and transcribes with whisper.cpp -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
 </dict>
 </plist>
