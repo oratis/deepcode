@@ -104,6 +104,7 @@ export {
   type UpdateConfig,
   type WorktreeConfig,
   type AutoModeConfig,
+  type VoiceConfig,
 } from './config/index.js';
 
 // Credentials (M2; M3c adds ApiKeyHelperRefresher)
@@ -334,15 +335,18 @@ export {
   type AgentStreamEvent,
 } from './ipc/protocol.js';
 
-// Voice input (M8 — whisper.cpp wrapper + stub provider)
+// Voice input (M8 — whisper.cpp wrapper + stub provider + setup detection)
 export {
   WhisperCppProvider,
   StubVoiceProvider,
   parseWhisperOutput,
+  detectVoice,
   type VoiceProvider,
   type VoiceTranscript,
   type TranscribeOpts,
   type WhisperCppOpts,
+  type VoiceProbe,
+  type VoiceStatus,
 } from './voice/index.js';
 
 // Auto-mode classifier (M3c-rest — LLM-judged tool gate when mode === 'auto')

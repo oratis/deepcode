@@ -137,3 +137,16 @@ export class StubVoiceProvider implements VoiceProvider {
     return { text: '', latencyMs: 0 };
   }
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Setup detection — is whisper.cpp + a model installed and configured?
+// ──────────────────────────────────────────────────────────────────────────
+
+export {
+  detectVoice,
+  expandHome,
+  WHISPER_BIN_CANDIDATES,
+  DEFAULT_MODEL_RELPATH,
+  type VoiceProbe,
+  type VoiceStatus,
+} from './detect.js';

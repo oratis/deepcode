@@ -437,6 +437,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     creds,
     credsStore,
     userSettingsPath: settingsPaths({ cwd, home: opts.home }).userPath,
+    home: opts.home,
     sessionId: session.id,
     sessions,
     usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },

@@ -89,5 +89,11 @@ export function validateSettingsShallow(settings: Record<string, unknown>): stri
     }
   }
 
+  const voiceProviderEnum = ['whisper.cpp', 'stub'];
+  const voice = settings['voice'] as { provider?: string } | undefined;
+  if (voice?.provider && !voiceProviderEnum.includes(voice.provider)) {
+    errors.push(`voice.provider "${voice.provider}" not in ${voiceProviderEnum.join(' | ')}`);
+  }
+
   return errors;
 }

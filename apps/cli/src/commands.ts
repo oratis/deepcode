@@ -128,6 +128,9 @@ export interface SessionContext {
   credsStore?: CredentialsStore;
   /** User settings.json path (REPL-injected, honors --home) — backs /config set. */
   userSettingsPath?: string;
+  /** Home dir override (REPL-injected from --home) — backs default-path lookups
+   *  like /voice's `~/.deepcode/models/...` model probe. Defaults to os.homedir(). */
+  home?: string;
   sessionId: string;
   sessions: SessionManager;
   usage: {
@@ -1169,6 +1172,57 @@ export const TasksCommand: SlashCommand = {
   },
 };
 
+export const VoiceCommand: SlashCommand = {
+  name: '/voice',
+  description: 'Check local voice-input (whisper.cpp) setup; `/voice setup` shows install steps.',
+  async run(args, ctx) {
+    const { detectVoice } = await import('@deepcode/core');
+    const status = await detectVoice(ctx.settings.voice, { home: ctx.home });
+    const forceSetup = (args[0] ?? '').toLowerCase() === 'setup';
+
+    if (status.ready && !forceSetup) {
+      return [
+        '🎙  Voice input is ready — whisper.cpp, fully local (no audio leaves your machine).',
+        `      binary: ${status.binPath}`,
+        `      model:  ${status.modelPath}`,
+        '',
+        'Dictate from the REPL with the voice key (default Ctrl+V; remap in keybindings.json).',
+        'Note: live mic capture lands in a follow-up — this step ships setup + detection.',
+      ];
+    }
+
+    const lines: string[] = [
+      status.ready
+        ? '🎙  Voice input is ready. Setup reference below.'
+        : '🎙  Voice input is not set up yet. Enable local dictation (whisper.cpp — no cloud):',
+      '',
+      'Detected:',
+      `  ${status.binPath ? '✓' : '✗'} whisper binary  ${status.binPath ?? '(not found)'}`,
+      `  ${status.modelPath ? '✓' : '✗'} model           ${status.modelPath ?? '(not found)'}`,
+    ];
+    if (status.problems.length) {
+      lines.push('', 'Issues:');
+      for (const p of status.problems) lines.push(`  • ${p}`);
+    }
+    lines.push(
+      '',
+      'Setup:',
+      '  1. Install whisper.cpp',
+      '       macOS:  brew install whisper-cpp',
+      '       Linux:  build https://github.com/ggerganov/whisper.cpp, put `whisper` on PATH',
+      '  2. Download a model (base.en ≈ 140 MB is a good default) and save it:',
+      '       mkdir -p ~/.deepcode/models',
+      '       cp ggml-base.en.bin ~/.deepcode/models/whisper-base.en.bin',
+      '  3. (optional) Point DeepCode at custom paths in ~/.deepcode/settings.json:',
+      '       { "voice": { "binPath": "/opt/homebrew/bin/whisper-cli",',
+      '                    "modelPath": "~/.deepcode/models/whisper-base.en.bin" } }',
+      '',
+      'Full guide: docs/VOICE_INPUT.md',
+    );
+    return lines;
+  },
+};
+
 export const BackgroundCommand: SlashCommand = {
   name: '/background',
   aliases: ['/bg'],
@@ -1229,6 +1283,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   BtwCommand,
   TasksCommand,
   BackgroundCommand,
+  VoiceCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────

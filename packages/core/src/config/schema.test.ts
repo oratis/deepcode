@@ -51,6 +51,12 @@ describe('validateSettingsShallow', () => {
     expect(errs[0]).toMatch(/OnEverything/);
   });
 
+  it('flags unknown voice provider but accepts whisper.cpp', () => {
+    expect(validateSettingsShallow({ voice: { provider: 'whisper.cpp' } })).toEqual([]);
+    const errs = validateSettingsShallow({ voice: { provider: 'azure' } });
+    expect(errs[0]).toMatch(/voice\.provider "azure"/);
+  });
+
   it('returns no errors on empty config', () => {
     expect(validateSettingsShallow({})).toEqual([]);
   });
