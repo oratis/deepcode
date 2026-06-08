@@ -4,7 +4,7 @@
 import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
-import { TaskManager } from './tasks/manager.js';
+import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
@@ -92,6 +92,12 @@ export interface RunAgentOptions {
   /** Installed-plugin directories — so the Task tool can resolve plugin-bundled
    *  sub-agents (`<dir>/agents/*.md`) in addition to user/project ones. */
   pluginDirs?: string[];
+  /** Optional host-owned background-task manager (e.g. the REPL's session-scoped
+   *  one). When set, this run attaches its sub-agent runner to it and exposes it
+   *  on the tool context, so background tasks persist across runAgent calls and
+   *  are visible to slash commands. When absent, a per-run manager is created
+   *  (the original behavior). Top-level only. */
+  taskManager?: TaskManager;
 }
 
 /** Max sub-agent recursion: top-level (0) may spawn sub-agents (depth 1); those
@@ -374,7 +380,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   // just that task. A sub-agent (depth ≥ 1) gets no manager → can't spawn tasks.
   if (depth === 0 && toolCtx.runSubAgent) {
     const runSub = toolCtx.runSubAgent;
-    toolCtx.tasks = new TaskManager((spec) => {
+    const runner: TaskRunner = (spec) => {
       const ac = new AbortController();
       const done = runSub({
         prompt: spec.prompt,
@@ -382,7 +388,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         signal: ac.signal,
       }).then((r) => r.text);
       return { done, abort: () => ac.abort() };
-    });
+    };
+    // Reuse a host-provided manager (e.g. REPL session-scoped) so tasks persist
+    // across turns and stay visible to slash commands; attach THIS run's runner
+    // either way (it resolves named sub-agents + fires SubagentStop). Otherwise
+    // fall back to a per-run manager (the original behavior).
+    if (opts.taskManager) {
+      opts.taskManager.setRunner(runner);
+      toolCtx.tasks = opts.taskManager;
+    } else {
+      toolCtx.tasks = new TaskManager(runner);
+    }
   }
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };

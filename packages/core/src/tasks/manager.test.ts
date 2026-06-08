@@ -71,6 +71,23 @@ describe('TaskManager', () => {
     expect(mgr.get(t.id)?.status).toBe('completed');
   });
 
+  it('setRunner re-targets the runner for subsequent create() calls', async () => {
+    const calls: string[] = [];
+    const mgr = new TaskManager((spec) => {
+      calls.push(`A:${spec.prompt}`);
+      return { done: Promise.resolve('a'), abort: () => {} };
+    });
+    mgr.create({ description: 'one', prompt: 'p1' });
+    mgr.setRunner((spec) => {
+      calls.push(`B:${spec.prompt}`);
+      return { done: Promise.resolve('b'), abort: () => {} };
+    });
+    mgr.create({ description: 'two', prompt: 'p2' });
+    expect(calls).toEqual(['A:p1', 'B:p2']);
+    // Both tasks remain tracked — setRunner doesn't disturb existing records.
+    expect(mgr.list()).toHaveLength(2);
+  });
+
   it('list / get / update / unknown-id behaviour', async () => {
     const mgr = new TaskManager(() => ({ done: Promise.resolve('r'), abort: () => {} }));
     const t = mgr.create({ description: 'orig', prompt: 'p' });
