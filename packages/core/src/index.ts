@@ -341,12 +341,18 @@ export {
   StubVoiceProvider,
   parseWhisperOutput,
   detectVoice,
+  detectRecorder,
+  recordToWav,
+  buildRecordArgs,
   type VoiceProvider,
   type VoiceTranscript,
   type TranscribeOpts,
   type WhisperCppOpts,
   type VoiceProbe,
   type VoiceStatus,
+  type RecorderBin,
+  type RecorderStatus,
+  type RecordToWavOpts,
 } from './voice/index.js';
 
 // Auto-mode classifier (M3c-rest — LLM-judged tool gate when mode === 'auto')

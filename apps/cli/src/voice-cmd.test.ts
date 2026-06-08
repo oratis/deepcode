@@ -45,11 +45,12 @@ describe('/voice', () => {
     const modelPath = join(dir, 'model.bin');
     await writeFile(binPath, '#!/bin/sh\n');
     await writeFile(modelPath, 'GGML');
+    // No voiceCapture wired (headless / non-interactive) → report readiness.
     const out = (await run([], ctx({ settings: { voice: { binPath, modelPath } } }))).join('\n');
     expect(out).toMatch(/ready/i);
     expect(out).toContain(binPath);
     expect(out).toContain(modelPath);
-    expect(out).toMatch(/Ctrl\+V/);
+    expect(out).toMatch(/type \/voice/i);
   });
 
   it('prints setup steps + issues when configured paths are missing', async () => {
@@ -81,5 +82,37 @@ describe('/voice', () => {
     expect(out).toMatch(/brew install whisper-cpp/);
     // Still acknowledges it's already ready.
     expect(out).toMatch(/ready/i);
+  });
+
+  it('runs the wired capture callback and pre-fills the transcript', async () => {
+    const c = ctx({
+      voiceCapture: async () => ({ transcript: 'refactor the parser', lines: ['🎙 Transcribed'] }),
+    });
+    const out = (await run([], c)).join('\n');
+    expect(out).toContain('Transcribed');
+    expect(c.prefillInput).toBe('refactor the parser'); // REPL will inject this
+  });
+
+  it('does not pre-fill when capture is cancelled / empty', async () => {
+    const c = ctx({
+      voiceCapture: async () => ({ transcript: null, lines: ['(No speech detected)'] }),
+    });
+    const out = (await run([], c)).join('\n');
+    expect(out).toMatch(/no speech/i);
+    expect(c.prefillInput).toBeUndefined();
+  });
+
+  it('`/voice setup` bypasses capture even when a callback is wired', async () => {
+    let called = false;
+    const c = ctx({
+      settings: { voice: { binPath: '/no/such', modelPath: '/no/such' } },
+      voiceCapture: async () => {
+        called = true;
+        return { transcript: 'x', lines: [] };
+      },
+    });
+    const out = (await run(['setup'], c)).join('\n');
+    expect(called).toBe(false);
+    expect(out).toMatch(/Setup:/);
   });
 });

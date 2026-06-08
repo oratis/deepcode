@@ -52,6 +52,7 @@ import {
 import { createInterface } from 'node:readline/promises';
 import type { Readable, Writable } from 'node:stream';
 import { CommandRegistry, type SessionContext } from './commands.js';
+import { captureVoice } from './voice-capture.js';
 import { resolveEffort } from './parse-args.js';
 import { TrustStore } from './trust.js';
 import { resolveBuiltinSkillsDir } from './builtin-skills.js';
@@ -453,6 +454,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
     ],
     initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
+    // M8: /voice records from the mic + transcribes via whisper.cpp, then the
+    // loop pre-fills the next input line with the transcript (rl is created below).
+    voiceCapture: () => captureVoice({ rl, output, settings, home: opts.home }),
     // M7: /rewind needs access to history + provider.
     provider,
     history,
@@ -549,10 +553,19 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   };
   await fireLifecycle('SessionStart', { sessionId: session.id, source: 'cli' });
 
+  // Text to inject into the next prompt's input buffer (e.g. a /voice transcript
+  // the user can edit before submitting). Written right after the prompt renders.
+  let pendingPrefill: string | undefined;
+
   while (true) {
     let userInput: string;
     try {
-      userInput = await rl.question('› ');
+      const question = rl.question('› ');
+      if (pendingPrefill !== undefined) {
+        rl.write(pendingPrefill);
+        pendingPrefill = undefined;
+      }
+      userInput = await question;
     } catch {
       break;
     }
@@ -589,6 +602,10 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       if (ctx.newHistory) {
         history = ctx.newHistory;
         ctx.newHistory = undefined;
+      }
+      if (ctx.prefillInput) {
+        pendingPrefill = ctx.prefillInput;
+        ctx.prefillInput = undefined;
       }
       if (ctx.exitRequested) break;
       continue;

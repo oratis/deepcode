@@ -118,6 +118,12 @@ export interface VoiceConfig {
   binPath?: string;
   /** Path to the ggml model file (e.g. ~/.deepcode/models/whisper-base.en.bin). */
   modelPath?: string;
+  /**
+   * Override the mic input device passed to ffmpeg (e.g. ':1' for avfoundation,
+   * 'hw:0' for alsa). Default: ':default' (macOS) / 'default' (Linux). sox/rec
+   * ignore this and use the system default device.
+   */
+  inputDevice?: string;
 }
 
 export interface DeepCodeSettings {

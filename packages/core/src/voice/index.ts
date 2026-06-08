@@ -150,3 +150,18 @@ export {
   type VoiceProbe,
   type VoiceStatus,
 } from './detect.js';
+
+// ──────────────────────────────────────────────────────────────────────────
+// Microphone capture — record a WAV for whisper.cpp to transcribe.
+// ──────────────────────────────────────────────────────────────────────────
+
+export {
+  detectRecorder,
+  recordToWav,
+  buildRecordArgs,
+  RECORDER_CANDIDATES,
+  type RecorderBin,
+  type RecorderStatus,
+  type RecordToWavOpts,
+  type RecordArgsOpts,
+} from './record.js';

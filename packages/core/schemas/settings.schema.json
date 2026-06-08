@@ -133,7 +133,8 @@
       "properties": {
         "provider": { "type": "string", "enum": ["whisper.cpp", "stub"] },
         "binPath": { "type": "string" },
-        "modelPath": { "type": "string" }
+        "modelPath": { "type": "string" },
+        "inputDevice": { "type": "string" }
       }
     }
   },
