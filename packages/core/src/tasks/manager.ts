@@ -42,7 +42,17 @@ export class TaskManager {
   private readonly handles = new Map<string, TaskRunHandle>();
   private seq = 0;
 
-  constructor(private readonly runner: TaskRunner) {}
+  constructor(private runner: TaskRunner) {}
+
+  /**
+   * Replace the runner used for subsequent `create()` calls. Lets a host own a
+   * long-lived (e.g. REPL session-scoped) manager while the agent loop attaches
+   * its run-local sub-agent runner each turn. Tasks already started are
+   * unaffected — their handle is captured at `create()` time.
+   */
+  setRunner(runner: TaskRunner): void {
+    this.runner = runner;
+  }
 
   private newId(): string {
     return `task-${(this.seq++).toString(36)}`;

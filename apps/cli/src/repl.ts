@@ -9,6 +9,7 @@ import {
   HookDispatcher,
   ReadTool,
   SessionManager,
+  TaskManager,
   ToolRegistry,
   WebFetchTool,
   WriteTool,
@@ -456,6 +457,38 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     history,
   };
 
+  // Session-scoped background-task manager (M3.15.3 / parity: /tasks, /background).
+  // ONE manager for the whole REPL session so tasks persist across turns and are
+  // visible to both the agent (via TaskCreate) and slash commands. Each turn's
+  // runAgent attaches a richer runner (named sub-agents + SubagentStop). This
+  // baseline runner only handles `/background` started before the first turn:
+  // it runs the prompt as a depth-1 sub-agent (clean context, no nested tasks),
+  // reading ctx.model/ctx.mode live so /model and /mode switches are honored.
+  const tasks = new TaskManager((spec) => {
+    const ac = new AbortController();
+    const done = runAgent({
+      provider,
+      tools,
+      systemPrompt,
+      userMessage: spec.prompt,
+      model: ctx.model,
+      maxTokens,
+      temperature,
+      cwd: ctx.cwd,
+      signal: ac.signal,
+      mode: ctx.mode as Mode,
+      permissions: settings.permissions,
+      hooks,
+      pluginDirs: pluginContrib.dirs,
+      sandboxConfig: settings.sandbox,
+      autoMode: settings.autoMode,
+      subAgentDepth: 1,
+      systemReminders: false,
+    }).then((r) => assistantText(r.history));
+    return { done, abort: () => ac.abort() };
+  });
+  ctx.tasks = tasks;
+
   if (!opts.bare) {
     output.write(
       `\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`,
@@ -619,6 +652,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
       autoMode: settings.autoMode,
       sandboxConfig: settings.sandbox,
+      // Session-scoped manager: the agent's TaskCreate calls land here too, so
+      // background tasks persist across turns and show up in /tasks.
+      taskManager: tasks,
       approval: async (toolName, _input, verdict) => {
         output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
         const answer = (await rl.question('     [y]es / [n]o / [a]lways: ')).trim().toLowerCase();
@@ -715,6 +751,17 @@ function formatEvent(out: Writable, e: AgentEvent): void {
     case 'turn_complete':
       return;
   }
+}
+
+/** Flatten an agent run's assistant text — the result of a background task. */
+function assistantText(history: StoredMessage[]): string {
+  return history
+    .filter((m) => m.role === 'assistant')
+    .flatMap((m) => m.content)
+    .filter((b): b is Extract<typeof b, { type: 'text' }> => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+    .trim();
 }
 
 function formatToolInput(input: Record<string, unknown>): string {

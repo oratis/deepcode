@@ -10,6 +10,7 @@ import type {
   SessionManager,
   SessionMeta,
   StoredMessage,
+  TaskManager,
 } from '@deepcode/core';
 import {
   contextWindowFor,
@@ -163,6 +164,10 @@ export interface SessionContext {
   provider?: Provider;
   /** Set by /rewind to request history replacement. REPL applies after run. */
   newHistory?: StoredMessage[];
+  /** Session-scoped background-task manager (REPL-injected) — backs /tasks and
+   *  /background. Same instance the agent loop uses, so tasks the agent starts
+   *  are visible here and vice-versa. */
+  tasks?: TaskManager;
 }
 
 export interface SlashCommand {
@@ -1134,6 +1139,58 @@ export const BtwCommand: SlashCommand = {
   },
 };
 
+export const TasksCommand: SlashCommand = {
+  name: '/tasks',
+  description: 'List background tasks this session, or `/tasks <id>` to show one’s output.',
+  run(args, ctx) {
+    if (!ctx.tasks) return ['(Background tasks are unavailable here.)'];
+    // `/tasks <id>` → show that task's status + output so far.
+    if (args[0]) {
+      const id = args[0].trim();
+      const task = ctx.tasks.get(id);
+      if (!task) return [`No task "${id}". Run /tasks to list them.`];
+      const out = (task.output || '').trim();
+      return [
+        `${task.id}  [${task.status}]  ${task.description}`,
+        `  created ${task.createdAt}${task.finishedAt ? ` · finished ${task.finishedAt}` : ''}`,
+        '',
+        out || `(no output yet — task is ${task.status})`,
+      ];
+    }
+    const tasks = ctx.tasks.list();
+    if (tasks.length === 0) {
+      return ['No background tasks yet.', 'Start one with `/background <prompt>`.'];
+    }
+    const lines = [`Background tasks (${tasks.length}):`];
+    for (const t of tasks) lines.push(`  ${t.id}  [${t.status}]  ${t.description}`);
+    lines.push('');
+    lines.push('Show one with `/tasks <id>`; cancel via the agent’s TaskStop tool.');
+    return lines;
+  },
+};
+
+export const BackgroundCommand: SlashCommand = {
+  name: '/background',
+  aliases: ['/bg'],
+  description: 'Run a prompt as a background sub-agent while you keep working.',
+  run(args, ctx) {
+    if (!ctx.tasks) return ['(Background tasks are unavailable here.)'];
+    const prompt = args.join(' ').trim();
+    if (!prompt) {
+      return ['Usage: /background <prompt> — runs <prompt> as a background sub-agent.'];
+    }
+    try {
+      const task = ctx.tasks.create({ description: prompt.slice(0, 60), prompt });
+      return [
+        `Started background task ${task.id}: “${task.description}”.`,
+        'It runs while you keep chatting. Check it with `/tasks` (or `/tasks ' + task.id + '`).',
+      ];
+    } catch (err) {
+      return [`Could not start background task: ${(err as Error).message}`];
+    }
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -1170,6 +1227,8 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   UpgradeCommand,
   PrivacySettingsCommand,
   BtwCommand,
+  TasksCommand,
+  BackgroundCommand,
 ];
 
 // ──────────────────────────────────────────────────────────────────────────
