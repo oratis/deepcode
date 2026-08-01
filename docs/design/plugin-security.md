@@ -192,9 +192,9 @@ host process 启动
    ▼ 对每个启用的 plugin:
    │   ├─ 重新计算 sourceHash → 与 trust.json 比对
    │   ├─ hash 不一致 → 跳过，告警
-   │   └─ hash 一致 → 启动 sandbox 子进程
+   │   └─ hash 一致 → 装载声明式贡献；仅带 index.js 的 executable plugin 启动 sandbox 子进程
    │
-   ▼ Sandbox 子进程启动:
+   ▼ executable plugin 的 Sandbox 子进程启动:
    │   ├─ bwrap (Linux) / sandbox-exec (macOS) 包装 node 进程
    │   ├─ 文件系统:
    │   │     ✓ 可读: plugin 自己的目录 / /tmp/deepcode-plugin-<name>/

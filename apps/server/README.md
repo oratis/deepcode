@@ -26,4 +26,6 @@ credentials never cross this protocol boundary.
 Each turn leases a host composition for its workspace. The backend loads user/project
 `DEEPCODE.md`, `AGENTS.md`, rules, memory, skills, output style, hooks, and settings defaults before
 calling `RuntimeHost`; clients remain unaware of those files. The lease has an explicit async close
-hook so later MCP/plugin resources cannot leak across turns.
+hook. Trusted plugin contributions and MCP servers are composed in that lease: eager/deferred tools
+share the host registry, MCP resource references are expanded before the model call, startup/resource
+failures become value-free turn diagnostics, and every subprocess/connection closes in `finally`.

@@ -33,6 +33,8 @@ export interface PluginCapabilityBridge {
 
 export interface WirePluginsOpts {
   home?: string;
+  /** Direct DeepCode data directory (contains plugins/ and plugins-trust.json). */
+  directory?: string;
   /** Plugins disabled via settings.disabledPlugins. */
   disabled?: string[];
   /** Live hook dispatcher to merge plugin-contributed hooks into. */
@@ -53,7 +55,8 @@ export interface WirePluginsOpts {
 
 export interface WiredPlugin {
   plugin: InstalledPlugin;
-  subprocess: PluginSubprocess;
+  /** Present only when the plugin has an executable index.js runtime. */
+  subprocess?: PluginSubprocess;
   /** Hook events the plugin's manifest declared it contributes to. */
   contributedHookEvents: string[];
   /** Tool handlers (M5.2 keeps this empty — Skills cover this; M5.3 first-class tools). */
@@ -80,70 +83,94 @@ export async function wirePlugins(opts: WirePluginsOpts): Promise<WireResult> {
   const home = opts.home ?? homedir();
   const log = opts.log ?? ((s: string) => process.stderr.write(s + '\n'));
 
-  const discoverOpts: DiscoverOptions = { home, disabled: opts.disabled };
+  const discoverOpts: DiscoverOptions = {
+    home,
+    directory: opts.directory,
+    disabled: opts.disabled,
+  };
   const { plugins: discovered, hashMismatches } = await discoverPlugins(discoverOpts);
   if (discovered.length === 0) {
     return { plugins: [], hashMismatches, spawnFailures: [], shutdown: async () => {} };
   }
 
-  // Spawn each enabled plugin
+  // A skills/MCP/hooks-only plugin is valid and does not need a subprocess.
+  const enabled = discovered.filter((p) => p.enabled);
+  const runnable: InstalledPlugin[] = [];
+  for (const plugin of enabled) {
+    try {
+      await fs.access(`${plugin.path}/index.js`);
+      runnable.push(plugin);
+    } catch {
+      // No executable runtime; declarative contributions remain active.
+    }
+  }
+
+  // Spawn each enabled plugin that declares executable code via index.js.
   const subprocesses = await spawnAllPlugins({
-    plugins: discovered.filter((p) => p.enabled),
+    plugins: runnable,
     host: opts.capabilities,
     sandbox: opts.sandbox,
   });
 
-  // spawnAllPlugins returns successfully-started subprocesses, each exposing
-  // its source plugin via the `.plugin` getter. Failed starts are dropped.
-  const enabled = discovered.filter((p) => p.enabled);
-  const successfulNames = new Set<string>();
-  const wired: WiredPlugin[] = [];
-  for (const sub of subprocesses) {
-    const plugin = sub.plugin;
-    successfulNames.add(plugin.manifest.name);
-    const events = Object.keys(plugin.manifest.contributes?.hooks ?? {});
-    wired.push({
-      plugin,
-      subprocess: sub,
-      contributedHookEvents: events,
-      contributedTools: sub.toolHandlers(),
-    });
-    // Merge declared hook matchers into the live dispatcher. The hooks
-    // manifest from a plugin must follow the same shape as settings.hooks.
-    const declared = plugin.manifest.contributes?.hooks;
-    if (declared && Object.keys(declared).length > 0) {
-      opts.hooks.mergeHooks(declared as Hooks);
+  try {
+    // spawnAllPlugins returns successfully-started subprocesses, each exposing
+    // its source plugin via the `.plugin` getter. Failed starts are dropped.
+    const successfulNames = new Set<string>();
+    const wired: WiredPlugin[] = [];
+    for (const sub of subprocesses) {
+      successfulNames.add(sub.plugin.manifest.name);
     }
-  }
+    for (const plugin of enabled) {
+      const sub = subprocesses.find(
+        (candidate) => candidate.plugin.manifest.name === plugin.manifest.name,
+      );
+      const events = Object.keys(plugin.manifest.contributes?.hooks ?? {});
+      wired.push({
+        plugin,
+        subprocess: sub,
+        contributedHookEvents: events,
+        contributedTools: sub?.toolHandlers() ?? [],
+      });
+      // Merge declared hook matchers into the live dispatcher. The hooks
+      // manifest from a plugin must follow the same shape as settings.hooks.
+      const declared = plugin.manifest.contributes?.hooks;
+      if (declared && Object.keys(declared).length > 0) {
+        opts.hooks.mergeHooks(declared as Hooks);
+      }
+    }
 
-  const spawnFailures: string[] = [];
-  for (const p of enabled) {
-    if (!successfulNames.has(p.manifest.name)) spawnFailures.push(p.manifest.name);
-  }
-  if (spawnFailures.length > 0) {
-    log(`  ⊞ Plugins: ${spawnFailures.length} failed to start (${spawnFailures.join(', ')})`);
-  }
-  if (wired.length > 0) {
-    const hookEventCount = wired.reduce((n, w) => n + w.contributedHookEvents.length, 0);
-    log(`  ⊞ Plugins: ${wired.length} loaded · ${hookEventCount} hook event(s) contributed`);
-  }
+    const spawnFailures: string[] = [];
+    for (const p of runnable) {
+      if (!successfulNames.has(p.manifest.name)) spawnFailures.push(p.manifest.name);
+    }
+    if (spawnFailures.length > 0) {
+      log(`  ⊞ Plugins: ${spawnFailures.length} failed to start (${spawnFailures.join(', ')})`);
+    }
+    if (wired.length > 0) {
+      const hookEventCount = wired.reduce((n, w) => n + w.contributedHookEvents.length, 0);
+      log(`  ⊞ Plugins: ${wired.length} loaded · ${hookEventCount} hook event(s) contributed`);
+    }
 
-  let shut = false;
-  const shutdown = async (): Promise<void> => {
-    if (shut) return;
-    shut = true;
+    let shut = false;
+    const shutdown = async (): Promise<void> => {
+      if (shut) return;
+      shut = true;
+      await shutdownAllPlugins(subprocesses);
+    };
+
+    return { plugins: wired, hashMismatches, spawnFailures, shutdown };
+  } catch (error) {
     await shutdownAllPlugins(subprocesses);
-  };
-
-  return { plugins: wired, hashMismatches, spawnFailures, shutdown };
+    throw error;
+  }
 }
 
 /**
  * Sanity helper exposed for tests / tools: returns whether a plugin dir is
  * present without spawning anything.
  */
-export async function hasInstalledPlugins(home?: string): Promise<boolean> {
-  const root = (home ?? homedir()) + '/.deepcode/plugins';
+export async function hasInstalledPlugins(home?: string, directory?: string): Promise<boolean> {
+  const root = directory ? `${directory}/plugins` : `${home ?? homedir()}/.deepcode/plugins`;
   try {
     const entries = await fs.readdir(root);
     return entries.some((e) => !e.startsWith('.'));

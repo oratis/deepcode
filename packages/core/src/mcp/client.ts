@@ -84,6 +84,8 @@ export interface ConnectMcpOpts {
   elicit?: McpElicitHandler;
   /** Override $HOME for OAuth token storage (tests). */
   home?: string;
+  /** Direct DeepCode data directory for OAuth token storage. */
+  directory?: string;
   /** Diagnostics sink for the OAuth flow (browser-open prompt, etc.). */
   log?: (msg: string) => void;
 }
@@ -227,10 +229,17 @@ export async function connectMcpServer(
     oauthProvider = await createMcpOAuthProvider(serverName, {
       scopes: config.oauthScopes,
       home: opts.home,
+      directory: opts.directory,
       log: opts.log ?? ((m) => process.stderr.write(`[mcp:${serverName}] ${m}\n`)),
     });
   }
-  const transport = await buildTransport(serverName, config, kind, oauthProvider);
+  let transport: Transport;
+  try {
+    transport = await buildTransport(serverName, config, kind, oauthProvider);
+  } catch (error) {
+    oauthProvider?.closeReceiver();
+    throw error;
+  }
   // Advertise elicitation support only when the host gave us a handler — an
   // empty `elicitation: {}` capability means form mode (SDK default).
   const capabilities = opts.elicit ? { elicitation: {} } : {};
@@ -253,113 +262,127 @@ export async function connectMcpServer(
     // First connect with no/expired token throws UnauthorizedError after opening
     // the browser. Wait for the loopback redirect, finish the exchange, retry.
     if (oauthProvider && err instanceof UnauthorizedError) {
-      const code = await oauthProvider.waitForCode();
-      await (transport as FinishableTransport).finishAuth(code);
-      await client.connect(transport);
+      try {
+        const code = await oauthProvider.waitForCode();
+        await (transport as FinishableTransport).finishAuth(code);
+        await client.connect(transport);
+      } catch (authError) {
+        await client.close().catch(() => undefined);
+        throw authError;
+      }
     } else {
       oauthProvider?.closeReceiver();
+      await client.close().catch(() => undefined);
       throw err;
     }
   } finally {
     oauthProvider?.closeReceiver();
   }
 
-  // List the tools the server exposes
-  const listed = await client.listTools();
-  const tools: ToolHandler[] = listed.tools.map((t) => {
-    const qualified = `mcp__${serverName}__${t.name}`;
-    const def: ToolDefinition = {
-      name: qualified,
-      description: t.description ?? `(MCP tool from ${serverName})`,
-      inputSchema: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<string, unknown>,
-    };
+  try {
+    // List the tools the server exposes
+    const listed = await client.listTools();
+    const tools: ToolHandler[] = listed.tools.map((t) => {
+      const qualified = `mcp__${serverName}__${t.name}`;
+      const def: ToolDefinition = {
+        name: qualified,
+        description: t.description ?? `(MCP tool from ${serverName})`,
+        inputSchema: (t.inputSchema ?? { type: 'object', properties: {} }) as Record<
+          string,
+          unknown
+        >,
+      };
+      return {
+        name: qualified,
+        definition: def,
+        async execute(input: Record<string, unknown>): Promise<ToolResult> {
+          try {
+            const result = (await client.callTool({
+              name: t.name,
+              arguments: input,
+            })) as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
+            // MCP returns { content: [{type:'text', text:'...'}, ...] }
+            const textParts =
+              (result.content ?? [])
+                .filter((c) => c.type === 'text')
+                .map((c) => c.text ?? '')
+                .join('\n') || '';
+            return {
+              content: textParts ? capMcpOutput(textParts) : '(MCP tool returned no text content)',
+              isError: result.isError === true,
+              data: { serverName, serverToolName: t.name },
+            };
+          } catch (err) {
+            return {
+              content: `MCP call failed: ${(err as Error).message}`,
+              isError: true,
+            };
+          }
+        },
+      };
+    });
+
+    // Resources (best-effort, capability-gated). A server without the `resources`
+    // capability — or one that errors on resources/list — just yields [].
+    let resources: McpResourceMeta[] = [];
+    let resourceTemplates: McpResourceTemplateMeta[] = [];
+    if (client.getServerCapabilities()?.resources) {
+      try {
+        const r = await client.listResources();
+        resources = (r.resources ?? []).map((res) => ({
+          uri: res.uri,
+          name: res.name,
+          description: res.description,
+          mimeType: res.mimeType,
+        }));
+      } catch {
+        /* server advertised resources but list failed — degrade to none */
+      }
+      try {
+        const rt = await client.listResourceTemplates();
+        resourceTemplates = (rt.resourceTemplates ?? []).map((t) => ({
+          uriTemplate: t.uriTemplate,
+          name: t.name,
+          description: t.description,
+          mimeType: t.mimeType,
+        }));
+      } catch {
+        /* templates are optional even within the resources capability */
+      }
+    }
+
+    // Prompts (best-effort, capability-gated — same degradation as resources).
+    let prompts: McpPromptMeta[] = [];
+    if (client.getServerCapabilities()?.prompts) {
+      try {
+        const p = await client.listPrompts();
+        prompts = (p.prompts ?? []).map((pr) => ({
+          name: pr.name,
+          description: pr.description,
+          arguments: pr.arguments,
+        }));
+      } catch {
+        /* server advertised prompts but list failed — degrade to none */
+      }
+    }
+
     return {
-      name: qualified,
-      definition: def,
-      async execute(input: Record<string, unknown>): Promise<ToolResult> {
-        try {
-          const result = (await client.callTool({
-            name: t.name,
-            arguments: input,
-          })) as { content?: Array<{ type?: string; text?: string }>; isError?: boolean };
-          // MCP returns { content: [{type:'text', text:'...'}, ...] }
-          const textParts =
-            (result.content ?? [])
-              .filter((c) => c.type === 'text')
-              .map((c) => c.text ?? '')
-              .join('\n') || '';
-          return {
-            content: textParts ? capMcpOutput(textParts) : '(MCP tool returned no text content)',
-            isError: result.isError === true,
-            data: { serverName, serverToolName: t.name },
-          };
-        } catch (err) {
-          return {
-            content: `MCP call failed: ${(err as Error).message}`,
-            isError: true,
-          };
-        }
+      serverName,
+      client,
+      transport,
+      transportKind: kind,
+      tools,
+      resources,
+      resourceTemplates,
+      prompts,
+      async close() {
+        await client.close();
       },
     };
-  });
-
-  // Resources (best-effort, capability-gated). A server without the `resources`
-  // capability — or one that errors on resources/list — just yields [].
-  let resources: McpResourceMeta[] = [];
-  let resourceTemplates: McpResourceTemplateMeta[] = [];
-  if (client.getServerCapabilities()?.resources) {
-    try {
-      const r = await client.listResources();
-      resources = (r.resources ?? []).map((res) => ({
-        uri: res.uri,
-        name: res.name,
-        description: res.description,
-        mimeType: res.mimeType,
-      }));
-    } catch {
-      /* server advertised resources but list failed — degrade to none */
-    }
-    try {
-      const rt = await client.listResourceTemplates();
-      resourceTemplates = (rt.resourceTemplates ?? []).map((t) => ({
-        uriTemplate: t.uriTemplate,
-        name: t.name,
-        description: t.description,
-        mimeType: t.mimeType,
-      }));
-    } catch {
-      /* templates are optional even within the resources capability */
-    }
+  } catch (error) {
+    await client.close().catch(() => undefined);
+    throw error;
   }
-
-  // Prompts (best-effort, capability-gated — same degradation as resources).
-  let prompts: McpPromptMeta[] = [];
-  if (client.getServerCapabilities()?.prompts) {
-    try {
-      const p = await client.listPrompts();
-      prompts = (p.prompts ?? []).map((pr) => ({
-        name: pr.name,
-        description: pr.description,
-        arguments: pr.arguments,
-      }));
-    } catch {
-      /* server advertised prompts but list failed — degrade to none */
-    }
-  }
-
-  return {
-    serverName,
-    client,
-    transport,
-    transportKind: kind,
-    tools,
-    resources,
-    resourceTemplates,
-    prompts,
-    async close() {
-      await client.close();
-    },
-  };
 }
 
 /**
@@ -551,7 +574,14 @@ export interface ConnectAllResult {
 
 export async function connectAllMcpServers(
   servers: Record<string, McpServerConfig>,
-  opts: { enabledOnly?: string[]; disabled?: string[]; elicit?: McpElicitHandler } = {},
+  opts: {
+    enabledOnly?: string[];
+    disabled?: string[];
+    elicit?: McpElicitHandler;
+    home?: string;
+    directory?: string;
+    log?: (msg: string) => void;
+  } = {},
 ): Promise<ConnectAllResult> {
   const handles: McpClientHandle[] = [];
   const errors: Array<{ serverName: string; error: string }> = [];
@@ -562,7 +592,12 @@ export async function connectAllMcpServers(
     if (enabled && !enabled.has(name)) continue;
     if (disabled.has(name)) continue;
     try {
-      const handle = await connectMcpServer(name, cfg, { elicit: opts.elicit });
+      const handle = await connectMcpServer(name, cfg, {
+        elicit: opts.elicit,
+        home: opts.home,
+        directory: opts.directory,
+        log: opts.log,
+      });
       handles.push(handle);
     } catch (err) {
       errors.push({ serverName: name, error: (err as Error).message });

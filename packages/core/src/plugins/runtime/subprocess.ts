@@ -129,10 +129,33 @@ export class PluginSubprocess {
   }
 
   async stop(): Promise<void> {
-    if (this.child && this.alive) {
-      this.child.kill('SIGTERM');
-      this.alive = false;
-    }
+    const child = this.child;
+    if (!child || !this.alive) return;
+    await new Promise<void>((resolveStop) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(forceTimer);
+        clearTimeout(safetyTimer);
+        child.off('exit', finish);
+        child.off('error', finish);
+        resolveStop();
+      };
+      const forceTimer = setTimeout(() => {
+        if (!settled) child.kill('SIGKILL');
+      }, 1_000);
+      const safetyTimer = setTimeout(finish, 2_000);
+      child.once('exit', finish);
+      child.once('error', finish);
+      if (!child.kill('SIGTERM')) {
+        finish();
+        return;
+      }
+      if (settled) return;
+    });
+    this.alive = false;
+    this.child = null;
   }
 
   /**

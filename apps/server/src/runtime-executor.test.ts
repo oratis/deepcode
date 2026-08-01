@@ -155,17 +155,32 @@ describe('RuntimeHostExecutor', () => {
   it('uses per-turn composition defaults and always releases the host lease', async () => {
     const provider = new StreamingProvider();
     const close = vi.fn();
+    const prepareUserMessage = vi.fn(async () => ({
+      text: 'composed user message',
+      diagnostics: [
+        {
+          source: 'mcp',
+          code: 'mcp_resource_failed',
+          severity: 'warning' as const,
+          message: 'bad ref',
+        },
+      ],
+    }));
     const executor = new RuntimeHostExecutor({
       createHost: () => ({
         host: new RuntimeHost({ provider, tools: new ToolRegistry(), cwd: '/workspace' }),
         systemPrompt: 'composed instructions',
         model: 'deepseek-reasoner',
         effort: 'low',
+        diagnostics: [
+          { source: 'mcp', code: 'mcp_connect_failed', severity: 'warning', message: 'offline' },
+        ],
+        prepareUserMessage,
         close,
       }),
     });
 
-    await executor.execute({
+    const result = await executor.execute({
       thread: { ...thread, turns: [] },
       turn: {
         id: 'turn-lease',
@@ -187,6 +202,14 @@ describe('RuntimeHostExecutor', () => {
         maxTokens: 1_500,
       }),
     );
+    expect(provider.seenMessages.at(-1)).toEqual(
+      expect.objectContaining({
+        role: 'user',
+        content: [{ type: 'text', text: 'composed user message' }],
+      }),
+    );
+    expect(result.items.filter((item) => item.type === 'error')).toHaveLength(2);
+    expect(prepareUserMessage).toHaveBeenCalledWith('use composition');
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -216,7 +239,46 @@ describe('RuntimeHostExecutor', () => {
       ...protocolCallbacks(),
     });
 
-    expect(createHost).toHaveBeenCalledWith('/workspace', 'default', { modeExplicit: false });
+    expect(createHost).toHaveBeenCalledWith(
+      '/workspace',
+      'default',
+      expect.objectContaining({ modeExplicit: false }),
+    );
+  });
+
+  it('releases the host lease when message preparation fails', async () => {
+    const close = vi.fn();
+    const executor = new RuntimeHostExecutor({
+      createHost: () => ({
+        host: new RuntimeHost({
+          provider: new StreamingProvider(),
+          tools: new ToolRegistry(),
+          cwd: '/workspace',
+        }),
+        prepareUserMessage: async () => {
+          throw new Error('resource expansion failed');
+        },
+        close,
+      }),
+    });
+
+    await expect(
+      executor.execute({
+        thread: { ...thread, turns: [] },
+        turn: {
+          id: 'turn-prepare-failure',
+          threadId: thread.id,
+          status: 'in_progress',
+          startedAt: '2026-08-01T00:00:02.000Z',
+          items: [],
+        },
+        input: { text: 'expand this' },
+        signal: new AbortController().signal,
+        publishDelta: () => undefined,
+        ...protocolCallbacks(),
+      }),
+    ).rejects.toThrow('resource expansion failed');
+    expect(close).toHaveBeenCalledOnce();
   });
 
   it('ignores non-message protocol items when rebuilding provider history', () => {

@@ -74,6 +74,14 @@ describe('plugin manifest', () => {
     expect(h1).not.toBe(h2);
   });
 
+  it('computeSourceHash includes executable plugin code', async () => {
+    await fakePlugin(src, { name: 'runtime', version: '1' });
+    await fs.writeFile(join(src, 'index.js'), 'module.exports = 1;');
+    const before = await computeSourceHash(src);
+    await fs.writeFile(join(src, 'index.js'), 'module.exports = 2;');
+    expect(await computeSourceHash(src)).not.toBe(before);
+  });
+
   it('trust state round-trip', async () => {
     await saveTrustState(home, {
       plugins: {
@@ -118,6 +126,34 @@ describe('plugin manifest', () => {
     expect(r.plugins).toHaveLength(1);
     expect(r.plugins[0]?.manifest.name).toBe('disc');
     expect(r.hashMismatches).toEqual([]);
+  });
+
+  it('discovers trusted plugins from a direct DeepCode data directory', async () => {
+    const directory = join(home, 'custom-data');
+    const pluginDir = join(directory, 'plugins', 'direct');
+    await fs.mkdir(pluginDir, { recursive: true });
+    await fs.writeFile(
+      join(pluginDir, 'plugin.json'),
+      JSON.stringify({ name: 'direct', version: '1.0.0' }),
+    );
+    const sourceHash = await computeSourceHash(pluginDir);
+    await saveTrustState(
+      home,
+      {
+        plugins: {
+          direct: {
+            version: '1.0.0',
+            installedAt: '2026-08-01T00:00:00.000Z',
+            sourceHash,
+            trustedBy: 'user',
+          },
+        },
+      },
+      directory,
+    );
+
+    const result = await discoverPlugins({ home, directory });
+    expect(result.plugins.map((plugin) => plugin.manifest.name)).toEqual(['direct']);
   });
 
   it('discoverPlugins flags hash mismatch', async () => {

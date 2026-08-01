@@ -33,14 +33,23 @@ export function createDefaultTurnExecutor(
           'No DeepSeek credentials. Run `deepcode` once to onboard, or set DEEPSEEK_API_KEY.',
         );
       }
-      const composition = await composeRuntime({ cwd, directory: home, settings });
+      const provider = new DeepSeekProvider({
+        apiKey: credentials.apiKey ?? '',
+        authToken: credentials.authToken,
+        baseURL: credentials.baseURL ?? settings.baseURL,
+      });
+      const composition = await composeRuntime({
+        cwd,
+        directory: home,
+        settings,
+        mode: effectiveMode,
+        provider,
+        requestApproval: context.requestApproval,
+        signal: context.signal,
+      });
       return {
         host: new RuntimeHost({
-          provider: new DeepSeekProvider({
-            apiKey: credentials.apiKey ?? '',
-            authToken: credentials.authToken,
-            baseURL: credentials.baseURL ?? settings.baseURL,
-          }),
+          provider,
           tools: composition.tools,
           cwd,
           mode: effectiveMode,
@@ -53,6 +62,9 @@ export function createDefaultTurnExecutor(
         systemPrompt: composition.systemPrompt,
         model: composition.model,
         effort: composition.effort,
+        diagnostics: composition.diagnostics,
+        prepareUserMessage: composition.prepareUserMessage,
+        close: composition.close,
       };
     },
     sessionManager,
