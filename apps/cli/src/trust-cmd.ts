@@ -1,8 +1,8 @@
 // `deepcode trust [--plan-only | --remove | --list]` — manage directory trust.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.15.10
 //
-// Trusting a directory lets its project-local settings.json run code (hooks,
-// MCP servers, apiKeyHelper, statusLine). Until trusted, those are gated (see
+// Trusting a directory lets its project-local settings.json contribute authority-bearing
+// settings. Command hooks still require definition-level review. Until trusted, those are gated (see
 // core/config/trust-gate). The user-global layer is always trusted.
 
 import type { Writable } from 'node:stream';
@@ -43,7 +43,7 @@ export async function runTrustCommand(args: string[], deps: TrustCmdDeps): Promi
   out.write(
     mode === 'plan-only'
       ? `Trusted ${deps.cwd} (plan-only — project config can run, but the session starts in plan mode).\n`
-      : `Trusted ${deps.cwd} — project hooks, MCP servers, apiKeyHelper, and statusLine are now enabled here.\n`,
+      : `Trusted ${deps.cwd} — project config is enabled; review command hooks with \`deepcode hooks list\`.\n`,
   );
   return 0;
 }

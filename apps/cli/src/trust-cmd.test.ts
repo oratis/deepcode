@@ -31,7 +31,7 @@ describe('runTrustCommand', () => {
     const out = sink();
     const code = await runTrustCommand([], { cwd, home, output: out.stream });
     expect(code).toBe(0);
-    expect(out.text()).toMatch(/Trusted .* enabled here/);
+    expect(out.text()).toMatch(/Trusted .* review command hooks/);
     expect(await new TrustStore({ home }).statusFor(cwd)).toBe('trusted');
   });
 

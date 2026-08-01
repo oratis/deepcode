@@ -91,6 +91,11 @@ diagnostics without aborting healthy peers. Plugin capability RPC goes through m
 hook, approval, and sandbox gates. Explicit client model/effort/mode values still override trusted
 settings.
 
+Directory trust does not directly authorize project/local command hooks. Their canonical event,
+matcher, and handler definition is SHA-256 pinned in the shared hook trust store; pending or changed
+definitions are removed before `HookDispatcher` construction and reported value-free through
+configuration diagnostics. User-global and explicit override hooks remain trusted layers.
+
 ## Entrypoints
 
 After `pnpm build`, either command starts the same handler:

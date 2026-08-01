@@ -18,6 +18,7 @@ import { TrustStore } from './trust.js';
 import { runPluginsCommand, runSkillsCommand } from './list-cmd.js';
 import { runSetupToken } from './setup-token.js';
 import { runCompletion } from './completion.js';
+import { runHooksCommand } from './hooks-cmd.js';
 
 async function main(): Promise<number> {
   const args = parseArgs(process.argv.slice(2));
@@ -94,6 +95,13 @@ async function main(): Promise<number> {
     return runTrustCommand(args.positional.slice(1), {
       cwd: process.cwd(),
       output: process.stdout,
+    });
+  }
+  if (args.positional[0] === 'hooks') {
+    return runHooksCommand(args.positional.slice(1), {
+      cwd: process.cwd(),
+      output: process.stdout,
+      errOutput: process.stderr,
     });
   }
   if (args.positional[0] === 'setup-token') {

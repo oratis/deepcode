@@ -323,8 +323,9 @@ model tool call
 - MCP 与 plugin subprocess 已接入同一 turn-scoped lease：eager/deferred tools、resource refs、
   best-effort diagnostics、plugin capability policy gates 与 deterministic cleanup 共享 host 边界；
   plugin trust hash 覆盖全部安装文件，skills-only plugin 不再被强制启动进程。
-- hook 安全继续收敛到定义哈希级审核：未审阅或已变化的非托管 command hook 默认跳过，
-  并在 diagnostics 中暴露来源与审核状态；目录 trust 只是第一道门。
+- project/local command hook 已收敛到规范化定义哈希审核：未审阅或已变化的定义默认跳过，
+  `deepcode hooks list|trust <hash...|--all>|revoke` 提供显式管理，diagnostics 暴露来源与审核状态；
+  目录 trust 只是第一道门，user/explicit override 仍是可信层。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
 - diff review、可定位反馈、trace id、结构化日志与脱敏导出。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。
