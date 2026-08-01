@@ -33,6 +33,8 @@ describe('ProtocolRuntime', () => {
         turnInterrupt: true,
         completedItemPersistence: true,
         transientDeltas: true,
+        structuredToolEvents: true,
+        interactiveRequests: true,
       },
     });
   });
@@ -120,6 +122,22 @@ describe('ProtocolRuntime', () => {
       turnId: turn.id,
       itemId: 'item-streaming',
       delta: 'hel',
+    });
+    recorder.record({
+      type: 'tool.started',
+      threadId: thread.id,
+      turnId: turn.id,
+      itemId: 'tool-1',
+      name: 'Read',
+      input: { file_path: 'README.md' },
+    });
+    recorder.record({
+      type: 'approval.requested',
+      threadId: thread.id,
+      turnId: turn.id,
+      requestId: 'request-1',
+      toolName: 'Bash',
+      reason: 'Run command?',
     });
     await runtime.completeTurn(thread.id, turn.id);
 

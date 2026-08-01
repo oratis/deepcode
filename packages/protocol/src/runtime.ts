@@ -69,6 +69,8 @@ export class ProtocolRuntime {
         turnInterrupt: true,
         completedItemPersistence: true,
         transientDeltas: true,
+        structuredToolEvents: true,
+        interactiveRequests: true,
       },
     };
   }
@@ -204,7 +206,7 @@ export class ProtocolRecorder {
   private readonly records: DurableProtocolEvent[] = [];
 
   record(event: ProtocolEvent): void {
-    if (event.type !== 'item.delta') this.records.push(clone(event));
+    if (isDurableEvent(event)) this.records.push(clone(event));
   }
 
   replay(consumer: (event: DurableProtocolEvent) => void): void {
@@ -214,4 +216,15 @@ export class ProtocolRecorder {
   snapshot(): DurableProtocolEvent[] {
     return clone(this.records);
   }
+}
+
+function isDurableEvent(event: ProtocolEvent): event is DurableProtocolEvent {
+  return (
+    event.type === 'thread.started' ||
+    event.type === 'turn.started' ||
+    event.type === 'item.completed' ||
+    event.type === 'turn.completed' ||
+    event.type === 'turn.interrupted' ||
+    event.type === 'turn.failed'
+  );
 }

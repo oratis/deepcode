@@ -40,9 +40,11 @@ Durable events describe state that can be reconstructed after a process restart:
 - `turn.interrupted`
 - `turn.failed`
 
-`item.delta` is transient. A delta is suitable for live UI streaming, but it is neither saved by
-the thread store nor included in protocol recordings. A client that reconnects reads the latest
-completed-item snapshot instead of replaying partial text.
+`item.delta`, tool start/result, usage, approval requests, and user-input requests are transient.
+They are suitable for live UI updates but are neither saved by the thread store nor included in
+protocol recordings. Approval and user-input outcomes become completed durable items when the turn
+finishes. A client that reconnects reads the latest completed-item snapshot instead of replaying
+partial state.
 
 State is saved before its corresponding durable event is emitted. A consumer may therefore read
 the referenced thread immediately after receiving an event.
@@ -51,7 +53,7 @@ the referenced thread immediately after receiving an event.
 
 Clients call `initialize` before other methods and inspect both `protocolVersion` and advertised
 capabilities. Version 1 advertises thread resume, turn interruption, completed-item persistence,
-and transient deltas.
+transient deltas, structured tool events, and interactive requests.
 
 Unknown methods and non-object request parameters are rejected by the line-oriented JSON codec.
 Future incompatible lifecycle changes require a new protocol version; optional behavior should be

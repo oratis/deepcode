@@ -27,6 +27,20 @@ export interface TurnExecutionArgs {
   input: Record<string, unknown>;
   signal: AbortSignal;
   publishDelta: (itemId: string, delta: string) => void;
+  publishToolStarted: (itemId: string, name: string, input: Record<string, unknown>) => void;
+  publishToolCompleted: (itemId: string, result: { content: string; isError?: boolean }) => void;
+  publishUsage: (usage: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+  }) => void;
+  requestApproval: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
+  requestUserInput: (request: {
+    question: string;
+    options: Array<{ label: string; description: string }>;
+    multiSelect?: boolean;
+  }) => Promise<string>;
 }
 
 export interface TurnExecutor {
@@ -47,12 +61,28 @@ interface ActiveTurn {
   task: Promise<void>;
 }
 
+type PendingInteraction =
+  | {
+      kind: 'approval';
+      threadId: string;
+      turnId: string;
+      resolve: (decision: 'allow' | 'deny' | 'always') => void;
+    }
+  | {
+      kind: 'user-input';
+      threadId: string;
+      turnId: string;
+      resolve: (answer: string) => void;
+    };
+
 class RequestValidationError extends Error {}
 
 export class AppServer {
   private readonly lifecycle: ProtocolRuntime;
   private readonly activeTurns = new Map<string, ActiveTurn>();
   private readonly terminalTransitions = new Map<string, Promise<TurnSnapshot>>();
+  private readonly pendingInteractions = new Map<string, PendingInteraction>();
+  private interactionSequence = 0;
 
   constructor(private readonly options: AppServerOptions) {
     this.lifecycle = new ProtocolRuntime({
@@ -92,6 +122,7 @@ export class AppServer {
     await Promise.all(
       active.map(async ([turnId, turn]) => {
         turn.controller.abort();
+        this.cancelInteractions(turnId);
         await this.finishOnce(turnId, () => this.lifecycle.interruptTurn(turn.threadId, turnId));
       }),
     );
@@ -112,6 +143,10 @@ export class AppServer {
         return this.startTurn(request.params);
       case 'turn/interrupt':
         return this.interruptTurn(request.params);
+      case 'approval/respond':
+        return this.respondToApproval(request.params);
+      case 'user-input/respond':
+        return this.respondToUserInput(request.params);
     }
   }
 
@@ -146,6 +181,7 @@ export class AppServer {
     if (active.threadId !== threadId)
       throw new RequestValidationError(`Turn ${turnId} does not belong to ${threadId}`);
     active.controller.abort();
+    this.cancelInteractions(turnId);
     const terminal = await this.finishOnce(turnId, () =>
       this.lifecycle.interruptTurn(threadId, turnId),
     );
@@ -172,6 +208,36 @@ export class AppServer {
             delta,
           });
         },
+        publishToolStarted: (itemId, name, input) => {
+          this.options.onEvent?.({
+            type: 'tool.started',
+            threadId: thread.id,
+            turnId: turn.id,
+            itemId,
+            name,
+            input,
+          });
+        },
+        publishToolCompleted: (itemId, result) => {
+          this.options.onEvent?.({
+            type: 'tool.completed',
+            threadId: thread.id,
+            turnId: turn.id,
+            itemId,
+            result,
+          });
+        },
+        publishUsage: (usage) => {
+          this.options.onEvent?.({
+            type: 'usage.updated',
+            threadId: thread.id,
+            turnId: turn.id,
+            usage,
+          });
+        },
+        requestApproval: (toolName, reason) =>
+          this.requestApproval(thread.id, turn.id, toolName, reason),
+        requestUserInput: (request) => this.requestUserInput(thread.id, turn.id, request),
       });
       if (controller.signal.aborted) {
         await this.finishOnce(turn.id, () => this.lifecycle.interruptTurn(thread.id, turn.id));
@@ -195,8 +261,114 @@ export class AppServer {
         await this.finishOnce(turn.id, () => this.lifecycle.failTurn(thread.id, turn.id));
       }
     } finally {
+      this.cancelInteractions(turn.id);
       this.activeTurns.delete(turn.id);
     }
+  }
+
+  private requestApproval(
+    threadId: string,
+    turnId: string,
+    toolName: string,
+    reason: string,
+  ): Promise<'allow' | 'deny' | 'always'> {
+    const requestId = this.nextInteractionId();
+    const response = new Promise<'allow' | 'deny' | 'always'>((resolve) => {
+      this.pendingInteractions.set(requestId, {
+        kind: 'approval',
+        threadId,
+        turnId,
+        resolve,
+      });
+    });
+    this.options.onEvent?.({
+      type: 'approval.requested',
+      threadId,
+      turnId,
+      requestId,
+      toolName,
+      reason,
+    });
+    return response;
+  }
+
+  private requestUserInput(
+    threadId: string,
+    turnId: string,
+    request: {
+      question: string;
+      options: Array<{ label: string; description: string }>;
+      multiSelect?: boolean;
+    },
+  ): Promise<string> {
+    const requestId = this.nextInteractionId();
+    const response = new Promise<string>((resolve) => {
+      this.pendingInteractions.set(requestId, {
+        kind: 'user-input',
+        threadId,
+        turnId,
+        resolve,
+      });
+    });
+    this.options.onEvent?.({
+      type: 'user-input.requested',
+      threadId,
+      turnId,
+      requestId,
+      ...request,
+    });
+    return response;
+  }
+
+  private respondToApproval(params: Record<string, unknown>): { accepted: true } {
+    const interaction = this.requireInteraction(params, 'approval');
+    const decision = requiredString(params, 'decision');
+    if (decision !== 'allow' && decision !== 'deny' && decision !== 'always') {
+      throw new RequestValidationError('decision is invalid');
+    }
+    this.pendingInteractions.delete(requiredId(params, 'requestId'));
+    interaction.resolve(decision);
+    return { accepted: true };
+  }
+
+  private respondToUserInput(params: Record<string, unknown>): { accepted: true } {
+    const interaction = this.requireInteraction(params, 'user-input');
+    const answer = requiredString(params, 'answer');
+    this.pendingInteractions.delete(requiredId(params, 'requestId'));
+    interaction.resolve(answer);
+    return { accepted: true };
+  }
+
+  private requireInteraction<K extends PendingInteraction['kind']>(
+    params: Record<string, unknown>,
+    kind: K,
+  ): Extract<PendingInteraction, { kind: K }> {
+    const requestId = requiredId(params, 'requestId');
+    const threadId = requiredId(params, 'threadId');
+    const turnId = requiredId(params, 'turnId');
+    const interaction = this.pendingInteractions.get(requestId);
+    if (!interaction || interaction.kind !== kind) {
+      throw new RequestValidationError(`Pending ${kind} request not found: ${requestId}`);
+    }
+    if (interaction.threadId !== threadId || interaction.turnId !== turnId) {
+      throw new RequestValidationError(
+        `Request ${requestId} does not belong to ${threadId}/${turnId}`,
+      );
+    }
+    return interaction as Extract<PendingInteraction, { kind: K }>;
+  }
+
+  private cancelInteractions(turnId: string): void {
+    for (const [requestId, interaction] of this.pendingInteractions) {
+      if (interaction.turnId !== turnId) continue;
+      this.pendingInteractions.delete(requestId);
+      if (interaction.kind === 'approval') interaction.resolve('deny');
+      else interaction.resolve('');
+    }
+  }
+
+  private nextInteractionId(): string {
+    return `request-${Date.now().toString(36)}-${++this.interactionSequence}`;
   }
 
   private finishOnce(

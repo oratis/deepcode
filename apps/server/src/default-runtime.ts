@@ -7,7 +7,7 @@ import { RuntimeHostExecutor } from './runtime-executor.js';
 
 export function createDefaultTurnExecutor(): RuntimeHostExecutor {
   return new RuntimeHostExecutor({
-    createHost: async (cwd) => {
+    createHost: async (cwd, mode) => {
       const credentials = await resolveCredentials({ store: new CredentialsStore() });
       if (!credentials.apiKey && !credentials.authToken) {
         throw new Error(
@@ -22,7 +22,7 @@ export function createDefaultTurnExecutor(): RuntimeHostExecutor {
         }),
         tools: new ToolRegistry(BUILTIN_TOOLS),
         cwd,
-        mode: 'default',
+        mode,
         permissions: { allow: [...SAFE_READONLY_TOOLS] },
       });
     },

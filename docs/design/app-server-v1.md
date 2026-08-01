@@ -33,14 +33,16 @@ by expecting partial deltas to replay.
 
 ## Methods
 
-| Method           | Required parameters        | Result                                  |
-| ---------------- | -------------------------- | --------------------------------------- |
-| `initialize`     | none                       | version and capabilities                |
-| `thread/start`   | `cwd`                      | new thread snapshot                     |
-| `thread/read`    | `threadId`                 | thread snapshot or null                 |
-| `thread/resume`  | `threadId`                 | resumable snapshot                      |
-| `turn/start`     | `threadId`, object `input` | in-progress turn snapshot               |
-| `turn/interrupt` | `threadId`, `turnId`       | whether interruption won the state race |
+| Method               | Required parameters             | Result                                            |
+| -------------------- | ------------------------------- | ------------------------------------------------- |
+| `initialize`         | none                            | version and capabilities                          |
+| `thread/start`       | `cwd`                           | new thread snapshot                               |
+| `thread/read`        | `threadId`                      | thread snapshot or null                           |
+| `thread/resume`      | `threadId`                      | resumable snapshot                                |
+| `turn/start`         | `threadId`, object `input`      | in-progress turn snapshot                         |
+| `turn/interrupt`     | `threadId`, `turnId`            | whether interruption won the state race           |
+| `approval/respond`   | thread, turn, request, decision | whether the pending request accepted the response |
+| `user-input/respond` | thread, turn, request, answer   | whether the pending request accepted the response |
 
 `turn/start` returns before model work finishes. The server emits transient deltas while the turn
 runs, then persists new provider-history messages as completed items before emitting exactly one
@@ -58,9 +60,11 @@ same-directory temporary file and atomic rename. The app-server CLI stores these
 remain readable compatibility data until the client migration joins their indexes.
 
 `RuntimeHostExecutor` reconstructs exact stored provider messages from completed protocol items.
-The default server runtime resolves credentials only in the trusted backend, uses the central
-`RuntimeHost`, and denies interactive approvals because version 1 has not yet added an approval
-request/response method. Consequently write or shell actions requiring approval fail closed.
+The default server runtime resolves credentials only in the trusted backend and uses the central
+`RuntimeHost`. Tool starts/results and usage are structured transient events. Approval and
+AskUserQuestion prompts are emitted with opaque request ids; responses must match the active
+thread, turn, request id, and request kind. Interrupt and shutdown resolve pending prompts before
+waiting for the executor, so an abandoned UI cannot strand the server.
 
 ## Entrypoints
 
@@ -76,8 +80,7 @@ headless output contracts remain unchanged during this experimental phase.
 
 ## Deferred from this slice
 
-- approval and ask-user server requests;
-- config provenance and per-turn model/effort options;
+- config provenance;
 - thread listing, archive, fork, and search;
 - multi-client subscriptions or active-turn attachment;
 - joining the new thread snapshot index with legacy/canonical session listings;

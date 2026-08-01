@@ -10,6 +10,16 @@ import { describe, expect, it } from 'vitest';
 
 import { RuntimeHostExecutor, historyFromThread } from './runtime-executor.js';
 
+function protocolCallbacks() {
+  return {
+    publishToolStarted: () => undefined,
+    publishToolCompleted: () => undefined,
+    publishUsage: () => undefined,
+    requestApproval: async () => 'deny' as const,
+    requestUserInput: async () => '',
+  };
+}
+
 const priorAssistant = {
   role: 'assistant' as const,
   content: [{ type: 'text' as const, text: 'prior answer' }],
@@ -61,6 +71,28 @@ class StreamingProvider implements Provider {
   }
 }
 
+class ToolProvider implements Provider {
+  readonly name = 'tool-test';
+  calls = 0;
+
+  async runTurn(options: ProviderRunOpts): Promise<ProviderResult> {
+    this.calls++;
+    if (this.calls === 1) {
+      return {
+        content: [{ type: 'tool_use', id: 'tool-1', name: 'WriteTest', input: { value: 'ok' } }],
+        stopReason: 'tool_use',
+        usage: { inputTokens: 3, outputTokens: 4, reasoningTokens: 1, cacheReadTokens: 2 },
+      };
+    }
+    options.handlers?.onTextDelta?.('done');
+    return {
+      content: [{ type: 'text', text: 'done' }],
+      stopReason: 'end_turn',
+      usage: { inputTokens: 5, outputTokens: 6, reasoningTokens: 0, cacheReadTokens: 0 },
+    };
+  }
+}
+
 describe('RuntimeHostExecutor', () => {
   it('reconstructs history and returns only messages created by the new turn', async () => {
     const provider = new StreamingProvider();
@@ -85,6 +117,7 @@ describe('RuntimeHostExecutor', () => {
       input: { text: 'current question' },
       signal: new AbortController().signal,
       publishDelta: (_itemId, delta) => deltas.push(delta),
+      ...protocolCallbacks(),
     });
 
     expect(provider.seenMessages).toEqual([
@@ -132,5 +165,56 @@ describe('RuntimeHostExecutor', () => {
     };
 
     expect(historyFromThread(withError)).toHaveLength(2);
+  });
+
+  it('projects tool, usage, and approval activity onto protocol callbacks', async () => {
+    const provider = new ToolProvider();
+    const tools = new ToolRegistry();
+    tools.register({
+      name: 'WriteTest',
+      definition: { name: 'WriteTest', description: 'test', inputSchema: { type: 'object' } },
+      execute: async () => ({ content: 'wrote test value' }),
+    });
+    const host = new RuntimeHost({ provider, tools, cwd: '/workspace', mode: 'default' });
+    const executor = new RuntimeHostExecutor({ createHost: () => host });
+    const turn: TurnSnapshot = {
+      id: 'turn-tool',
+      threadId: thread.id,
+      status: 'in_progress',
+      startedAt: '2026-08-01T00:00:02.000Z',
+      items: [],
+    };
+    const started: string[] = [];
+    const completed: string[] = [];
+    const usage: number[] = [];
+    const approvals: string[] = [];
+
+    const result = await executor.execute({
+      thread,
+      turn,
+      input: { text: 'write it', effort: 'low' },
+      signal: new AbortController().signal,
+      publishDelta: () => undefined,
+      publishToolStarted: (itemId) => started.push(itemId),
+      publishToolCompleted: (itemId) => completed.push(itemId),
+      publishUsage: (value) => usage.push(value.inputTokens),
+      requestApproval: async (toolName) => {
+        approvals.push(toolName);
+        return 'allow';
+      },
+      requestUserInput: async () => '',
+    });
+
+    expect(started).toEqual(['tool-1']);
+    expect(completed).toEqual(['tool-1']);
+    expect(usage).toEqual([3, 5]);
+    expect(approvals).toEqual(['WriteTest']);
+    expect(result.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'approval' }),
+        expect.objectContaining({ type: 'assistant_message' }),
+        expect.objectContaining({ type: 'tool_result' }),
+      ]),
+    );
   });
 });

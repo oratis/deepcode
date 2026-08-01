@@ -56,8 +56,11 @@ describe('AppServer', () => {
   it('persists completed items and terminal state while publishing deltas transiently', async () => {
     const events: ProtocolEvent[] = [];
     const executor: TurnExecutor = {
-      execute: async ({ publishDelta }) => {
+      execute: async ({ publishDelta, publishToolStarted, publishToolCompleted, publishUsage }) => {
         publishDelta('assistant-stream', 'hel');
+        publishToolStarted('tool-1', 'Read', { file_path: 'README.md' });
+        publishToolCompleted('tool-1', { content: 'contents' });
+        publishUsage({ inputTokens: 1, outputTokens: 2 });
         return {
           items: [{ type: 'assistant_message', payload: { text: 'hello' } }],
         };
@@ -94,6 +97,9 @@ describe('AppServer', () => {
       }),
     });
     expect(events.map((event) => event.type)).toContain('item.delta');
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['tool.started', 'tool.completed', 'usage.updated']),
+    );
     expect((read.result as { turns: Array<{ items: unknown[] }> }).turns[0]?.items).toHaveLength(2);
   });
 
@@ -134,6 +140,102 @@ describe('AppServer', () => {
     await server.waitForIdle();
     expect(events.filter((event) => event.type === 'turn.interrupted')).toHaveLength(1);
     expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(0);
+  });
+
+  it('round-trips approval and user-input requests through the active turn', async () => {
+    const events: ProtocolEvent[] = [];
+    const responses: string[] = [];
+    const executor: TurnExecutor = {
+      execute: async ({ requestApproval, requestUserInput }) => {
+        responses.push(await requestApproval('Bash', 'Run tests?'));
+        responses.push(
+          await requestUserInput({
+            question: 'Choose scope',
+            options: [{ label: 'All', description: 'Run every test' }],
+          }),
+        );
+        return {};
+      },
+    };
+    const server = new AppServer({ executor, onEvent: (event) => events.push(event) });
+    const thread = await server.handle(request(1, 'thread/start', { cwd: '/workspace' }));
+    const threadId = (thread.result as { id: string }).id;
+    const started = await server.handle(
+      request(2, 'turn/start', { threadId, input: { text: 'test' } }),
+    );
+    const turnId = (started.result as { id: string }).id;
+    const approval = events.find((event) => event.type === 'approval.requested');
+    expect(approval).toEqual(
+      expect.objectContaining({ type: 'approval.requested', threadId, turnId, toolName: 'Bash' }),
+    );
+
+    await expect(
+      server.handle(
+        request(3, 'approval/respond', {
+          threadId,
+          turnId,
+          requestId: approval?.type === 'approval.requested' ? approval.requestId : '',
+          decision: 'allow',
+        }),
+      ),
+    ).resolves.toEqual({ id: 3, result: { accepted: true } });
+    await Promise.resolve();
+
+    const question = events.find((event) => event.type === 'user-input.requested');
+    expect(question).toEqual(
+      expect.objectContaining({ type: 'user-input.requested', threadId, turnId }),
+    );
+    await server.handle(
+      request(4, 'user-input/respond', {
+        threadId,
+        turnId,
+        requestId: question?.type === 'user-input.requested' ? question.requestId : '',
+        answer: 'All',
+      }),
+    );
+    await server.waitForIdle();
+
+    expect(responses).toEqual(['allow', 'All']);
+    expect(events.filter((event) => event.type === 'turn.completed')).toHaveLength(1);
+    await expect(
+      server.handle(
+        request(5, 'approval/respond', {
+          threadId,
+          turnId,
+          requestId: approval?.type === 'approval.requested' ? approval.requestId : '',
+          decision: 'allow',
+        }),
+      ),
+    ).resolves.toEqual({
+      id: 5,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+  });
+
+  it('releases a pending interaction when its turn is interrupted', async () => {
+    let decision: string | undefined;
+    const executor: TurnExecutor = {
+      execute: async ({ requestApproval }) => {
+        decision = await requestApproval('Bash', 'Run forever?');
+        return {};
+      },
+    };
+    const server = new AppServer({ executor });
+    const thread = await server.handle(request(1, 'thread/start', { cwd: '/workspace' }));
+    const threadId = (thread.result as { id: string }).id;
+    const started = await server.handle(
+      request(2, 'turn/start', { threadId, input: { text: 'wait' } }),
+    );
+    const turnId = (started.result as { id: string }).id;
+
+    await server.handle(request(3, 'turn/interrupt', { threadId, turnId }));
+    await server.waitForIdle();
+
+    expect(decision).toBe('deny');
+    const read = await server.handle(request(4, 'thread/read', { threadId }));
+    expect(read.result).toEqual(
+      expect.objectContaining({ turns: [expect.objectContaining({ status: 'interrupted' })] }),
+    );
   });
 
   it('marks an orphaned active turn interrupted when a new process resumes it', async () => {
