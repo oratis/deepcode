@@ -441,6 +441,7 @@ function formatEventText(out: Writable, e: AgentEvent): void {
       return;
     case 'usage':
     case 'thinking_delta':
+    case 'model_step_complete':
     case 'turn_complete':
       return;
   }

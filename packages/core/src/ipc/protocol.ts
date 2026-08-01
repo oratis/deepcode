@@ -4,7 +4,7 @@
 // Goals:
 //   1. Type-safe channel names + payload shapes (no string-typed `ipc.invoke`).
 //   2. Stream agent events (text_delta / tool_use / tool_result / usage /
-//      turn_complete / error) one-way from main → renderer.
+//      model_step_complete / turn_complete / error) one-way from main → renderer.
 //   3. Same shape works for the future web SDK if we host the agent loop
 //      out-of-process (just swap the transport).
 //

@@ -450,15 +450,16 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   };
 
+  const finish = async (stopReason: RunAgentResult['stopReason']): Promise<RunAgentResult> => {
+    await fireStop(stopReason);
+    const message = [...history].reverse().find((candidate) => candidate.role === 'assistant');
+    opts.onEvent?.({ type: 'turn_complete', stopReason, message });
+    return { history, turnsUsed, usage: totalUsage, stopReason, modeSignal };
+  };
+
   for (let turn = 0; turn < maxTurns; turn++) {
     if (opts.signal?.aborted) {
-      return {
-        history,
-        turnsUsed,
-        usage: totalUsage,
-        stopReason: 'aborted',
-        modeSignal,
-      };
+      return finish('aborted');
     }
 
     turnsUsed++;
@@ -481,11 +482,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       });
     } catch (err) {
       if (opts.signal?.aborted || (err as { name?: string }).name === 'AbortError') {
-        return { history, turnsUsed, usage: totalUsage, stopReason: 'aborted', modeSignal };
+        return finish('aborted');
       }
       const message = (err as Error).message ?? 'unknown';
       opts.onEvent?.({ type: 'error', error: message });
-      return { history, turnsUsed, usage: totalUsage, stopReason: 'error', modeSignal };
+      return finish('error');
     }
 
     totalUsage.inputTokens += result.usage.inputTokens;
@@ -508,7 +509,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     history.push(assistantMsg);
     if (opts.session) await opts.session.manager.append(opts.session.id, assistantMsg);
 
-    opts.onEvent?.({ type: 'turn_complete', message: assistantMsg });
+    opts.onEvent?.({ type: 'model_step_complete', step: turnsUsed, message: assistantMsg });
 
     // Emit any tool_use events
     for (const block of result.content) {
@@ -524,8 +525,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // If no tool calls, we're done
     if (result.stopReason !== 'tool_use') {
-      await fireStop('end_turn');
-      return { history, turnsUsed, usage: totalUsage, stopReason: 'end_turn', modeSignal };
+      return finish('end_turn');
     }
 
     // Execute tool calls and append a single user-role message with tool_result
@@ -576,7 +576,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           opts.signal,
         );
         if (opts.signal?.aborted) {
-          return { history, turnsUsed, usage: totalUsage, stopReason: 'aborted', modeSignal };
+          return finish('aborted');
         }
         // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
         allowed = decision === true || decision === 'always';
@@ -758,8 +758,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   }
 
-  await fireStop('max_turns');
-  return { history, turnsUsed, usage: totalUsage, stopReason: 'max_turns', modeSignal };
+  return finish('max_turns');
 }
 
 export const AGENT_MODULE_VERSION = '0.1.0';

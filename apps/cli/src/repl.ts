@@ -762,6 +762,7 @@ function formatEvent(out: Writable, e: AgentEvent): void {
       else out.write(`    ✓ ${truncate(e.result.content, 200)}\n`);
       return;
     case 'usage':
+    case 'model_step_complete':
       return;
     case 'error':
       out.write(`\n  ✕ ${e.error}\n`);
