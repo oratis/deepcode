@@ -350,6 +350,8 @@ model tool call
 - 已删除无生产引用的 core renderer IPC、desktop native mutation/tool facade 与 `chat` 路由别名；
   Tauri 仅保留 credential presence、文件/快照只读投影和 sidecar supervision。legacy session importer
   继续只读，旧文件不迁移、不覆盖；用户文档已改为 app-server 架构。
+- Tauri capability 已收紧为 open dialog、默认 URL、updater 与 restart 的精确 allow 集；未使用的 FS
+  plugin、generic process exit、file reveal 和 renderer → provider CSP 路径已移除，release gate 防止回归。
 - `pnpm release:check` 已对真实 VS Code/app-server/VSIX 产物执行包体预算、v1 capability、
   create/read、配置诊断、workspace diff、重启 read/resume 与薄客户端边界扫描；Ubuntu/macOS CI
   与 tag validate 共用该门禁，tag 还必须通过 desktop Playwright journey。迁移、隔离 home 回滚演练、

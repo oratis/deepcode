@@ -40,6 +40,7 @@ let temporaryHome;
 try {
   report.bundles = await verifyBundleBudgets();
   report.architectureScan = await verifyThinClients();
+  report.desktopCapabilities = await verifyDesktopCapabilities();
   temporaryHome = await mkdtemp(join(tmpdir(), 'deepcode-release-gate-'));
 
   const first = await runJourney(temporaryHome, async (server) => {
@@ -170,6 +171,38 @@ async function verifyThinClients() {
   }
   assert(violations.length === 0, `thin-client boundary violations:\n${violations.join('\n')}`);
   return { filesChecked, violations };
+}
+
+async function verifyDesktopCapabilities() {
+  const capabilityPath = join(root, 'apps/desktop/src-tauri/capabilities/default.json');
+  const configPath = join(root, 'apps/desktop/src-tauri/tauri.conf.json');
+  const capabilities = JSON.parse(await readFile(capabilityPath, 'utf8')).permissions ?? [];
+  const config = JSON.parse(await readFile(configPath, 'utf8'));
+  const allowedPluginPermissions = new Set([
+    'dialog:allow-open',
+    'opener:allow-default-urls',
+    'updater:default',
+    'process:allow-restart',
+  ]);
+  for (const permission of capabilities) {
+    if (/^(?:dialog|fs|opener|process|shell|updater):/.test(permission)) {
+      assert(
+        allowedPluginPermissions.has(permission),
+        `desktop capability is too broad: ${permission}`,
+      );
+    }
+  }
+  for (const permission of [
+    'dialog:allow-open',
+    'opener:allow-default-urls',
+    'process:allow-restart',
+  ]) {
+    assert(capabilities.includes(permission), `desktop capability is missing: ${permission}`);
+  }
+  const csp = config.app?.security?.csp;
+  assert(typeof csp === 'string', 'desktop CSP is missing');
+  assert(!csp.includes('api.deepseek.com'), 'desktop renderer CSP permits provider API access');
+  return { permissions: capabilities, providerNetworkAccess: false };
 }
 
 function verifyCapabilities(result) {
