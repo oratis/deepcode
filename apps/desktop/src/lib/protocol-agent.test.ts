@@ -5,6 +5,7 @@ import type {
   ProtocolMethod,
   ThreadSnapshot,
   TurnSnapshot,
+  WorkspaceDiffResult,
 } from '@deepcode/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -26,6 +27,7 @@ class FakeTransport implements ProtocolTransport {
         interactiveRequests: true,
         configDiagnostics: true,
         diagnosticExport: true,
+        workspaceDiff: true,
       },
     };
   }
@@ -44,6 +46,7 @@ class FakeTransport implements ProtocolTransport {
     if (method === 'turn/start') return turn as T;
     if (method === 'turn/interrupt') return { interrupted: true } as T;
     if (method === 'config/diagnostics') return diagnostics as T;
+    if (method === 'workspace/diff') return workspaceDiff as T;
     return { accepted: true } as T;
   }
 }
@@ -55,6 +58,13 @@ const diagnostics: ConfigDiagnosticsResult = {
   provenance: {},
   gated: ['permissions'],
   issues: [],
+};
+
+const workspaceDiff: WorkspaceDiffResult = {
+  repository: true,
+  base: 'HEAD',
+  files: [],
+  truncated: false,
 };
 
 const thread: ThreadSnapshot = {
@@ -74,6 +84,18 @@ const turn: TurnSnapshot = {
 };
 
 describe('DesktopProtocolAgent', () => {
+  it('reads workspace diff only through an adopted canonical thread', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    await expect(agent.diff()).rejects.toThrow('No active workspace thread');
+    await agent.resume(thread.id);
+    await expect(agent.diff()).resolves.toEqual(workspaceDiff);
+    expect(transport.requests.at(-1)).toEqual({
+      method: 'workspace/diff',
+      params: { threadId: thread.id },
+    });
+  });
+
   it('reads value-free diagnostics from the shared app-server', async () => {
     const transport = new FakeTransport();
     const agent = new DesktopProtocolAgent(transport, () => undefined);

@@ -11,6 +11,7 @@ import {
   type ProtocolMethod,
   type ThreadSnapshot,
   type TurnSnapshot,
+  type WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 export interface LspMessage {
@@ -66,6 +67,7 @@ const COMMANDS = [
   'deepcode.respondUserInput',
   'deepcode.listSkills',
   'deepcode.configDiagnostics',
+  'deepcode.workspaceDiff',
 ];
 
 export async function handleMessage(msg: LspMessage, send: SendFn): Promise<void> {
@@ -170,6 +172,8 @@ async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn):
       return handleListSkills();
     case 'deepcode.configDiagnostics':
       return handleConfigDiagnostics();
+    case 'deepcode.workspaceDiff':
+      return handleWorkspaceDiff();
     default:
       throw new Error(`Unknown command: ${params.command}`);
   }
@@ -399,6 +403,16 @@ async function handleConfigDiagnostics(): Promise<ConfigDiagnosticsResult> {
     throw new Error('The app-server does not support configuration diagnostics');
   }
   return client.request('config/diagnostics', { cwd: workspacePath() });
+}
+
+async function handleWorkspaceDiff(): Promise<WorkspaceDiffResult> {
+  const client = await getClient();
+  const initialized = await client.connect();
+  if (!initialized.capabilities.workspaceDiff) {
+    throw new Error('The app-server does not support workspace diff');
+  }
+  const thread = await ensureThread(client);
+  return client.request('workspace/diff', { threadId: thread.id });
 }
 
 export const __test = {

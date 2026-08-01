@@ -58,7 +58,7 @@ trusted `settings.json` model and effort remain authoritative.
 
 ## Roadmap
 
-- Real diff fetch via `vscode.git` API for `deepcode.review`
+- Inline review comments and per-finding apply/revert controls
 - File panel showing live edits as the agent works
 - Inline webview approval cards (host-native warning actions work today)
 - Custom commands via skills (mirror CLI's `/skills` dir)

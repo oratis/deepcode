@@ -11,6 +11,7 @@ import {
   type ThreadSnapshot,
   type ThreadStore,
   type TurnSnapshot,
+  type WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 export interface TurnExecutionItem {
@@ -59,6 +60,7 @@ export interface AppServerOptions {
   onTrace?: (record: AppServerTraceRecord) => void;
   configDiagnostics?: (cwd: string) => Promise<ConfigDiagnosticsResult>;
   diagnosticExport?: (cwd: string) => Promise<DiagnosticExportResult>;
+  workspaceDiff?: (cwd: string) => Promise<WorkspaceDiffResult>;
 }
 
 /** Strictly metadata-only records; no prompt, tool payload, command, or error message. */
@@ -117,6 +119,7 @@ export class AppServer {
       onEvent: options.onEvent,
       configDiagnostics: options.configDiagnostics !== undefined,
       diagnosticExport: options.diagnosticExport !== undefined,
+      workspaceDiff: options.workspaceDiff !== undefined,
     });
   }
 
@@ -196,6 +199,13 @@ export class AppServer {
           throw new RequestValidationError('Diagnostic export is not available');
         }
         return this.options.diagnosticExport(requiredString(request.params, 'cwd'));
+      case 'workspace/diff': {
+        if (!this.options.workspaceDiff) {
+          throw new RequestValidationError('Workspace diff is not available');
+        }
+        const thread = await this.lifecycle.resumeThread(requiredId(request.params, 'threadId'));
+        return this.options.workspaceDiff(thread.cwd);
+      }
       case 'thread/start':
         return this.lifecycle.startThread(requiredString(request.params, 'cwd'), traceId);
       case 'thread/read':

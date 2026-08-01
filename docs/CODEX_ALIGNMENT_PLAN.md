@@ -330,8 +330,11 @@ model tool call
   关联 ID、事件、状态码与耗时，不序列化协议 payload。`diagnostics/export` 与 CLI 共用脱敏器，
   路径哈希化、配置值/issue message 省略，导出前再次白名单清洗；删除 `logs/`/`diagnostics/`
   即可回滚，不影响 canonical thread。
+- `workspace/diff` 已把 Git 工作区变化收敛成 app-server 拥有的有界 file/hunk/line DTO，并以
+  canonical `threadId` 绑定 cwd；Git 不经 shell，未跟踪 symlink/binary 不读取内容。VS Code
+  review、Desktop protocol agent 与 LSP command 共享该能力，不再各自解析 diff。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
-- diff review、可定位反馈。
+- 逐行可定位反馈、单项 apply/revert 与 review all。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。
 - release candidate、迁移演练、性能预算和回滚说明。
 

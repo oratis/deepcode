@@ -6,6 +6,7 @@ import type {
   ProtocolRequest,
   ThreadSnapshot,
   TurnSnapshot,
+  WorkspaceDiffResult,
 } from '@deepcode/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -22,6 +23,7 @@ const capabilities: InitializeResult = {
     interactiveRequests: true,
     configDiagnostics: true,
     diagnosticExport: true,
+    workspaceDiff: true,
   },
 };
 
@@ -32,6 +34,13 @@ const diagnostics: ConfigDiagnosticsResult = {
   provenance: {},
   gated: ['permissions'],
   issues: [],
+};
+
+const workspaceDiff: WorkspaceDiffResult = {
+  repository: true,
+  base: 'HEAD',
+  files: [],
+  truncated: false,
 };
 
 class FakeClient {
@@ -107,6 +116,8 @@ class FakeClient {
         return { accepted: true } as T;
       case 'config/diagnostics':
         return diagnostics as T;
+      case 'workspace/diff':
+        return workspaceDiff as T;
       default:
         throw new Error(`Unexpected method: ${method}`);
     }
@@ -146,6 +157,7 @@ describe('handleMessage — initialize', () => {
         'deepcode.respondApproval',
         'deepcode.respondUserInput',
         'deepcode.configDiagnostics',
+        'deepcode.workspaceDiff',
       ]),
     );
   });
@@ -168,6 +180,18 @@ describe('handleMessage — protocol commands', () => {
       method: 'config/diagnostics',
       params: { cwd: '/tmp/x' },
     });
+  });
+
+  it('returns the canonical workspace diff through the current thread', async () => {
+    const client = new FakeClient();
+    __test.setClientFactory(() => client);
+    const out: LspMessage[] = [];
+    await execute(20, 'deepcode.workspaceDiff', {}, (message) => out.push(message));
+    expect(out.find((message) => message.id === 20)?.result).toEqual(workspaceDiff);
+    expect(client.requests.map((request) => request.method)).toEqual([
+      'thread/start',
+      'workspace/diff',
+    ]);
   });
 
   it('starts a canonical thread and emits native protocol events in order', async () => {

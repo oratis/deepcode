@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import type { ProtocolEvent, ProtocolRequest } from '@deepcode/protocol';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppServer, type TurnExecutor } from './server.js';
 import { FileThreadStore } from './store.js';
@@ -33,6 +33,26 @@ function deterministicOptions() {
 }
 
 describe('AppServer', () => {
+  it('binds workspace diff reads to the canonical thread cwd', async () => {
+    const workspaceDiff = vi.fn(async () => ({
+      repository: true as const,
+      base: 'HEAD' as const,
+      files: [],
+      truncated: false,
+    }));
+    const server = new AppServer({
+      executor: { execute: async () => ({}) },
+      workspaceDiff,
+    });
+    const thread = await server.handle(request(1, 'thread/start', { cwd: '/workspace' }));
+    const threadId = (thread.result as { id: string }).id;
+    await expect(server.handle(request(2, 'workspace/diff', { threadId }))).resolves.toEqual({
+      id: 2,
+      result: expect.objectContaining({ repository: true }),
+    });
+    expect(workspaceDiff).toHaveBeenCalledWith('/workspace');
+  });
+
   it('does not let a tracing sink change protocol behavior', async () => {
     const server = new AppServer({
       executor: { execute: async () => ({}) },

@@ -5,6 +5,7 @@ import type {
   ProtocolMethod,
   ThreadSnapshot,
   TurnSnapshot,
+  WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 import { setActiveSessionId } from './mac-session.js';
@@ -90,6 +91,15 @@ export class DesktopProtocolAgent {
       throw new Error('The app-server does not support configuration diagnostics');
     }
     return this.transport.request('config/diagnostics', { cwd });
+  }
+
+  async diff(): Promise<WorkspaceDiffResult> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.workspaceDiff) {
+      throw new Error('The app-server does not support workspace diff');
+    }
+    if (!this.threadId) throw new Error('No active workspace thread');
+    return this.transport.request('workspace/diff', { threadId: this.threadId });
   }
 
   clear(): void {
@@ -304,6 +314,10 @@ export function clearProtocolThread(): void {
 
 export function getConfigDiagnostics(cwd: string) {
   return defaultAgent.diagnostics(cwd);
+}
+
+export function getWorkspaceDiff() {
+  return defaultAgent.diff();
 }
 
 export function abortProtocolTurn(turnId: string) {

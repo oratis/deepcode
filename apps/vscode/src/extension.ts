@@ -7,6 +7,7 @@ import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 import { EditorProtocolRuntime } from './protocol-runtime.js';
 import { formatConfigDiagnostics } from './diagnostics.js';
 import { explicitConfigValue } from './settings.js';
+import { formatWorkspaceDiffForReview } from './workspace-diff.js';
 
 type V = typeof import('vscode');
 
@@ -51,12 +52,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         void window.showInformationMessage('DeepCode: open a folder first.');
         return;
       }
-      await runInOutput(
-        'Review the current uncommitted diff. Cite file:line for each finding. ' +
-          'Categorize as BUG / LATENT / SUGGESTION.',
-        vscodeMod,
-        runtime,
-      );
+      try {
+        const diff = await runtime.diff();
+        if (!diff.repository || diff.files.length === 0) {
+          void window.showInformationMessage('DeepCode: no uncommitted changes to review.');
+          return;
+        }
+        await runInOutput(
+          'Review the canonical workspace diff below. Cite file:line for each finding. ' +
+            'Categorize as BUG / LATENT / SUGGESTION.\n\n' +
+            formatWorkspaceDiffForReview(diff),
+          vscodeMod,
+          runtime,
+        );
+      } catch (error) {
+        void window.showErrorMessage(
+          `DeepCode review failed: ${(error as Error).message ?? String(error)}`,
+        );
+      }
     }),
     commands.registerCommand('deepcode.showDiagnostics', async () => {
       const out = window.createOutputChannel('DeepCode Diagnostics');
