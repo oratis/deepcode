@@ -71,6 +71,10 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Package VS Code extension
+        if: runner.os == 'Linux'
+        run: pnpm --filter deepcode package --out "${RUNNER_TEMP}/deepcode.vsix"
+
   link-check:
     name: Docs link check
     runs-on: ubuntu-latest

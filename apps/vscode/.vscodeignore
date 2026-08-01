@@ -1,0 +1,9 @@
+src/**
+scripts/**
+node_modules/**
+dist/*.map
+dist/.tsbuildinfo
+**/*.test.*
+tsconfig.json
+vitest.config.ts
+*.tsbuildinfo

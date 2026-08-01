@@ -1,37 +1,40 @@
-# @deepcode/vscode — DeepCode VS Code extension (v1.1)
+# DeepCode VS Code extension
 
-DeepSeek-powered coding agent inside VS Code. Same agent loop as the CLI
-and Mac client — Claude-Code parity.
+DeepSeek-powered coding agent inside VS Code, backed by the same provider-neutral app-server
+protocol and canonical threads as the desktop client.
 
-## Current state — v1.1 skeleton
+## Current state
 
-- `package.json` — extension manifest with 3 commands, configuration,
-  activity bar + chat view, default keybinding (`Cmd/Ctrl+Shift+D`).
-- `src/extension.ts` — activate / deactivate + Chat webview + 3 command
-  stubs. Uses lazy `require('vscode')` so the package type-checks without
-  `@types/vscode` installed.
+- Three commands, an activity-bar chat view, model/effort settings, and a default
+  `Cmd/Ctrl+Shift+D` keybinding.
+- Canonical thread reuse, structured text/tool events, real interrupt plumbing, approval via
+  warning actions, and AskUserQuestion via QuickPick/InputBox.
+- A real extension bundle plus a dedicated app-server child bundle; the extension host never reads
+  credentials or constructs a provider/runtime.
 
 ## Activate the extension toolchain
 
 ```bash
-pnpm add -D --filter @deepcode/vscode @vscode/vsce @types/vscode
+pnpm add -D --filter deepcode @vscode/vsce
 ```
 
 Then:
 
-| Command                                   | Result                                            |
-| ----------------------------------------- | ------------------------------------------------- |
-| `pnpm --filter @deepcode/vscode build`    | Compile `src/extension.ts` → `dist/extension.cjs` |
-| `pnpm --filter @deepcode/vscode package`  | Produce a `.vsix` file (vsce)                     |
-| Press F5 in VS Code with this folder open | Launch Extension Development Host                 |
+| Command                                   | Result                                           |
+| ----------------------------------------- | ------------------------------------------------ |
+| `pnpm --filter deepcode build`            | Bundle extension + app-server child into `dist/` |
+| `pnpm --filter deepcode package`          | Produce a `.vsix` file (vsce)                    |
+| Press F5 in VS Code with this folder open | Launch Extension Development Host                |
 
 ## Architecture
 
 - The extension runs in the VS Code **extension host** (Node process).
-- Talks directly to `@deepcode/core` — no IPC layer needed (the extension
-  host IS a Node runtime).
-- Long-running agent loops dispatch to a child process to avoid blocking
-  the host (TODO in v1.1-rest).
+- A single owned app-server child contains credentials, provider, RuntimeHost, tools, permissions,
+  and canonical session storage.
+- The extension uses the shared `ProtocolClient`; model deltas, tool lifecycle, usage, approval,
+  questions, and terminal state use the same ids/schema as desktop and LSP.
+- Closing the extension closes child stdin, allowing active turns to interrupt and persist before
+  the process exits.
 
 ## Commands
 
@@ -43,17 +46,17 @@ Then:
 
 ## Settings
 
-| Key               | Type   | Default           | Notes                                        |
-| ----------------- | ------ | ----------------- | -------------------------------------------- |
-| `deepcode.apiKey` | string | `""`              | Falls back to `~/.deepcode/credentials.json` |
-| `deepcode.model`  | enum   | `"deepseek-chat"` | Standard alias + concrete model names        |
-| `deepcode.effort` | enum   | `"medium"`        | low / medium / high / xhigh / max            |
+| Key               | Type | Default           | Notes                                 |
+| ----------------- | ---- | ----------------- | ------------------------------------- |
+| `deepcode.model`  | enum | `"deepseek-chat"` | Standard alias + concrete model names |
+| `deepcode.effort` | enum | `"medium"`        | low / medium / high / xhigh / max     |
+
+Credentials stay in the shared DeepCode credential store and are resolved only by the child.
 
 ## Roadmap
 
-- Real `runAgent` invocation in `deepcode.run` (instead of the info popup)
 - Real diff fetch via `vscode.git` API for `deepcode.review`
 - File panel showing live edits as the agent works
-- Inline tool-approval prompts via QuickPick
+- Inline webview approval cards (host-native warning actions work today)
 - Custom commands via skills (mirror CLI's `/skills` dir)
-- LSP-style command palette integration (see `@deepcode/lsp`)
+- VS Code Extension Host integration tests in addition to the protocol-runtime unit gate

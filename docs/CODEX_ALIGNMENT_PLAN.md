@@ -302,11 +302,13 @@ model tool call
 
 ### PR 7 — VS Code 与 LSP 收敛
 
-- VS Code 改用同一 runtime/protocol，删除重复 provider/runtime 组装。
+- VS Code 已改用 shared `ProtocolClient` + 独立 app-server bundle，删除重复 provider/runtime/credential
+  组装；扩展 build 现在生成真实 `extension.cjs` 与 child bundle。
 - LSP 已改为 shared `ProtocolClient` + 独立 app-server 子进程；不再读取凭证或组装
   `DeepSeekProvider`/`RuntimeHost`，并公开 read/resume/interrupt/approval/user-input 命令与原生事件。
-- 支持 read/resume、structured tool items、approval、interrupt 与 diff context。
-- LSP 只承担编辑器兼容；移除 `passWithNoTests`，增加真正测试。
+- 两个编辑器入口均支持 canonical thread、structured tool items、approval、AskUserQuestion 与
+  interrupt；VS Code diff context 继续由 agent 在 workspace 中读取，后续再接 `vscode.git` 优化。
+- LSP 只承担编辑器兼容；VS Code 与 LSP 均已有真正协议测试，不再使用 `passWithNoTests`。
 
 验收：完成后的 thread 可在 CLI、desktop、VS Code 间恢复；事件和权限语义一致。
 

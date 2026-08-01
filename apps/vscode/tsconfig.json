@@ -6,8 +6,8 @@
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo",
     "lib": ["ES2022"],
-    "module": "CommonJS",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "types": ["node"],
     "skipLibCheck": true,
     "isolatedModules": false,
@@ -15,5 +15,5 @@
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../../packages/core" }]
+  "references": [{ "path": "../../packages/protocol" }, { "path": "../server" }]
 }
