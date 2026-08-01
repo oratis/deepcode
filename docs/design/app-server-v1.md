@@ -47,6 +47,7 @@ by expecting partial deltas to replay.
 | `diagnostics/export` | workspace cwd                   | redacted local diagnostic bundle metadata          |
 | `workspace/diff`     | `threadId`                      | bounded structured workspace diff                  |
 | `review/apply`       | `threadId`, `findingIds`        | permission-gated review action turn                |
+| `review/revert`      | `threadId`, `actionId`          | conflict-safe restore action turn                  |
 
 `turn/start` returns before model work finishes. The server emits transient deltas while the turn
 runs, then persists new provider-history messages as completed items before emitting exactly one
@@ -60,6 +61,11 @@ tool process after a crash.
 thread, then generates the bounded verification prompt inside the app-server. Its `review_action`
 item records the selected ids and action turn. Direct `turn/start` requests cannot inject this
 reserved metadata.
+
+`review/revert` resolves only a completed Apply action. Its turn exposes only the
+`RestoreReviewAction` mutation tool; unadvertised Edit/Write/Bash calls are rejected by the agent
+loop even if a provider attempts them. Snapshot pairs carry the source turn id, and restoration is
+an all-files compare-and-swap against the Apply post-images before any pre-image is written.
 
 ## Storage and security
 

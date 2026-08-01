@@ -112,6 +112,8 @@ export interface ToolContext {
   cwd: string;
   /** Where to write session-scoped artifacts (snapshots, bg task logs, etc.). */
   sessionDir?: string;
+  /** Canonical app-server turn associated with session-scoped mutations. */
+  turnId?: string;
   /** Abort signal propagated from the agent loop. */
   signal?: AbortSignal;
   /** Optional platform sandbox config — passed through to Bash tool (M3.5). */

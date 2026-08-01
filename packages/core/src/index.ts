@@ -38,6 +38,7 @@ export {
   WebSearchTool,
   AskUserQuestionTool,
   SubmitReviewFindingTool,
+  RestoreReviewActionTool,
   ExitPlanModeTool,
   makeToolSearchTool,
   installToolSearch,

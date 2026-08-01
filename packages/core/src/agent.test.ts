@@ -134,6 +134,31 @@ describe('runAgent', () => {
     expect(completed[0]).toMatchObject({ stopReason: 'end_turn' });
   });
 
+  it('enforces a host-owned per-turn tool ceiling', async () => {
+    const provider = new MockProvider([
+      toolUse('trying a forbidden write', {
+        type: 'tool_use',
+        id: 'call-forbidden',
+        name: 'Write',
+        input: { file_path: 'forbidden.txt', content: 'nope' },
+      }),
+      endTurn('stopped'),
+    ]);
+    const result = await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'restricted turn',
+      model: 'deepseek-chat',
+      cwd,
+      allowedTools: ['Read'],
+    });
+
+    expect(provider.received[0]?.tools.map((tool) => tool.name)).toEqual(['Read']);
+    expect(JSON.stringify(result.history)).toContain('tool not allowed in this turn: Write');
+    await expect(fs.access(join(cwd, 'forbidden.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('handles unknown tool gracefully', async () => {
     const provider = new MockProvider([
       toolUse('using nope', {

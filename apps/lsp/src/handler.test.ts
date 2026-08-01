@@ -83,7 +83,8 @@ class FakeClient {
       case 'thread/resume':
         return this.thread as T;
       case 'turn/start':
-      case 'review/apply': {
+      case 'review/apply':
+      case 'review/revert': {
         // Deliberately precedes the response to exercise the LSP fast-turn queue.
         this.emit({ type: 'turn.started', threadId: this.thread.id, turn: this.turn });
         queueMicrotask(() => {
@@ -162,6 +163,7 @@ describe('handleMessage — initialize', () => {
         'deepcode.workspaceDiff',
         'deepcode.applyReviewFinding',
         'deepcode.applyReviewFindings',
+        'deepcode.revertReviewAction',
       ]),
     );
   });
@@ -239,6 +241,19 @@ describe('handleMessage — protocol commands', () => {
     expect(client.requests.at(-1)).toMatchObject({
       method: 'review/apply',
       params: { threadId: 'thread-1', findingIds: ['finding-1', 'finding-2'] },
+    });
+  });
+
+  it('reverts a review action through the canonical conflict-safe turn', async () => {
+    const client = new FakeClient();
+    __test.setClientFactory(() => client);
+    const out: LspMessage[] = [];
+    await execute(23, 'deepcode.revertReviewAction', { actionId: 'turn-apply' }, (message) =>
+      out.push(message),
+    );
+    expect(client.requests.at(-1)).toMatchObject({
+      method: 'review/revert',
+      params: { threadId: 'thread-1', actionId: 'turn-apply' },
     });
   });
 

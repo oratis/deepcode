@@ -27,6 +27,7 @@ import {
   BUILTIN_TOOLS,
   installToolSearch,
   ReadTool,
+  RestoreReviewActionTool,
   ToolRegistry,
   WebFetchTool,
   WriteTool,
@@ -77,6 +78,7 @@ export interface RuntimeCompositionOptions {
   requestApproval?: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
   signal?: AbortSignal;
   services?: Partial<RuntimeCompositionServices>;
+  includeReviewRestore?: boolean;
 }
 
 export interface RuntimeComposition {
@@ -146,6 +148,7 @@ export async function composeRuntime(
   ]);
 
   const tools = new ToolRegistry(BUILTIN_TOOLS);
+  if (options.includeReviewRestore) tools.register(RestoreReviewActionTool);
   if (skills.length > 0) tools.register(makeSkillTool(skills));
   const hooks = new HookDispatcher({
     hooks: settings.hooks,

@@ -53,6 +53,7 @@ describe('AppServer', () => {
             },
           ],
         })
+        .mockResolvedValueOnce({})
         .mockResolvedValueOnce({}),
     };
     const server = new AppServer({ executor, ...deterministicOptions() });
@@ -87,6 +88,40 @@ describe('AppServer', () => {
         ]),
       }),
     );
+
+    const reverted = await server.handle(
+      request(5, 'review/revert', { threadId, actionId: turnId }),
+    );
+    const revertTurnId = (reverted.result as { id: string }).id;
+    await server.waitForIdle();
+    const afterRevert = await server.handle(request(6, 'thread/read', { threadId }));
+    expect((afterRevert.result as ThreadSnapshot).turns.at(-1)).toEqual(
+      expect.objectContaining({
+        id: revertTurnId,
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'user_message',
+            payload: expect.objectContaining({
+              text: expect.stringContaining('RestoreReviewAction exactly once'),
+              reviewAction: {
+                kind: 'revert',
+                sourceActionId: turnId,
+                findingIds: ['finding-1'],
+              },
+            }),
+          }),
+          expect.objectContaining({
+            type: 'review_action',
+            payload: {
+              actionId: revertTurnId,
+              kind: 'revert',
+              sourceActionId: turnId,
+              findingIds: ['finding-1'],
+            },
+          }),
+        ]),
+      }),
+    );
   });
 
   it('rejects unknown findings, duplicate batches, and direct review metadata injection', async () => {
@@ -115,6 +150,12 @@ describe('AppServer', () => {
       ),
     ).resolves.toEqual({
       id: 4,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+    await expect(
+      server.handle(request(5, 'review/revert', { threadId, actionId: 'missing' })),
+    ).resolves.toEqual({
+      id: 5,
       error: expect.objectContaining({ code: 'invalid_request' }),
     });
   });

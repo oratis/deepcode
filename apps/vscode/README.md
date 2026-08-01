@@ -5,7 +5,7 @@ protocol and canonical threads as the desktop client.
 
 ## Current state
 
-- Six commands, an activity-bar chat view, model/effort settings, and a default
+- Seven commands, an activity-bar chat view, model/effort settings, and a default
   `Cmd/Ctrl+Shift+D` keybinding.
 - Canonical thread reuse, structured text/tool events, real interrupt plumbing, approval via
   warning actions, and AskUserQuestion via QuickPick/InputBox.
@@ -45,6 +45,7 @@ Then:
 | `deepcode.review`                 | (palette)          | Run `code-review` skill on current diff                  |
 | `deepcode.applyReviewFinding`     | (API/context)      | Apply one canonical finding through a normal agent turn  |
 | `deepcode.applyAllReviewFindings` | (palette)          | Apply the latest review batch through one canonical turn |
+| `deepcode.revertReviewAction`     | (palette)          | Conflict-safely revert the latest applied review action  |
 | `deepcode.showDiagnostics`        | (palette)          | Show value-free config sources, trust gates, and issues  |
 
 ## Settings
@@ -60,7 +61,7 @@ trusted `settings.json` model and effort remain authoritative.
 
 ## Roadmap
 
-- Inline review comments, context actions, and per-finding revert controls
+- Inline review comments and editor-context actions
 - File panel showing live edits as the agent works
 - Inline webview approval cards (host-native warning actions work today)
 - Custom commands via skills (mirror CLI's `/skills` dir)

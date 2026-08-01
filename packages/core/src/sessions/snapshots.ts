@@ -20,6 +20,10 @@ export interface Snapshot {
   size: number;
   /** Sequential within the session. */
   seq: number;
+  /** Canonical app-server turn that caused this snapshot, when available. */
+  turnId?: string;
+  /** Whether the file existed before capture; absent on legacy manifests. */
+  existed?: boolean;
   /** Absolute path on disk where the snapshot blob is stored ('' for git kind). */
   blobPath: string;
   /**
@@ -55,15 +59,18 @@ export async function captureSnapshot(args: {
   filePath: string;
   reason: string;
   seq: number;
+  turnId?: string;
 }): Promise<Snapshot | null> {
   const absPath = isAbsolute(args.filePath) ? args.filePath : resolve(args.cwd, args.filePath);
   let content: Buffer;
+  let existed = true;
   try {
     content = await fs.readFile(absPath);
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
       // file doesn't exist yet — record an empty snapshot so post-Write diff still works
       content = Buffer.from('');
+      existed = false;
     } else {
       throw err;
     }
@@ -84,6 +91,8 @@ export async function captureSnapshot(args: {
     hash,
     size: content.byteLength,
     seq: args.seq,
+    ...(args.turnId ? { turnId: args.turnId } : {}),
+    existed,
     blobPath,
   };
   // also append to a per-session manifest for fast listing
@@ -106,6 +115,7 @@ export async function captureGitCheckpoint(args: {
   cwd: string;
   reason: string;
   seq: number;
+  turnId?: string;
 }): Promise<Snapshot | null> {
   try {
     if ((await git(args.cwd, ['rev-parse', '--is-inside-work-tree'])) !== 'true') return null;
@@ -128,6 +138,7 @@ export async function captureGitCheckpoint(args: {
     hash: ref.slice(0, 16),
     size: 0,
     seq: args.seq,
+    ...(args.turnId ? { turnId: args.turnId } : {}),
     blobPath: '',
     kind: 'git',
     gitRef: ref,
@@ -172,6 +183,14 @@ export async function restoreSnapshot(snap: Snapshot): Promise<string[]> {
     if (changed.length === 0) return [];
     await git(repo, ['checkout', snap.gitRef, '--', ...changed]);
     return changed;
+  }
+  if (snap.existed === false) {
+    try {
+      await fs.unlink(snap.filePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    return [snap.filePath];
   }
   const content = await fs.readFile(snap.blobPath);
   await fs.mkdir(dirname(snap.filePath), { recursive: true });

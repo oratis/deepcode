@@ -47,6 +47,7 @@ class FakeTransport implements ProtocolTransport {
     if (method === 'thread/resume') return thread as T;
     if (method === 'turn/start') return turn as T;
     if (method === 'review/apply') return turn as T;
+    if (method === 'review/revert') return turn as T;
     if (method === 'turn/interrupt') return { interrupted: true } as T;
     if (method === 'config/diagnostics') return diagnostics as T;
     if (method === 'workspace/diff') return workspaceDiff as T;
@@ -117,6 +118,17 @@ describe('DesktopProtocolAgent', () => {
     expect(transport.requests.at(-1)).toEqual({
       method: 'review/apply',
       params: { threadId: thread.id, findingIds: ['finding-1'] },
+    });
+  });
+
+  it('reverts a review action through the canonical conflict-safe turn', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    await agent.resume(thread.id);
+    await agent.revertAction('turn-apply');
+    expect(transport.requests.at(-1)).toEqual({
+      method: 'review/revert',
+      params: { threadId: thread.id, actionId: 'turn-apply' },
     });
   });
 

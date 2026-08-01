@@ -55,6 +55,7 @@ describe('snapshots', () => {
     });
     expect(snap).toBeTruthy();
     expect(snap?.size).toBe(16);
+    expect(snap?.existed).toBe(true);
     expect(snap?.reason).toBe('pre-Edit');
     expect(snap?.filePath).toBe(path);
     expect(await fs.readFile(snap!.blobPath, 'utf8')).toBe('original content');
@@ -70,6 +71,10 @@ describe('snapshots', () => {
       seq: 1,
     });
     expect(snap?.size).toBe(0);
+    expect(snap?.existed).toBe(false);
+    await fs.writeFile(join(cwd, 'missing.txt'), 'created later');
+    await restoreSnapshot(snap!);
+    await expect(fs.access(join(cwd, 'missing.txt'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
   it('listSnapshots reads back manifest', async () => {
@@ -82,6 +87,7 @@ describe('snapshots', () => {
       filePath: 'x.txt',
       reason: 'pre-Edit',
       seq: 1,
+      turnId: 'turn-1',
     });
     await fs.writeFile(path, 'v2');
     await captureSnapshot({
@@ -95,6 +101,7 @@ describe('snapshots', () => {
     const snaps = await listSnapshots({ sessionsRoot: root, sessionId: 'sid' });
     expect(snaps).toHaveLength(2);
     expect(snaps[0]?.reason).toBe('pre-Edit');
+    expect(snaps[0]?.turnId).toBe('turn-1');
     expect(snaps[1]?.reason).toBe('post-Edit');
   });
 

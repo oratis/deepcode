@@ -26,3 +26,8 @@ only finding ids already present in the canonical thread, resolves their origina
 app-server, and starts one permission-gated turn for a selected finding or bounded batch. The
 `review_action` completed item correlates that action with its turn; clients never send a writable
 replacement payload or write directly.
+
+`review/revert` accepts the id of a completed Apply action and starts another canonical turn whose
+tool ceiling contains only `RestoreReviewAction`. The core restore tool compares every current file
+with the Apply turn's exact post-image before restoring any pre-image, refusing the whole action on
+conflict, path escape, snapshot corruption, Bash-only mutation, or incomplete legacy snapshots.

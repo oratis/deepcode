@@ -8,6 +8,25 @@ export function reviewApplyPrompt(finding: ReviewFindingPayload): string {
   return reviewApplyManyPrompt([finding]);
 }
 
+/** Build a turn that can only perform the conflict-safe snapshot restore tool. */
+export function reviewRevertPrompt(actionTurnId: string, findingIds: string[]): string {
+  if (
+    !/^[a-zA-Z0-9._-]{1,200}$/.test(actionTurnId) ||
+    !Array.isArray(findingIds) ||
+    findingIds.length === 0 ||
+    findingIds.length > 20 ||
+    findingIds.some((findingId) => !/^[a-zA-Z0-9._-]{1,200}$/.test(findingId))
+  ) {
+    throw new Error('A valid review action is required');
+  }
+  return (
+    `Revert review action ${actionTurnId}, which applied findings: ${findingIds.join(', ')}.\n\n` +
+    `Call RestoreReviewAction exactly once with action_turn_id=${JSON.stringify(actionTurnId)}. ` +
+    'Do not use Edit, Write, Bash, or any other mutation tool. If the restore tool reports a ' +
+    'conflict or unavailable snapshot, do not work around it; explain that the action could not be safely reverted.'
+  );
+}
+
 /** Build one canonical, permission-gated turn for a bounded set of findings. */
 export function reviewApplyManyPrompt(findings: ReviewFindingPayload[]): string {
   if (!Array.isArray(findings) || findings.length === 0 || findings.length > 20) {

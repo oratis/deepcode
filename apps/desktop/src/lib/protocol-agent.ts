@@ -123,6 +123,22 @@ export class DesktopProtocolAgent {
     return { turnId: turn.id, threadId };
   }
 
+  async revertAction(actionId: string) {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.reviewActions) {
+      throw new Error('The app-server does not support review actions');
+    }
+    const threadId = this.threadId;
+    if (!threadId) throw new Error('No active workspace thread');
+    const turn = await this.transport.request<TurnSnapshot>('review/revert', {
+      threadId,
+      actionId,
+    });
+    this.activeTurns.set(turn.id, threadId);
+    setTimeout(() => this.flushTurn(turn.id), 0);
+    return { turnId: turn.id, threadId };
+  }
+
   clear(): void {
     void this.interruptActiveTurns();
     this.threadId = null;
