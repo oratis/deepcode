@@ -132,12 +132,12 @@ async function handleRunAgent(
   void (async () => {
     try {
       const [
-        { runAgent },
+        { RuntimeHost },
         { DeepSeekProvider },
         { ToolRegistry, BUILTIN_TOOLS, SAFE_READONLY_TOOLS },
         { resolveCredentials, CredentialsStore },
       ] = await Promise.all([
-        import('@deepcode/core').then((m) => ({ runAgent: m.runAgent })),
+        import('@deepcode/core').then((m) => ({ RuntimeHost: m.RuntimeHost })),
         import('@deepcode/core').then((m) => ({ DeepSeekProvider: m.DeepSeekProvider })),
         import('@deepcode/core').then((m) => ({
           ToolRegistry: m.ToolRegistry,
@@ -163,16 +163,18 @@ async function handleRunAgent(
         baseURL: creds.baseURL,
       });
 
-      const result = await runAgent({
+      const runtime = new RuntimeHost({
         provider,
         tools: new ToolRegistry(BUILTIN_TOOLS),
+        cwd: state.rootUri ? new URL(state.rootUri).pathname : process.cwd(),
+        mode: 'default',
+        permissions: { allow: [...SAFE_READONLY_TOOLS] },
+      });
+      const result = await runtime.run({
         systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
         userMessage: args.prompt!,
         model: args.model ?? 'deepseek-chat',
-        cwd: state.rootUri ? new URL(state.rootUri).pathname : process.cwd(),
         signal: abortController.signal,
-        mode: 'default',
-        permissions: { allow: [...SAFE_READONLY_TOOLS] },
         onEvent: (e) => {
           send({
             jsonrpc: '2.0',

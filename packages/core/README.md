@@ -6,7 +6,7 @@ DeepCode 的 TypeScript 内核包：agent loop、DeepSeek provider、tools、con
 
 ## 当前状态
 
-主要模块均已有实现与测试。当前最重要的已知限制不是“缺少骨架”，而是不同 host 对 `runAgent` 的组装不一致：CLI 传入完整 permissions/hooks/sandbox/session/task services，desktop、LSP 与 VS Code 只传入其中一部分。后续通过不可绕过的 `RuntimeHost` 收敛，而不是继续增加 host-specific wiring。
+主要模块均已有实现与测试。CLI、headless、LSP 与 VS Code 已通过 `RuntimeHost` 固定 provider、tools、permissions、hooks 与 sandbox 等安全服务；`runAgent` 保留为 core 内部循环和 desktop 迁移期兼容入口。当前剩余的主要 host 差异是 desktop renderer 仍直接运行 provider/loop，后续按 packaging ADR 迁出 WebView。
 
 关键入口：
 

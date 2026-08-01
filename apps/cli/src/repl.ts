@@ -8,6 +8,7 @@ import {
   EFFORT_PARAMS,
   HookDispatcher,
   ReadTool,
+  RuntimeHost,
   SessionManager,
   TaskManager,
   ToolRegistry,
@@ -37,7 +38,6 @@ import {
   contextWindowFor,
   makeSkillTool,
   resolveCredentials,
-  runAgent,
   settingsPaths,
   wirePlugins,
   collectPluginContributions,
@@ -429,6 +429,17 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   }
 
   let history: StoredMessage[] = resolved.seededHistory;
+  const runtime = new RuntimeHost({
+    provider,
+    tools,
+    cwd,
+    mode,
+    permissions: settings.permissions,
+    hooks,
+    pluginDirs: pluginContrib.dirs,
+    autoMode: settings.autoMode,
+    sandboxConfig: settings.sandbox,
+  });
   const ctx: SessionContext = {
     cwd,
     model,
@@ -471,25 +482,20 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   // reading ctx.model/ctx.mode live so /model and /mode switches are honored.
   const tasks = new TaskManager((spec) => {
     const ac = new AbortController();
-    const done = runAgent({
-      provider,
-      tools,
-      systemPrompt,
-      userMessage: spec.prompt,
-      model: ctx.model,
-      maxTokens,
-      temperature,
-      cwd: ctx.cwd,
-      signal: ac.signal,
-      mode: ctx.mode as Mode,
-      permissions: settings.permissions,
-      hooks,
-      pluginDirs: pluginContrib.dirs,
-      sandboxConfig: settings.sandbox,
-      autoMode: settings.autoMode,
-      subAgentDepth: 1,
-      systemReminders: false,
-    }).then((r) => assistantText(r.history));
+    const done = runtime
+      .run({
+        systemPrompt,
+        userMessage: spec.prompt,
+        model: ctx.model,
+        maxTokens,
+        temperature,
+        cwd: ctx.cwd,
+        signal: ac.signal,
+        modeOverride: ctx.mode as Mode,
+        subAgentDepth: 1,
+        systemReminders: false,
+      })
+      .then((r) => assistantText(r.history));
     return { done, abort: () => ac.abort() };
   });
   ctx.tasks = tasks;
@@ -649,9 +655,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     }
 
     // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
-    const result = await runAgent({
-      provider,
-      tools,
+    const result = await runtime.run({
       systemPrompt,
       userMessage: userInput,
       history,
@@ -663,13 +667,8 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       // ctx.sessionId (not the launch `session.id`) so a live `/resume <id>`
       // switch redirects new messages to the resumed session.
       session: { manager: sessions, id: ctx.sessionId },
-      mode: ctx.mode as Mode,
-      permissions: settings.permissions,
-      hooks,
-      pluginDirs: pluginContrib.dirs,
+      modeOverride: ctx.mode as Mode,
       autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
-      autoMode: settings.autoMode,
-      sandboxConfig: settings.sandbox,
       // Session-scoped manager: the agent's TaskCreate calls land here too, so
       // background tasks persist across turns and show up in /tasks.
       taskManager: tasks,

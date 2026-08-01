@@ -89,15 +89,17 @@ async function runAgent(
       authToken: creds.authToken,
       baseURL: creds.baseURL,
     });
-    await core.runAgent({
+    const runtime = new core.RuntimeHost({
       provider,
       tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-      systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
-      userMessage,
-      model: 'deepseek-chat',
       cwd,
       mode: 'default',
       permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
+    });
+    await runtime.run({
+      systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+      userMessage,
+      model: 'deepseek-chat',
       onEvent: (e) => {
         if (e.type === 'text_delta') out.append(e.text);
         else if (e.type === 'tool_use') out.appendLine(`\n[${e.name}] ${formatInput(e.input)}`);
@@ -157,15 +159,17 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         baseURL: creds.baseURL,
       });
       let buffer = '';
-      await core.runAgent({
+      const runtime = new core.RuntimeHost({
         provider,
         tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-        systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
-        userMessage: msg.text,
-        model: 'deepseek-chat',
         cwd: this.vscodeMod.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
         mode: 'default',
         permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
+      });
+      await runtime.run({
+        systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
+        userMessage: msg.text,
+        model: 'deepseek-chat',
         onEvent: (e) => {
           if (e.type === 'text_delta') {
             buffer += e.text;

@@ -21,6 +21,7 @@ import {
   EFFORT_PARAMS,
   HookDispatcher,
   ReadTool,
+  RuntimeHost,
   SessionManager,
   ToolRegistry,
   WebFetchTool,
@@ -39,7 +40,6 @@ import {
   loadSkills,
   makeSkillTool,
   resolveCredentials,
-  runAgent,
   wirePlugins,
   collectPluginContributions,
   type AgentEvent,
@@ -271,9 +271,18 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   }
   let exitCode = 0;
   try {
-    const result = await runAgent({
+    const runtime = new RuntimeHost({
       provider,
       tools,
+      cwd,
+      mode,
+      permissions: settings.permissions,
+      hooks,
+      pluginDirs: pluginContrib.dirs,
+      autoMode: settings.autoMode,
+      sandboxConfig: settings.sandbox,
+    });
+    const result = await runtime.run({
       systemPrompt,
       userMessage,
       history: [],
@@ -281,15 +290,9 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       maxTokens,
       temperature,
       maxTurns,
-      cwd,
+      signal: ctrl.signal,
       session: { manager: sessions, id: session.id },
-      mode,
-      permissions: settings.permissions,
-      hooks,
-      pluginDirs: pluginContrib.dirs,
       autoCompact: { contextWindow: contextWindowFor(model), threshold: 0.8 },
-      autoMode: settings.autoMode,
-      sandboxConfig: settings.sandbox,
       // In headless mode there's no human to ask: auto-deny anything that
       // would normally need approval. Users wanting auto-yes should pass
       // --mode dontAsk or --mode bypassPermissions (gated by trust).

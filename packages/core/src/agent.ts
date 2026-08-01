@@ -8,7 +8,7 @@ import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
-import { resolveRuntimePolicy } from './runtime/index.js';
+import { resolveRuntimePolicy } from './runtime/policy.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
 // module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
