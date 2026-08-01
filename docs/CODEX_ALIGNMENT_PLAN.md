@@ -344,9 +344,12 @@ model tool call
   Bash checkpoint 或 legacy 不完整快照时整体拒绝。恢复仍经过 permission/approval/hooks，且
   自身产生 pre/post 快照；新建文件可按 `existed=false` 安全删除。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
-- 客户端内联评论/上下文 action；VS Code review all 与 latest-action revert 已由同一
-  canonical action path 提供，Desktop/LSP 暴露对应协议能力。
-- 删除完成迁移的旧 IPC/facade；更新所有用户文档。
+- VS Code review all 与 latest-action revert 已由同一 canonical action path 提供，Desktop/LSP
+  暴露对应协议能力；客户端内联评论/上下文 action 在有真实使用证据前继续后置，避免复制第二套
+  finding/action 状态。
+- 已删除无生产引用的 core renderer IPC、desktop native mutation/tool facade 与 `chat` 路由别名；
+  Tauri 仅保留 credential presence、文件/快照只读投影和 sidecar supervision。legacy session importer
+  继续只读，旧文件不迁移、不覆盖；用户文档已改为 app-server 架构。
 - release candidate、迁移演练、性能预算和回滚说明。
 
 验收：端到端 golden journey、性能基线、安全 review、文档与 release gate。

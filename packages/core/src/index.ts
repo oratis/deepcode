@@ -355,19 +355,6 @@ export {
   type CreateTaskSpec,
 } from './tasks/manager.js';
 
-// IPC protocol (M6-rest — renderer ↔ main process type-safe channels)
-export {
-  newTurnId,
-  newQuestionId,
-  type IpcChannel,
-  type IpcEventChannel,
-  type IpcRequest,
-  type IpcResponse,
-  type IpcRequestMap,
-  type IpcEventMap,
-  type AgentStreamEvent,
-} from './ipc/protocol.js';
-
 // Voice input (M8 — whisper.cpp wrapper + stub provider + setup detection)
 export {
   WhisperCppProvider,

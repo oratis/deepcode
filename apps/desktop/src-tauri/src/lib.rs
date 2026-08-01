@@ -10,25 +10,23 @@
 mod app_server;
 mod commands;
 mod credentials;
+mod file_preview;
 mod settings;
-#[allow(dead_code)] // mutation-only snapshot helpers remain for compatibility tests
 mod snapshots;
-#[allow(dead_code)] // legacy native mutation helpers are no longer renderer commands
-mod tools;
 mod voice;
 
 use app_server::{
     app_server_send, app_server_start, app_server_status, app_server_stop, AppServerState,
 };
 use commands::{
-    append_allow_matcher, cli_path, get_app_info, get_settings_path, list_plugins, list_sessions,
-    credential_status, list_skills, load_keybindings, load_settings_file, open_url,
+    append_allow_matcher, cli_path, credential_status, get_app_info, get_settings_path,
+    list_plugins, list_sessions, list_skills, load_keybindings, load_settings_file, open_url,
     save_credentials, save_keybindings, save_settings_file, session_archive, session_delete,
     session_read, session_set_title,
 };
+use file_preview::tool_read;
 use snapshots::session_snapshots;
 use tauri::Manager;
-use tools::tool_read;
 use voice::{voice_cancel, voice_start, voice_status, voice_stop, VoiceState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

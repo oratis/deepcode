@@ -721,7 +721,7 @@ pub fn list_plugins() -> Vec<PluginInfo> {
 // ── Serde contract ─────────────────────────────────────────────────────
 // AppInfo + SessionMeta are read by tauri-api.ts using snake_case keys
 // (home_dir, size_bytes, updated_at_secs). They intentionally do NOT use
-// rename_all="camelCase" (unlike the tool output structs in tools.rs). Lock
+// rename_all="camelCase" (unlike the read-only file preview response). Lock
 // that so a stray rename_all can't silently break the renderer. See HANDOFF §8a.
 #[cfg(test)]
 mod contract_tests {

@@ -246,7 +246,7 @@ pub async fn voice_start(state: tauri::State<'_, VoiceState>) -> Result<(), Stri
     let wav = std::env::temp_dir().join(format!(
         "deepcode-voice-{}-{}.wav",
         std::process::id(),
-        crate::snapshots::now_ms()
+        unix_time_millis()
     ));
 
     // Replace any orphaned prior recording.
@@ -276,6 +276,13 @@ pub async fn voice_start(state: tauri::State<'_, VoiceState>) -> Result<(), Stri
         .map_err(|_| "voice state poisoned")?
         .replace(rec);
     Ok(())
+}
+
+fn unix_time_millis() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
 }
 
 /// Stop recording, transcribe the clip, delete the audio, return the text.

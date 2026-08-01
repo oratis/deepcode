@@ -1,101 +1,16 @@
-// File snapshots — captured before & after each Edit/Write so the right-side
-// file panel's Diff/History tabs (and the CLI's `/rewind`) share one data source.
-//
-// The desktop runs @deepcode/core's `runAgent` IN THE RENDERER, which (by design)
-// has no node:fs and so passes no SessionManager — meaning core's own snapshot
-// capture (packages/core/src/agent.ts) never fires for desktop sessions. We
-// therefore mirror it here on the Rust side: tool_write / tool_edit call
-// `capture_file_snapshot` for the pre- and post-mutation states.
-//
-// On-disk layout MATCHES core (packages/core/src/sessions/{storage,snapshots}.ts)
-// so the two interoperate:
-//   ~/.deepcode/sessions/<id>/snapshots/
-//     manifest.jsonl                       — one JSON Snapshot per line
-//     <seq:05>-<YYYYMMDDtHHMMSS>-<hash>.blob — the captured file bytes
-//
-// Each manifest line is the core `Snapshot` shape: { filePath, capturedAt,
-// reason, hash, size, seq, blobPath, kind } plus a `capturedAtMs` convenience
-// field (core ignores unknown keys) so the renderer needn't parse ISO strings.
+// Read-only projection of app-server-owned file snapshots for the desktop
+// Diff/History panel. Snapshot capture and every workspace mutation happen in
+// @deepcode/core behind the versioned app-server protocol.
 
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
 /// `~/.deepcode/sessions/<id>/snapshots` — the per-session snapshot directory.
-pub fn snapshots_dir(home: &Path, session_id: &str) -> PathBuf {
+fn snapshots_dir(home: &Path, session_id: &str) -> PathBuf {
     home.join(".deepcode")
         .join("sessions")
         .join(session_id)
         .join("snapshots")
-}
-
-/// Next sequence number for a session = count of existing manifest lines.
-/// Snapshots are append-only and the desktop captures them one tool-call at a
-/// time, so a line count is a sufficient monotonic counter (mirrors core's
-/// per-session `snapshotSeq`).
-pub fn next_seq(dir: &Path) -> u64 {
-    let manifest = dir.join("manifest.jsonl");
-    match std::fs::read_to_string(&manifest) {
-        Ok(t) => t.lines().filter(|l| !l.trim().is_empty()).count() as u64,
-        Err(_) => 0,
-    }
-}
-
-/// Milliseconds since the Unix epoch (0 if the clock is before 1970).
-pub fn now_ms() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis())
-        .unwrap_or(0)
-}
-
-/// Capture one file snapshot: write the blob and append a manifest line.
-/// Best-effort by contract — callers ignore the error so a snapshot hiccup never
-/// fails the user's edit. `content` is the exact file bytes for this revision.
-pub fn capture_file_snapshot(
-    home: &Path,
-    session_id: &str,
-    file_path: &str,
-    content: &[u8],
-    reason: &str,
-    seq: u64,
-    captured_ms: u128,
-) -> std::io::Result<()> {
-    let dir = snapshots_dir(home, session_id);
-    std::fs::create_dir_all(&dir)?;
-
-    let mut hasher = Sha256::new();
-    hasher.update(content);
-    // core: sha256 hex truncated to 16 chars == the first 8 bytes.
-    let hash16: String = hasher
-        .finalize()
-        .iter()
-        .take(8)
-        .map(|b| format!("{b:02x}"))
-        .collect();
-
-    let blob_name = format!("{:05}-{}-{}.blob", seq, fmt_blob_ts(captured_ms), hash16);
-    let blob_path = dir.join(&blob_name);
-    std::fs::write(&blob_path, content)?;
-
-    let entry = serde_json::json!({
-        "filePath": file_path,
-        "capturedAt": fmt_iso(captured_ms),
-        "capturedAtMs": captured_ms as u64,
-        "reason": reason,
-        "hash": hash16,
-        "size": content.len(),
-        "seq": seq,
-        "blobPath": blob_path.to_string_lossy(),
-        "kind": "file",
-    });
-
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(dir.join("manifest.jsonl"))?;
-    writeln!(f, "{entry}")
 }
 
 // ── session_snapshots command ───────────────────────────────────────────────
@@ -160,9 +75,18 @@ pub fn list_file_snapshots(dir: &Path, file_path: &str) -> Result<Vec<SnapshotEn
         }
         let blob = v.get("blobPath").and_then(|x| x.as_str()).unwrap_or("");
         let content = std::fs::read_to_string(blob).unwrap_or_default();
+        let captured_at_ms = v
+            .get("capturedAtMs")
+            .and_then(|x| x.as_u64())
+            .or_else(|| {
+                v.get("capturedAt")
+                    .and_then(|x| x.as_str())
+                    .and_then(parse_iso_millis)
+            })
+            .unwrap_or(0);
         out.push(SnapshotEntry {
             seq: v.get("seq").and_then(|x| x.as_u64()).unwrap_or(0),
-            captured_at_ms: v.get("capturedAtMs").and_then(|x| x.as_u64()).unwrap_or(0),
+            captured_at_ms,
             reason: v
                 .get("reason")
                 .and_then(|x| x.as_str())
@@ -194,44 +118,45 @@ fn paths_match(stored: &str, requested: &str, requested_canon: Option<&Path>) ->
     false
 }
 
-// ── time formatting (no chrono dep) ─────────────────────────────────────────
-
-/// (year, month, day) from days-since-Unix-epoch. Howard Hinnant's
-/// civil_from_days — same algorithm as commands.rs::format_date.
-fn civil_from_days(days: i64) -> (i64, u64, u64) {
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64; // [0, 146096]
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365; // [0, 399]
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // [0, 365]
-    let mp = (5 * doy + 2) / 153; // [0, 11]
-    let d = doy - (153 * mp + 2) / 5 + 1; // [1, 31]
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // [1, 12]
-    let y = if m <= 2 { y + 1 } else { y };
-    (y, m, d)
-}
-
-/// ISO-8601 UTC with millis, e.g. "2026-06-04T12:30:45.123Z" (mirrors JS
-/// `new Date(ms).toISOString()`).
-fn fmt_iso(ms: u128) -> String {
-    let total_secs = (ms / 1000) as i64;
-    let millis = (ms % 1000) as u64;
-    let days = total_secs.div_euclid(86_400);
-    let tod = total_secs.rem_euclid(86_400) as u64;
-    let (y, mo, d) = civil_from_days(days);
-    let (h, mi, s) = (tod / 3600, (tod % 3600) / 60, tod % 60);
-    format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}.{millis:03}Z")
-}
-
-/// Compact timestamp for blob filenames: core's
-/// `toISOString().replace(/[-:.]/g,'').slice(0,15)` → "YYYYMMDDtHHMMSS".
-fn fmt_blob_ts(ms: u128) -> String {
-    fmt_iso(ms)
-        .chars()
-        .filter(|c| *c != '-' && *c != ':' && *c != '.')
-        .take(15)
-        .collect()
+/// Parse core's fixed-width UTC ISO timestamp without adding a date-time
+/// dependency to the desktop binary.
+fn parse_iso_millis(value: &str) -> Option<u64> {
+    if value.len() != 24
+        || !value.is_ascii()
+        || &value[4..5] != "-"
+        || &value[7..8] != "-"
+        || &value[10..11] != "T"
+        || &value[13..14] != ":"
+        || &value[16..17] != ":"
+        || &value[19..20] != "."
+        || &value[23..24] != "Z"
+    {
+        return None;
+    }
+    let year = value[0..4].parse::<i64>().ok()?;
+    let month = value[5..7].parse::<i64>().ok()?;
+    let day = value[8..10].parse::<i64>().ok()?;
+    let hour = value[11..13].parse::<i64>().ok()?;
+    let minute = value[14..16].parse::<i64>().ok()?;
+    let second = value[17..19].parse::<i64>().ok()?;
+    let millis = value[20..23].parse::<i64>().ok()?;
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || !(0..=23).contains(&hour)
+        || !(0..=59).contains(&minute)
+        || !(0..=59).contains(&second)
+    {
+        return None;
+    }
+    let adjusted_year = year - i64::from(month <= 2);
+    let era = adjusted_year.div_euclid(400);
+    let year_of_era = adjusted_year - era * 400;
+    let shifted_month = month + if month > 2 { -3 } else { 9 };
+    let day_of_year = (153 * shifted_month + 2) / 5 + day - 1;
+    let day_of_era = year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+    let days = era * 146_097 + day_of_era - 719_468;
+    let total = (((days * 24 + hour) * 60 + minute) * 60 + second) * 1000 + millis;
+    u64::try_from(total).ok()
 }
 
 #[cfg(test)]
@@ -243,19 +168,13 @@ mod tests {
     }
 
     #[test]
-    fn fmt_iso_known_values() {
-        assert_eq!(fmt_iso(0), "1970-01-01T00:00:00.000Z");
-        assert_eq!(fmt_iso(86_400_000), "1970-01-02T00:00:00.000Z");
-        // 2023-11-14T22:13:20.123Z
-        assert_eq!(fmt_iso(1_700_000_000_123), "2023-11-14T22:13:20.123Z");
-    }
-
-    #[test]
-    fn fmt_blob_ts_is_15_chars_with_t_separator() {
-        let ts = fmt_blob_ts(0);
-        assert_eq!(ts, "19700101T000000");
-        assert_eq!(ts.chars().count(), 15);
-        assert_eq!(ts.as_bytes()[8], b'T');
+    fn parses_core_iso_timestamp() {
+        assert_eq!(parse_iso_millis("1970-01-01T00:00:00.000Z"), Some(0));
+        assert_eq!(
+            parse_iso_millis("2023-11-14T22:13:20.123Z"),
+            Some(1_700_000_000_123)
+        );
+        assert_eq!(parse_iso_millis("not-a-timestamp"), None);
     }
 
     #[test]
@@ -277,37 +196,37 @@ mod tests {
     }
 
     #[test]
-    fn capture_then_list_roundtrips_and_filters() {
-        let home = std::env::temp_dir().join(format!("dc-snap-{}", std::process::id()));
-        let sid = "2026-06-04-test01";
+    fn list_reads_core_manifest_and_filters() {
+        let root = std::env::temp_dir().join(format!("dc-snap-{}", std::process::id()));
         let file = "/tmp/example/app.ts";
-        let _ = std::fs::remove_dir_all(&home);
-
-        // Two edits → 4 snapshots (pre/post each), distinct ms so ordering holds.
-        let dir = snapshots_dir(&home, sid);
+        let other = "/tmp/other.ts";
+        let _ = std::fs::remove_dir_all(&root);
+        let dir = root.join("snapshots");
         std::fs::create_dir_all(&dir).unwrap();
-        let base0 = next_seq(&dir);
-        capture_file_snapshot(&home, sid, file, b"v0\n", "pre-Edit", base0, 1000).unwrap();
-        capture_file_snapshot(&home, sid, file, b"v1\n", "post-Edit", base0 + 1, 1001).unwrap();
-        let base1 = next_seq(&dir);
-        assert_eq!(base1, 2, "seq advances with manifest lines");
-        capture_file_snapshot(&home, sid, file, b"v1\n", "pre-Edit", base1, 2000).unwrap();
-        capture_file_snapshot(&home, sid, file, b"v2\n", "post-Edit", base1 + 1, 2001).unwrap();
-
-        // A snapshot for a DIFFERENT file must be filtered out.
-        capture_file_snapshot(&home, sid, "/tmp/other.ts", b"z\n", "pre-Write", 99, 3000).unwrap();
+        let first_blob = dir.join("first.blob");
+        let second_blob = dir.join("second.blob");
+        std::fs::write(&first_blob, "v0\n").unwrap();
+        std::fs::write(&second_blob, "v1\n").unwrap();
+        let manifest = [
+            serde_json::json!({"filePath": file, "capturedAt": "2023-11-14T22:13:20.123Z", "reason": "pre-Edit", "hash": "a", "seq": 2, "blobPath": first_blob}),
+            serde_json::json!({"filePath": file, "capturedAtMs": 1_700_000_000_124_u64, "reason": "post-Edit", "hash": "b", "seq": 3, "blobPath": second_blob}),
+            serde_json::json!({"filePath": other, "capturedAtMs": 1_u64, "reason": "pre-Write", "hash": "c", "seq": 1, "blobPath": ""}),
+        ]
+        .into_iter()
+        .map(|row| row.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+        std::fs::write(dir.join("manifest.jsonl"), manifest).unwrap();
 
         let rows = list_file_snapshots(&dir, file).unwrap();
-        let _ = std::fs::remove_dir_all(&home);
+        let _ = std::fs::remove_dir_all(&root);
 
-        assert_eq!(rows.len(), 4, "only the 4 snapshots for `file`");
-        assert_eq!(rows[0].seq, 0);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].seq, 2);
         assert_eq!(rows[0].content, "v0\n");
         assert_eq!(rows[0].reason, "pre-Edit");
-        assert_eq!(rows[0].captured_at_ms, 1000);
-        assert_eq!(rows[3].content, "v2\n");
-        // ascending by seq
-        assert!(rows.windows(2).all(|w| w[0].seq < w[1].seq));
+        assert_eq!(rows[0].captured_at_ms, 1_700_000_000_123);
+        assert_eq!(rows[1].captured_at_ms, 1_700_000_000_124);
     }
 
     #[test]

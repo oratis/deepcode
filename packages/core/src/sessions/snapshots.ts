@@ -15,6 +15,8 @@ const execFileAsync = promisify(execFile);
 export interface Snapshot {
   filePath: string;
   capturedAt: string;
+  /** Numeric projection used by thin clients; absent on older manifests. */
+  capturedAtMs?: number;
   reason: string; // e.g. "pre-Edit" / "post-Edit" / "pre-Bash" / "session-start"
   hash: string;
   size: number;
@@ -79,14 +81,17 @@ export async function captureSnapshot(args: {
   const dir = snapshotsDirFor(args.sessionsRoot, args.sessionId);
   await fs.mkdir(dir, { recursive: true });
 
-  const ts = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15);
+  const capturedAtMs = Date.now();
+  const capturedAt = new Date(capturedAtMs).toISOString();
+  const ts = capturedAt.replace(/[-:.]/g, '').slice(0, 15);
   const blobName = `${String(args.seq).padStart(5, '0')}-${ts}-${hash}.blob`;
   const blobPath = join(dir, blobName);
   await fs.writeFile(blobPath, content);
 
   const snap: Snapshot = {
     filePath: absPath,
-    capturedAt: new Date().toISOString(),
+    capturedAt,
+    capturedAtMs,
     reason: args.reason,
     hash,
     size: content.byteLength,
@@ -131,9 +136,11 @@ export async function captureGitCheckpoint(args: {
   }
   if (!ref) return null;
 
+  const capturedAtMs = Date.now();
   const snap: Snapshot = {
     filePath: resolve(args.cwd),
-    capturedAt: new Date().toISOString(),
+    capturedAt: new Date(capturedAtMs).toISOString(),
+    capturedAtMs,
     reason: args.reason,
     hash: ref.slice(0, 16),
     size: 0,
