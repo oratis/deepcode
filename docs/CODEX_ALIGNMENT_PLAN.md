@@ -267,11 +267,13 @@ model tool call
 
 ### PR 4 — Desktop runtime packaging ADR/spike
 
-- 在 bundled Node sidecar、单可执行 sidecar、Rust runtime 与过渡 renderer loop 中做可发布选择。
-- 必须在签名后的 `.app`、无系统 Node 环境中证明启动、退出、取消、升级和恢复。
-- 同时决定单客户端 stdio 还是多客户端 daemon/socket，不提前承诺 active turn 跨端附着。
+- 已由 `docs/adr/0001-desktop-runtime-sidecar.md` 决定采用 Tauri 监督的 target-specific Node 22
+  sidecar、单文件 app-server resource 与单客户端 stdio；不承诺 active turn 跨端附着。
+- 可复现 probe 必须在无系统 Node 的 PATH 中证明协议握手，并报告 runtime 体积与冷启动。
+- 签名、notarization、取消、升级和恢复仍是迁移 renderer 前的 release gate，不能用本地 ad-hoc
+  签名冒充发布验证。
 
-验收：形成 ADR、可复现 spike、安装包体积/冷启动/签名结果和失败回滚路径。
+验收：形成 ADR、可复现 spike、本机构建体积/冷启动证据、发布签名 gate 和失败回滚路径。
 
 ### PR 5 — App-server 垂直切片与 CLI
 

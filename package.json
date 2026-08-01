@@ -23,6 +23,7 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "docs:check": "node scripts/check-docs.mjs",
+    "spike:desktop-sidecar": "node scripts/spike-desktop-sidecar.mjs",
     "clean": "pnpm -r clean",
     "prepare": "husky || true"
   },
