@@ -24,6 +24,8 @@ export interface OutputStyle {
 export interface LoadOutputStylesOpts {
   cwd: string;
   home?: string;
+  /** Direct DeepCode data directory (contains output-styles/). */
+  directory?: string;
 }
 
 /** Built-in styles (M4 ships 4 — matches §3.13b table). */
@@ -84,8 +86,9 @@ export const BUILTIN_STYLES: OutputStyle[] = [
 
 export async function loadOutputStyles(opts: LoadOutputStylesOpts): Promise<OutputStyle[]> {
   const home = opts.home ?? homedir();
+  const directory = opts.directory ?? join(home, '.deepcode');
   const out: OutputStyle[] = [...BUILTIN_STYLES];
-  await loadFromDir(join(home, '.deepcode', 'output-styles'), 'user', out);
+  await loadFromDir(join(directory, 'output-styles'), 'user', out);
   await loadFromDir(join(opts.cwd, '.deepcode', 'output-styles'), 'project', out);
   return out;
 }

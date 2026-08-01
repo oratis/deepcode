@@ -318,7 +318,12 @@ model tool call
   app-server 现在共享 core trust store，未信任项目不能通过 permissions/sandbox/env 等字段扩大权限。
 - CLI doctor、Desktop About、VS Code command 与 LSP command 均消费同一个 diagnostics DTO，
   客户端不再自行解释配置来源或 trust gate。
-- 下一步统一 `AGENTS.md`、`DEEPCODE.md`、MCP、skills、plugins、hooks。
+- app-server 已在 host 内统一 `AGENTS.md`、`DEEPCODE.md`、rules、memory、user/project skills、
+  output style、hooks 与 model/effort/mode defaults；turn-scoped lease 为下一步 MCP/plugin cleanup
+  建立统一生命周期。
+- 下一步把 MCP 与 plugin subprocess 接入同一 lease，并统一资源引用/错误诊断。
+- hook 安全继续收敛到定义哈希级审核：未审阅或已变化的非托管 command hook 默认跳过，
+  并在 diagnostics 中暴露来源与审核状态；目录 trust 只是第一道门。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
 - diff review、可定位反馈、trace id、结构化日志与脱敏导出。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。

@@ -67,6 +67,8 @@ export interface LoadMemoryOpts {
   cwd: string;
   /** Override $HOME for tests. */
   home?: string;
+  /** Direct DeepCode data directory (contains DEEPCODE.md and projects/). */
+  directory?: string;
   /** Max bytes total (caller can use this to enforce settings.memoryLoadCapKB). */
   maxBytes?: number;
   /** Max depth for @-import recursion. */
@@ -78,6 +80,7 @@ const DEFAULT_MAX_DEPTH = 4;
 
 export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
   const home = opts.home ?? homedir();
+  const directory = opts.directory ?? join(home, '.deepcode');
   const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
   const maxDepth = opts.maxImportDepth ?? DEFAULT_MAX_DEPTH;
 
@@ -111,10 +114,14 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
   };
 
   // 1. ~/.deepcode/DEEPCODE.md (user-level)
-  await addFile(join(home, '.deepcode', 'DEEPCODE.md'), 'user memory', 0);
+  await addFile(join(directory, 'DEEPCODE.md'), 'user memory', 0);
 
   // 1b. Agent/user-written project memory (the `#` remember store).
-  await addFile(projectMemoryPath(home, opts.cwd), 'project memory', 0);
+  await addFile(
+    join(directory, 'projects', projectMemoryKey(opts.cwd), 'memory', 'MEMORY.md'),
+    'project memory',
+    0,
+  );
 
   // 2. DEEPCODE.md walking from cwd → root, deepest first
   const upwards = walkUpwards(opts.cwd, home);

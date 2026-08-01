@@ -6,6 +6,7 @@ import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
 import { EditorProtocolRuntime } from './protocol-runtime.js';
 import { formatConfigDiagnostics } from './diagnostics.js';
+import { explicitConfigValue } from './settings.js';
 
 type V = typeof import('vscode');
 
@@ -99,11 +100,12 @@ async function runInOutput(
 
 function modelInput(text: string, vscodeMod: V) {
   const config = vscodeMod.workspace.getConfiguration('deepcode');
+  const model = explicitConfigValue(config.inspect<string>('model'));
+  const effort = explicitConfigValue(config.inspect<string>('effort'));
   return {
     text,
-    model: config.get<string>('model', 'deepseek-chat'),
-    effort: config.get<string>('effort', 'medium'),
-    mode: 'default',
+    ...(model ? { model } : {}),
+    ...(effort ? { effort } : {}),
   };
 }
 

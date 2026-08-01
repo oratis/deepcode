@@ -22,3 +22,8 @@ The transport is experimental. Clients must negotiate `protocolVersion` before u
 `config/diagnostics` accepts a workspace `cwd` and returns a value-free report containing loaded
 layers, leaf provenance, trust-gated fields, and validation issues. Configuration values and
 credentials never cross this protocol boundary.
+
+Each turn leases a host composition for its workspace. The backend loads user/project
+`DEEPCODE.md`, `AGENTS.md`, rules, memory, skills, output style, hooks, and settings defaults before
+calling `RuntimeHost`; clients remain unaware of those files. The lease has an explicit async close
+hook so later MCP/plugin resources cannot leak across turns.
