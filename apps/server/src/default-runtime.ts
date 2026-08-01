@@ -1,12 +1,7 @@
-import {
-  BUILTIN_TOOLS,
-  CredentialsStore,
-  DeepSeekProvider,
-  RuntimeHost,
-  SAFE_READONLY_TOOLS,
-  ToolRegistry,
-  resolveCredentials,
-} from '@deepcode/core';
+import { CredentialsStore, resolveCredentials } from '@deepcode/core/credentials';
+import { DeepSeekProvider } from '@deepcode/core/dist/providers/deepseek.js';
+import { RuntimeHost, SAFE_READONLY_TOOLS } from '@deepcode/core/runtime';
+import { BUILTIN_TOOLS, ToolRegistry } from '@deepcode/core/tools';
 
 import { RuntimeHostExecutor } from './runtime-executor.js';
 

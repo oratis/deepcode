@@ -11,6 +11,7 @@ export default [
   {
     ignores: [
       '**/dist/**',
+      '**/dist-sidecar/**',
       '**/dist-electron/**',
       '**/node_modules/**',
       '**/target/**', // Rust/Cargo build output (generated JS in src-tauri/target)

@@ -32,6 +32,18 @@
       "types": "./dist/keybindings/vim.d.ts",
       "import": "./dist/keybindings/vim.js"
     },
+    "./credentials": {
+      "types": "./dist/credentials/index.d.ts",
+      "import": "./dist/credentials/index.js"
+    },
+    "./runtime": {
+      "types": "./dist/runtime/index.d.ts",
+      "import": "./dist/runtime/index.js"
+    },
+    "./tools": {
+      "types": "./dist/tools/index.d.ts",
+      "import": "./dist/tools/index.js"
+    },
     "./skills/*": "./skills/*",
     "./package.json": "./package.json"
   },

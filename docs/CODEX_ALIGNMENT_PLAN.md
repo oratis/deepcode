@@ -286,6 +286,8 @@ model tool call
 ### PR 6 — Desktop runtime migration
 
 - 按 ADR 把 runtime 移出 renderer，移除 WebView 中的 provider/API key。
+- 已建立可构建的 CJS app-server、target runtime、Rust supervisor 与 renderer protocol client；迁移期
+  `mac-agent` 仅作 feature fallback。
 - React 只消费协议事件；接入真实 interrupt、恢复与 structured items。
 - 把 `preview-app.html` 变成自动化 fixture harness；收敛现有 Changes/Files/Inspector。
 

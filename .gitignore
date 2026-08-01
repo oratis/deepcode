@@ -39,6 +39,8 @@ apps/desktop/dist-electron/
 # Tauri build outputs (Rust target dir is large)
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/binaries/
+apps/server/dist-sidecar/
 # Note: Cargo.lock IS committed (best practice for applications)
 
 # Release artifacts — too large for git; CI uploads to GitHub Releases instead

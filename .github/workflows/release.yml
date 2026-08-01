@@ -116,6 +116,19 @@ jobs:
       - name: pnpm install
         run: pnpm install --frozen-lockfile
 
+      - name: Prepare pinned Node sidecar runtime
+        env:
+          NODE_SIDECAR_VERSION: 22.23.1
+          NODE_SIDECAR_SHA256: ef28d8fab2c0e4314522d4bb1b7173270aa3937e93b92cb7de79c112ac1fa953
+        run: |
+          archive="node-v${NODE_SIDECAR_VERSION}-darwin-arm64.tar.xz"
+          curl --fail --location --retry 3 \
+            "https://nodejs.org/dist/v${NODE_SIDECAR_VERSION}/${archive}" \
+            --output "$RUNNER_TEMP/$archive"
+          echo "${NODE_SIDECAR_SHA256}  $RUNNER_TEMP/$archive" | shasum -a 256 --check
+          tar -xJf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP"
+          echo "DEEPCODE_NODE_RUNTIME=$RUNNER_TEMP/node-v${NODE_SIDECAR_VERSION}-darwin-arm64/bin/node" >> "$GITHUB_ENV"
+
       - name: Set version
         run: |
           cd apps/desktop

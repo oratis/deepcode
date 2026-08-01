@@ -6,9 +6,10 @@
 // commands that the frontend can't do (file dialogs, credentials read/write,
 // settings file IO, child-process spawn for CLI integration).
 //
-// The agent loop itself runs in the renderer via @deepcode/core — no Node
-// runtime in main process means smaller binary + faster startup.
+// During the protocol rollout, Rust also supervises the bundled app-server
+// sidecar. The renderer loop remains only as an explicit compatibility path.
 
+mod app_server;
 mod commands;
 mod credentials;
 mod settings;
@@ -16,6 +17,9 @@ mod snapshots;
 mod tools;
 mod voice;
 
+use app_server::{
+    app_server_send, app_server_start, app_server_status, app_server_stop, AppServerState,
+};
 use commands::{
     append_allow_matcher, cli_path, get_app_info, get_settings_path, list_plugins, list_sessions,
     list_skills, load_keybindings, load_settings_file, open_url, read_credentials,
@@ -40,8 +44,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .manage(VoiceState::default())
         .manage(BashState::default())
+        .manage(AppServerState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
+            app_server_start,
+            app_server_send,
+            app_server_stop,
+            app_server_status,
             read_credentials,
             save_credentials,
             load_settings_file,

@@ -65,7 +65,16 @@ echo "==> Signing identity: $SIGNING_ID"
 
 # ----- 3. Re-sign the .app with hardened runtime -----
 echo "==> Signing $APP_PATH ..."
-codesign --force --deep --options runtime \
+SIDECAR_PATH="$APP_PATH/Contents/MacOS/deepcode-runtime"
+if [ ! -x "$SIDECAR_PATH" ]; then
+  echo "ERROR: bundled runtime not found at $SIDECAR_PATH"
+  exit 1
+fi
+codesign --force --options runtime \
+  --sign "$SIGNING_ID" \
+  --timestamp \
+  "$SIDECAR_PATH"
+codesign --force --options runtime \
   --entitlements apps/desktop/src-tauri/Entitlements.plist \
   --sign "$SIGNING_ID" \
   --timestamp \

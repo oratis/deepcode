@@ -7,7 +7,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:tauri": "pnpm --filter @deepcode/app-server build:sidecar && node scripts/prepare-runtime.mjs && pnpm dev",
     "build": "tsc -b && vite build",
+    "build:tauri-assets": "pnpm build && pnpm --filter @deepcode/app-server build:sidecar && node scripts/prepare-runtime.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
@@ -20,6 +22,7 @@
   },
   "dependencies": {
     "@deepcode/core": "workspace:*",
+    "@deepcode/protocol": "workspace:*",
     "@deepcode/shared-ui": "workspace:*",
     "@tauri-apps/api": "^2.0.0",
     "@tauri-apps/plugin-dialog": "^2.0.0",

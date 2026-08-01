@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "pnpm dev",
-    "beforeBuildCommand": "pnpm build"
+    "beforeDevCommand": "pnpm dev:tauri",
+    "beforeBuildCommand": "pnpm build:tauri-assets"
   },
   "app": {
     "windows": [
@@ -32,8 +32,10 @@
     "active": true,
     "targets": ["app"],
     "resources": {
-      "../../../packages/core/skills": "skills"
+      "../../../packages/core/skills": "skills",
+      "../../server/dist-sidecar/app-server.cjs": "app-server.cjs"
     },
+    "externalBin": ["binaries/deepcode-runtime"],
     "category": "public.app-category.developer-tools",
     "shortDescription": "DeepSeek-powered coding agent",
     "longDescription": "DeepCode is a Claude-Code-parity coding agent powered by DeepSeek — chat, plan mode, tool use, sandboxed bash, MCP, plugins.",
