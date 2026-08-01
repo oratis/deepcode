@@ -3,8 +3,8 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
+  # Stacked PRs target feature branches; every PR still needs the same gates.
+  pull_request: {}
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
