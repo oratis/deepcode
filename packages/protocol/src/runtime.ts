@@ -44,6 +44,7 @@ export interface ProtocolRuntimeOptions {
   configDiagnostics?: boolean;
   diagnosticExport?: boolean;
   workspaceDiff?: boolean;
+  reviewActions?: boolean;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -82,6 +83,7 @@ export class ProtocolRuntime {
         configDiagnostics: this.options.configDiagnostics ?? false,
         diagnosticExport: this.options.diagnosticExport ?? false,
         workspaceDiff: this.options.workspaceDiff ?? false,
+        reviewActions: this.options.reviewActions ?? false,
       },
     };
   }

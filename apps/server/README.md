@@ -49,6 +49,8 @@ untracked changes. Untracked symlinks and binary contents are never read into th
 VS Code, and LSP consume this same capability; clients do not parse Git output independently.
 
 The read-only `SubmitReviewFinding` tool turns model findings into durable `review_finding` items
-with a workspace-relative path, tight line range, priority, and optional exact replacement. Applying
-one is deliberately another canonical turn, not a direct filesystem endpoint: clients use the shared
-prompt builder and the existing Edit/Write permission, approval, hook, sandbox, and snapshot path.
+with a workspace-relative path, tight line range, priority, and optional exact replacement.
+`review/apply` accepts one bounded list of finding ids, resolves the original payloads from the
+canonical thread, builds the verification-first prompt in the host, and records a `review_action`
+item tied to the new turn. It is not a filesystem endpoint: every edit still uses the existing
+Edit/Write permission, approval, hook, sandbox, and snapshot path.

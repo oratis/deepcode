@@ -1,5 +1,4 @@
 import {
-  reviewApplyPrompt,
   type ConfigDiagnosticsResult,
   type InitializeResult,
   type ProtocolEvent,
@@ -97,7 +96,24 @@ export class EditorProtocolRuntime {
     finding: ReviewFindingPayload,
     onEvent: EventHandler,
   ): Promise<{ threadId: string; turnId: string }> {
-    return this.start({ text: reviewApplyPrompt(finding) }, onEvent);
+    return this.applyFindings([finding], onEvent);
+  }
+
+  async applyFindings(
+    findings: ReviewFindingPayload[],
+    onEvent: EventHandler,
+  ): Promise<{ threadId: string; turnId: string }> {
+    const initialized = await this.client.connect();
+    if (!initialized.capabilities.reviewActions) {
+      throw new Error('The app-server does not support review actions');
+    }
+    const thread = await this.ensureThread();
+    const turn = await this.client.request<TurnSnapshot>('review/apply', {
+      threadId: thread.id,
+      findingIds: findings.map((finding) => finding.findingId),
+    });
+    this.trackTurn(turn, thread.id, onEvent);
+    return { threadId: thread.id, turnId: turn.id };
   }
 
   async interrupt(turnId: string): Promise<boolean> {
@@ -154,6 +170,12 @@ export class EditorProtocolRuntime {
     const threadId = this.turnThreads.get(turnId);
     if (!threadId) throw new Error(`Active turn not found: ${turnId}`);
     return this.client.request(method, { threadId, turnId, ...params });
+  }
+
+  private trackTurn(turn: TurnSnapshot, threadId: string, onEvent: EventHandler): void {
+    this.turnThreads.set(turn.id, threadId);
+    this.handlers.set(turn.id, onEvent);
+    this.flush(turn.id);
   }
 
   private route(event: ProtocolEvent): void {

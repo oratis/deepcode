@@ -21,6 +21,7 @@ const capabilities: InitializeResult = {
     transientDeltas: true,
     structuredToolEvents: true,
     interactiveRequests: true,
+    reviewActions: true,
     configDiagnostics: true,
     diagnosticExport: true,
     workspaceDiff: true,
@@ -81,7 +82,8 @@ class FakeClient {
       case 'thread/read':
       case 'thread/resume':
         return this.thread as T;
-      case 'turn/start': {
+      case 'turn/start':
+      case 'review/apply': {
         // Deliberately precedes the response to exercise the LSP fast-turn queue.
         this.emit({ type: 'turn.started', threadId: this.thread.id, turn: this.turn });
         queueMicrotask(() => {
@@ -159,6 +161,7 @@ describe('handleMessage — initialize', () => {
         'deepcode.configDiagnostics',
         'deepcode.workspaceDiff',
         'deepcode.applyReviewFinding',
+        'deepcode.applyReviewFindings',
       ]),
     );
   });
@@ -217,9 +220,26 @@ describe('handleMessage — protocol commands', () => {
       threadId: 'thread-1',
       turnId: 'turn-1',
     });
-    expect(client.requests.at(-1)?.params.input).toEqual(
-      expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
+    expect(client.requests.at(-1)).toMatchObject({
+      method: 'review/apply',
+      params: { threadId: 'thread-1', findingIds: ['finding-1'] },
+    });
+  });
+
+  it('applies a bounded finding batch by canonical id', async () => {
+    const client = new FakeClient();
+    __test.setClientFactory(() => client);
+    const out: LspMessage[] = [];
+    await execute(
+      22,
+      'deepcode.applyReviewFindings',
+      { findingIds: ['finding-1', 'finding-2'] },
+      (message) => out.push(message),
     );
+    expect(client.requests.at(-1)).toMatchObject({
+      method: 'review/apply',
+      params: { threadId: 'thread-1', findingIds: ['finding-1', 'finding-2'] },
+    });
   });
 
   it('starts a canonical thread and emits native protocol events in order', async () => {

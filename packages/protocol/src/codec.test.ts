@@ -39,6 +39,7 @@ describe('protocol codec', () => {
     'config/diagnostics',
     'diagnostics/export',
     'workspace/diff',
+    'review/apply',
   ] as const)('accepts the interactive response method %s', (method) => {
     expect(decodeProtocolRequest(JSON.stringify({ id: 2, method, params: {} }))).toEqual({
       id: 2,

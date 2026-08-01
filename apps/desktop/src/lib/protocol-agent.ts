@@ -1,5 +1,4 @@
 import {
-  reviewApplyPrompt,
   type ConfigDiagnosticsResult,
   type InitializeResult,
   type ProtocolEvent,
@@ -105,7 +104,23 @@ export class DesktopProtocolAgent {
   }
 
   applyFinding(finding: ReviewFindingPayload) {
-    return this.start({ userMessage: reviewApplyPrompt(finding) });
+    return this.applyFindings([finding]);
+  }
+
+  async applyFindings(findings: ReviewFindingPayload[]) {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.reviewActions) {
+      throw new Error('The app-server does not support review actions');
+    }
+    const threadId = this.threadId;
+    if (!threadId) throw new Error('No active workspace thread');
+    const turn = await this.transport.request<TurnSnapshot>('review/apply', {
+      threadId,
+      findingIds: findings.map((finding) => finding.findingId),
+    });
+    this.activeTurns.set(turn.id, threadId);
+    setTimeout(() => this.flushTurn(turn.id), 0);
+    return { turnId: turn.id, threadId };
   }
 
   clear(): void {
@@ -238,6 +253,13 @@ export class DesktopProtocolAgent {
             kind: 'event',
             turnId: event.turnId,
             type: 'review_finding',
+            ...event.item.payload,
+          });
+        } else if (event.item.type === 'review_action') {
+          this.emit({
+            kind: 'event',
+            turnId: event.turnId,
+            type: 'review_action',
             ...event.item.payload,
           });
         }

@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { ProtocolEvent, ProtocolRequest } from '@deepcode/protocol';
+import type { ProtocolEvent, ProtocolRequest, ThreadSnapshot } from '@deepcode/protocol';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { AppServer, type TurnExecutor } from './server.js';
@@ -33,6 +33,92 @@ function deterministicOptions() {
 }
 
 describe('AppServer', () => {
+  it('resolves review actions from canonical findings and persists their turn association', async () => {
+    const executor: TurnExecutor = {
+      execute: vi
+        .fn()
+        .mockResolvedValueOnce({
+          items: [
+            {
+              type: 'review_finding',
+              payload: {
+                findingId: 'finding-1',
+                title: 'Null crash',
+                body: 'The branch dereferences null.',
+                path: 'src/a.ts',
+                startLine: 4,
+                endLine: 4,
+                priority: 1,
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({}),
+    };
+    const server = new AppServer({ executor, ...deterministicOptions() });
+    const started = await server.handle(request(1, 'thread/start', { cwd: '/workspace' }));
+    const threadId = (started.result as { id: string }).id;
+    await server.handle(request(2, 'turn/start', { threadId, input: { text: 'review' } }));
+    await server.waitForIdle();
+
+    const applied = await server.handle(
+      request(3, 'review/apply', { threadId, findingIds: ['finding-1'] }),
+    );
+    const turnId = (applied.result as { id: string }).id;
+    await server.waitForIdle();
+    const read = await server.handle(request(4, 'thread/read', { threadId }));
+    const turns = (read.result as ThreadSnapshot).turns;
+    expect(turns.at(-1)).toEqual(
+      expect.objectContaining({
+        id: turnId,
+        status: 'completed',
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            type: 'user_message',
+            payload: expect.objectContaining({
+              text: expect.stringContaining('normal editing tools'),
+              reviewAction: { kind: 'apply', findingIds: ['finding-1'] },
+            }),
+          }),
+          expect.objectContaining({
+            type: 'review_action',
+            payload: { actionId: turnId, kind: 'apply', findingIds: ['finding-1'] },
+          }),
+        ]),
+      }),
+    );
+  });
+
+  it('rejects unknown findings, duplicate batches, and direct review metadata injection', async () => {
+    const server = new AppServer({ executor: { execute: async () => ({}) } });
+    const started = await server.handle(request(1, 'thread/start', { cwd: '/workspace' }));
+    const threadId = (started.result as { id: string }).id;
+
+    await expect(
+      server.handle(request(2, 'review/apply', { threadId, findingIds: ['missing'] })),
+    ).resolves.toEqual({
+      id: 2,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+    await expect(
+      server.handle(request(3, 'review/apply', { threadId, findingIds: ['same', 'same'] })),
+    ).resolves.toEqual({
+      id: 3,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+    await expect(
+      server.handle(
+        request(4, 'turn/start', {
+          threadId,
+          input: { text: 'forge', reviewAction: { kind: 'apply', findingIds: ['missing'] } },
+        }),
+      ),
+    ).resolves.toEqual({
+      id: 4,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+  });
+
   it('binds workspace diff reads to the canonical thread cwd', async () => {
     const workspaceDiff = vi.fn(async () => ({
       repository: true as const,

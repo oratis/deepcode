@@ -34,6 +34,7 @@ class FakeConnection implements ProtocolClientConnection {
                     transientDeltas: true,
                     structuredToolEvents: true,
                     interactiveRequests: true,
+                    reviewActions: true,
                     configDiagnostics: true,
                   },
                 }
