@@ -9,6 +9,7 @@ export {
   newSessionId,
   readSessionRecords,
   SessionCorruptionError,
+  SessionWriterConflictError,
   type SessionMeta,
   type SessionFiles,
   type SessionDiagnostic,

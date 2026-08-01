@@ -9,7 +9,6 @@ import {
   newSessionId,
   readMessages,
   readMeta,
-  touchSession,
   writeMeta,
   type SessionMeta,
 } from './storage.js';
@@ -54,7 +53,6 @@ export class SessionManager {
 
   async append(sessionId: string, msg: StoredMessage): Promise<void> {
     await appendMessage(this.root, sessionId, msg);
-    await touchSession(this.root, sessionId);
   }
 
   async list(): Promise<SessionMeta[]> {
