@@ -44,6 +44,8 @@ export class DesktopProtocolClient {
   private readonly subscribers = new Set<(event: ProtocolEvent) => void>();
   private nextId = 1;
   private unlisten?: () => void;
+  private initialized?: InitializeResult;
+  private connecting?: Promise<InitializeResult>;
 
   constructor(
     private readonly bridge: ProtocolClientBridge = tauriBridge,
@@ -51,6 +53,17 @@ export class DesktopProtocolClient {
   ) {}
 
   async connect(): Promise<InitializeResult> {
+    if (this.initialized) return this.initialized;
+    if (this.connecting) return this.connecting;
+    this.connecting = this.open();
+    try {
+      return await this.connecting;
+    } finally {
+      this.connecting = undefined;
+    }
+  }
+
+  private async open(): Promise<InitializeResult> {
     if (!this.unlisten) this.unlisten = await this.bridge.listen((output) => this.receive(output));
     await this.bridge.start();
     const initialized = await this.request<InitializeResult>('initialize');
@@ -58,6 +71,7 @@ export class DesktopProtocolClient {
       await this.close();
       throw new Error(`Unsupported app-server protocol version: ${initialized.protocolVersion}`);
     }
+    this.initialized = initialized;
     return initialized;
   }
 
@@ -92,11 +106,13 @@ export class DesktopProtocolClient {
     this.rejectAll(new Error('app-server client closed'));
     this.unlisten?.();
     this.unlisten = undefined;
+    this.initialized = undefined;
     await this.bridge.stop();
   }
 
   private receive(output: AppServerOutput): void {
     if (output.stream === 'terminated') {
+      this.initialized = undefined;
       this.rejectAll(
         new Error(
           `app-server terminated (code=${output.code ?? 'none'}, signal=${output.signal ?? 'none'})`,

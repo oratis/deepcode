@@ -32,14 +32,16 @@ export interface LoadSettingsOpts {
   cwd: string;
   /** Override $HOME for tests. */
   home?: string;
+  /** Direct DeepCode data directory override (contains settings.json). */
+  directory?: string;
   /** `--settings <file>`: a settings file that wins over all discovered layers. */
   settingsPath?: string;
 }
 
 export function settingsPaths(opts: LoadSettingsOpts): LoadedSettings['sources'] {
-  const home = opts.home ?? homedir();
+  const directory = opts.directory ?? join(opts.home ?? homedir(), '.deepcode');
   return {
-    userPath: join(home, '.deepcode', 'settings.json'),
+    userPath: join(directory, 'settings.json'),
     projectPath: resolve(opts.cwd, '.deepcode', 'settings.json'),
     localPath: resolve(opts.cwd, '.deepcode', 'settings.local.json'),
   };

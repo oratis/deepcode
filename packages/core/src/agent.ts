@@ -59,6 +59,8 @@ export interface RunAgentOptions {
   onEvent?: (event: AgentEvent) => void;
   /** Optional: persist each turn to a session. */
   session?: { manager: SessionManager; id: string };
+  /** Keep session-backed snapshots while another owner materializes messages. */
+  persistSessionMessages?: boolean;
   /** Optional: snapshot files before/after Edit/Write tool calls. */
   enableSnapshots?: boolean;
   /** Required dispatch mode. Every tool call goes through the central gate. */
@@ -239,7 +241,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       timestamp: new Date().toISOString(),
     };
     history.push(userMsg);
-    if (opts.session) await opts.session.manager.append(opts.session.id, userMsg);
+    if (opts.session && opts.persistSessionMessages !== false) {
+      await opts.session.manager.append(opts.session.id, userMsg);
+    }
   }
 
   // modeSignal is mutable — EnterPlanMode / ExitPlanMode flip these; the agent
@@ -507,7 +511,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       timestamp: new Date().toISOString(),
     };
     history.push(assistantMsg);
-    if (opts.session) await opts.session.manager.append(opts.session.id, assistantMsg);
+    if (opts.session && opts.persistSessionMessages !== false) {
+      await opts.session.manager.append(opts.session.id, assistantMsg);
+    }
 
     opts.onEvent?.({ type: 'model_step_complete', step: turnsUsed, message: assistantMsg });
 
@@ -697,7 +703,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       timestamp: new Date().toISOString(),
     };
     history.push(resultMsg);
-    if (opts.session) await opts.session.manager.append(opts.session.id, resultMsg);
+    if (opts.session && opts.persistSessionMessages !== false) {
+      await opts.session.manager.append(opts.session.id, resultMsg);
+    }
 
     // M3c: auto-compact if the *current* context crossed the threshold.
     //

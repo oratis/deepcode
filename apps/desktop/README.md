@@ -16,13 +16,13 @@ src/                 renderer（React + Vite，无 Tailwind，手写设计系统
                      Plugins / Repl / Sessions / Settings / Skills
   components/        Sidebar / InspectorRail / ToolCard / UpdateBanner …
   lib/               tauri-api（renderer↔Rust IPC 封装）· protocol-client ·
-                     mac-agent（实验期 fallback）· repl-stream · updater …
+                     protocol-agent · repl-stream · updater …
 src-tauri/           Rust 主进程
   src/app_server.rs  bundled runtime 启停、stdio 与 crash event
   src/commands.rs    #[tauri::command] —— renderer 通过 invoke() 调用
-  src/credentials.rs 凭据读写（原子写入）
+  src/credentials.rs 凭据保存与无密钥状态查询
   src/settings.rs    设置持久化
-  src/tools.rs       工具实现
+  src/tools.rs       legacy native helpers（renderer 仅暴露只读 file read）
   src/lib.rs         Tauri builder / 插件注册
   tauri.conf.json    窗口 + 构建 + 打包配置
   capabilities/      权限能力声明
@@ -32,10 +32,10 @@ src-tauri/           Rust 主进程
 renderer ↔ Rust 的 IPC 边界由 `src/lib/tauri-api.ts` 封装，契约测试见
 `src/lib/tauri-api.test.ts`（#84）。
 
-实验 app-server 由 Tauri 作为 target-specific sidecar 监督。`apps/server` 会被打成单个
+app-server 由 Tauri 作为 target-specific sidecar 监督。`apps/server` 会被打成单个
 `app-server.cjs` resource，Node runtime 通过 `bundle.externalBin` 进入 `.app`；renderer 只能通过
-Rust commands 与版本化协议通信，不能直接使用 shell plugin。现有 `mac-agent` 在迁移期保留为显式
-fallback，不能作为长期双架构。
+Rust commands 与版本化协议通信，不能直接使用 shell plugin。provider、agent loop、tools、权限、
+session materialization 和凭证明文都只存在于 sidecar；renderer 不再带有第二套运行时。
 
 ## 开发
 

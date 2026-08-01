@@ -74,7 +74,7 @@ export interface DeepCodeAPI {
       /** Absolute project folder path. When unset, tools error. */
       cwd?: string;
       allowedTools?: string[];
-    }) => Promise<{ turnId: string }>;
+    }) => Promise<{ turnId: string; sessionId?: string }>;
     abort: (args: { turnId: string }) => Promise<boolean>;
     /** Resolve an in-flight permission_request event. `decision === 'always'`
      *  also persists a matcher to ~/.deepcode/settings.json. */

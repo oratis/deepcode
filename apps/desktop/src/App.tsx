@@ -3,7 +3,7 @@
 // Milestone: 0.1.2 — adds project-folder flow + inspector wiring + session refresh.
 
 import { useCallback, useEffect, useState } from 'react';
-import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
 import { FilePanel } from './components/FilePanel.js';
 import { InspectorPanel } from './components/InspectorPanel.js';
 import { InspectorRail } from './components/InspectorRail.js';
@@ -12,7 +12,7 @@ import { SETTINGS_FAMILY, SettingsLayout } from './components/SettingsLayout.js'
 import { Sidebar } from './components/Sidebar.js';
 import { UpdateBanner } from './components/UpdateBanner.js';
 import { registerShortcut } from './lib/keyboard.js';
-import { clearHistory as clearAgentHistory } from './lib/mac-agent.js';
+import { clearProtocolThread as clearAgentHistory } from './lib/protocol-agent.js';
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
 import { storedToMsgs, type Msg } from './lib/repl-stream.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
@@ -243,6 +243,7 @@ export function App(): JSX.Element {
           setScreen,
           projectPath,
           () => setSessionEpoch((k) => k + 1),
+          setActiveSessionId,
           handleInspector,
           resumedMessages,
           openFile,
@@ -290,6 +291,7 @@ function renderScreen(
   setScreen: (s: ScreenName) => void,
   projectPath: string,
   onTurnComplete: () => void,
+  onSessionStarted: (sessionId: string) => void,
   onInspector: (patch: Partial<InspectorData>) => void,
   initialMessages?: Msg[],
   onOpenFile?: (path: string) => void,
@@ -301,6 +303,7 @@ function renderScreen(
         <ReplScreen
           projectPath={projectPath}
           onTurnComplete={onTurnComplete}
+          onSessionStarted={onSessionStarted}
           initialMessages={initialMessages}
           onInspector={onInspector}
           onOpenFile={onOpenFile}
@@ -327,6 +330,7 @@ function renderScreen(
         <ReplScreen
           projectPath={projectPath}
           onTurnComplete={onTurnComplete}
+          onSessionStarted={onSessionStarted}
           initialMessages={initialMessages}
           onInspector={onInspector}
           onOpenFile={onOpenFile}

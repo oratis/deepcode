@@ -87,7 +87,16 @@ pub async fn tool_read(
     offset: Option<usize>,
     limit: Option<usize>,
 ) -> Result<ReadOk, String> {
-    let raw = tokio::fs::read_to_string(&file_path)
+    let resolved = tokio::fs::canonicalize(&file_path)
+        .await
+        .map_err(|e| format!("read {}: {}", file_path, e))?;
+    let credentials_path = if let Some(path) = crate::credentials::credentials_path() {
+        tokio::fs::canonicalize(path).await.ok()
+    } else {
+        None
+    };
+    reject_credentials_path(&resolved, credentials_path.as_deref())?;
+    let raw = tokio::fs::read_to_string(&resolved)
         .await
         .map_err(|e| format!("read {}: {}", file_path, e))?;
     let lines: Vec<&str> = raw.split('\n').collect();
@@ -127,6 +136,14 @@ pub async fn tool_read(
         lines_shown: shown,
         offset,
     })
+}
+
+fn reject_credentials_path(resolved: &Path, credentials_path: Option<&Path>) -> Result<(), String> {
+    if credentials_path.is_some_and(|path| resolved == path) {
+        Err("credential files are backend-only".to_string())
+    } else {
+        Ok(())
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -526,6 +543,13 @@ mod casing_tests {
             !k.contains(&"lines_total".to_string()),
             "snake_case leaked: {k:?}"
         );
+    }
+
+    #[test]
+    fn renderer_read_rejects_backend_credentials() {
+        let credential = Path::new("/home/user/.deepcode/credentials.json");
+        assert!(reject_credentials_path(credential, Some(credential)).is_err());
+        assert!(reject_credentials_path(Path::new("/workspace/src.ts"), Some(credential)).is_ok());
     }
 
     #[test]

@@ -41,6 +41,8 @@ class FakeBridge implements ProtocolClientBridge {
                     turnInterrupt: true,
                     completedItemPersistence: true,
                     transientDeltas: true,
+                    structuredToolEvents: true,
+                    interactiveRequests: true,
                   },
                 }
               : { ok: true },
@@ -64,6 +66,8 @@ describe('DesktopProtocolClient', () => {
     );
     expect(bridge.started).toBe(1);
     expect(bridge.requests[0]).toEqual({ id: 1, method: 'initialize', params: {} });
+    await client.connect();
+    expect(bridge.started).toBe(1);
     await client.close();
     expect(bridge.stopped).toBe(1);
   });

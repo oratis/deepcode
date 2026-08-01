@@ -3,8 +3,9 @@
 // Effort numbers: docs/design/effort-levels.md §3.2
 
 import OpenAI from 'openai';
-import type { ContentBlock, DeepSeekModel, Effort, StoredMessage, ToolUseBlock } from '../types.js';
+import type { ContentBlock, Effort, StoredMessage, ToolUseBlock } from '../types.js';
 import type { Provider, ProviderResult, ProviderRunOpts } from './types.js';
+export { DEEPSEEK_MODELS, DEFAULT_CONTEXT_WINDOW, contextWindowFor } from './model-metadata.js';
 
 export interface DeepSeekProviderOpts {
   apiKey: string;
@@ -13,29 +14,6 @@ export interface DeepSeekProviderOpts {
   authToken?: string;
   /** Injected fetch (used in tests). */
   fetch?: typeof globalThis.fetch;
-}
-
-// Validated against real DeepSeek API 2026-05-28: max_tokens hard limit is 8192,
-// context window 128k. The two "logical" model names are stable API aliases that
-// currently route to the V4 family.
-export const DEEPSEEK_MODELS: Record<DeepSeekModel, { ctx: number; maxOutput: number }> = {
-  'deepseek-chat': { ctx: 128_000, maxOutput: 8_192 },
-  'deepseek-reasoner': { ctx: 128_000, maxOutput: 8_192 },
-  'deepseek-v4-flash': { ctx: 128_000, maxOutput: 8_192 },
-  'deepseek-v4-pro': { ctx: 128_000, maxOutput: 8_192 },
-};
-
-/** Fallback context window for an unrecognized model id. */
-export const DEFAULT_CONTEXT_WINDOW = 128_000;
-
-/**
- * Context-window size (tokens) for a model id. Single source of truth for the
- * context-bar + auto-compact threshold across CLI and desktop — avoids the
- * 128_000 literal drifting out of sync with DEEPSEEK_MODELS. Falls back to
- * DEFAULT_CONTEXT_WINDOW for unknown (e.g. user-typed) model ids.
- */
-export function contextWindowFor(model: string): number {
-  return DEEPSEEK_MODELS[model as DeepSeekModel]?.ctx ?? DEFAULT_CONTEXT_WINDOW;
 }
 
 /**

@@ -1,12 +1,10 @@
-// The id of the session the agent is currently writing to. mac-agent owns the
-// session lifecycle (lazy create on first turn, resume, clear) and publishes
-// the active id here; mac-tools reads it to stamp file snapshots, and the file
-// panel reads it to fetch those snapshots. Kept in its own tiny module so both
-// sides depend on it without a mac-agent ↔ mac-tools import cycle.
+// Compatibility bridge for panels that still address canonical sessions.
+// The protocol agent publishes the active thread id here; canonical thread and
+// session ids are identical during the rollout.
 
 let activeSessionId: string | null = null;
 
-/** Set (or clear, with null) the session the tools should snapshot under. */
+/** Set (or clear, with null) the canonical session selected by the UI. */
 export function setActiveSessionId(id: string | null): void {
   activeSessionId = id;
 }

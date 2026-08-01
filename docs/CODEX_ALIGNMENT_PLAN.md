@@ -286,12 +286,14 @@ model tool call
 ### PR 6 — Desktop runtime migration
 
 - 按 ADR 把 runtime 移出 renderer，移除 WebView 中的 provider/API key。
-- 已建立可构建的 CJS app-server、target runtime、Rust supervisor 与 renderer protocol client；迁移期
-  `mac-agent` 仅作 feature fallback。
+- 已建立可构建的 CJS app-server、target runtime、Rust supervisor 与 renderer protocol client；桌面
+  chat 默认且唯一使用 sidecar，旧 `mac-agent`/`mac-tools` renderer runtime 已删除。
 - app-server 已补齐按 active thread/turn 绑定的 approval、AskUserQuestion、tool 与 usage 事件；interrupt
   会解除所有待响应请求，避免 sidecar 因 UI 离线而悬挂。
 - protocol snapshot 与 canonical session-v1 共享 id；新 thread 会进入现有 session 索引，旧 session
   在首次 resume 时惰性投影为 compatibility turn，避免桌面迁移形成第二套不可见历史。
+- renderer 只能查询 credential presence/base URL，不能读取 API key/auth token；原生 mutation/bash
+  commands 已从 Tauri invoke surface 移除，tool 执行统一经过 RuntimeHost。
 - React 只消费协议事件；接入真实 interrupt、恢复与 structured items。
 - 把 `preview-app.html` 变成自动化 fixture harness；收敛现有 Changes/Files/Inspector。
 

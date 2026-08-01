@@ -3,6 +3,7 @@ import {
   type Effort,
   type Mode,
   type RuntimeHost,
+  type SessionManager,
   type StoredMessage,
 } from '@deepcode/core';
 import { EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
@@ -14,6 +15,7 @@ export interface RuntimeHostExecutorOptions {
   createHost: (cwd: string, mode: Mode) => Promise<RuntimeHost> | RuntimeHost;
   systemPrompt?: string;
   model?: string;
+  sessionManager?: SessionManager;
 }
 
 const DEFAULT_SYSTEM_PROMPT =
@@ -45,6 +47,10 @@ export class RuntimeHostExecutor implements TurnExecutor {
       maxTokens: effortParams.maxTokens,
       temperature: effortParams.temperature,
       signal: args.signal,
+      session: this.options.sessionManager
+        ? { manager: this.options.sessionManager, id: args.thread.id }
+        : undefined,
+      persistSessionMessages: false,
       systemReminders: false,
       approval: async (toolName, _input, verdict) => {
         const decision = await args.requestApproval(

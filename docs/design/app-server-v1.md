@@ -68,6 +68,13 @@ AskUserQuestion prompts are emitted with opaque request ids; responses must matc
 thread, turn, request id, and request kind. Interrupt and shutdown resolve pending prompts before
 waiting for the executor, so an abandoned UI cannot strand the server.
 
+The desktop sidecar loads credentials from its private data directory in file-only mode because
+Tauri onboarding writes that file and never returns its secret fields to the webview. It consumes
+only user-level permissions/sandbox settings until project trust provenance moves into
+`RuntimeHost`; project files cannot widen the desktop runtime boundary in the meantime. The
+canonical SessionManager remains attached for pre/post file snapshots, with message appends
+disabled because `CanonicalThreadStore` is the single message materializer.
+
 ## Entrypoints
 
 After `pnpm build`, either command starts the same handler:
