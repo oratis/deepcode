@@ -11,6 +11,7 @@
 // Channel naming convention: `<domain>:<verb>` for request/response invokes
 // and `<domain>:event` for streamed events.
 
+import { randomBytes } from 'node:crypto';
 import type { AgentEvent, Mode, StoredMessage } from '../types.js';
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -145,15 +146,15 @@ export type IpcResponse<C extends IpcChannel> = IpcRequestMap[C]['res'];
 
 /**
  * Generate a fresh turn ID — used by the main process when starting a turn.
- * Format: `turn-<timestamp36>-<random>`.
+ * Format: `turn-<timestamp36>-<cryptographic-random-hex>`.
  */
 export function newTurnId(): string {
-  return `turn-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  return `turn-${Date.now().toString(36)}-${randomBytes(12).toString('hex')}`;
 }
 
 /**
  * Generate a fresh question ID for an AskUserQuestion prompt.
  */
 export function newQuestionId(): string {
-  return `q-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  return `q-${Date.now().toString(36)}-${randomBytes(12).toString('hex')}`;
 }
