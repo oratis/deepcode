@@ -97,6 +97,8 @@ jobs:
           runtime="apps/desktop/src-tauri/binaries/deepcode-runtime-${target}"
           mkdir -p "$(dirname "$runtime")"
           touch "$runtime"
+          mkdir -p apps/server/dist-sidecar
+          touch apps/server/dist-sidecar/app-server.cjs
       - name: Check and test Tauri backend
         run: |
           cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
