@@ -1,0 +1,27 @@
+{
+  "name": "@deepcode/protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experimental provider- and transport-neutral DeepCode lifecycle protocol",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "lint": "echo 'lint: configured at workspace root' && exit 0",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
