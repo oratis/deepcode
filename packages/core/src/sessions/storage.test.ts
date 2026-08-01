@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,6 +8,8 @@ import {
   newSessionId,
   readMessages,
   readMeta,
+  readSessionRecords,
+  SessionCorruptionError,
   sessionFiles,
   writeMeta,
 } from './storage.js';
@@ -67,6 +69,72 @@ describe('session storage', () => {
     expect(await readMessages(root, 'nope')).toEqual([]);
   });
 
+  it('reads desktop header + typed message JSONL without changing its bytes', async () => {
+    const id = 'desktop-old';
+    const path = sessionFiles(root, id).jsonlPath;
+    const original = [
+      JSON.stringify({
+        type: 'session_meta',
+        id,
+        cwd: '/desktop',
+        created_at: 1_767_225_600,
+        title: 'Legacy desktop',
+      }),
+      JSON.stringify({
+        type: 'message',
+        role: 'user',
+        content: [{ type: 'text', text: 'hello from desktop' }],
+        timestamp: '2026-01-01T00:00:01.000Z',
+      }),
+      '',
+    ].join('\n');
+    await writeFile(path, original, 'utf8');
+
+    const parsed = await readSessionRecords(root, id);
+    expect(parsed.format).toBe('desktop-v0');
+    expect(parsed.meta).toMatchObject({ id, cwd: '/desktop', title: 'Legacy desktop' });
+    expect(parsed.messages).toHaveLength(1);
+    expect(await readFile(path, 'utf8')).toBe(original);
+    await expect(readMeta(root, id)).resolves.toMatchObject({ id, cwd: '/desktop' });
+  });
+
+  it('tolerates only an incomplete final JSONL record', async () => {
+    const id = 'truncated-tail';
+    await writeFile(
+      sessionFiles(root, id).jsonlPath,
+      `${JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'complete' }] })}\n{"role":"assistant"`,
+      'utf8',
+    );
+
+    const parsed = await readSessionRecords(root, id);
+    expect(parsed.messages).toHaveLength(1);
+    expect(parsed.diagnostics).toEqual([
+      expect.objectContaining({ line: 2, code: 'truncated_tail', fatal: false }),
+    ]);
+    await expect(readMessages(root, id)).resolves.toHaveLength(1);
+  });
+
+  it('reports middle corruption instead of silently dropping history', async () => {
+    const id = 'middle-corrupt';
+    await writeFile(
+      sessionFiles(root, id).jsonlPath,
+      [
+        JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'before' }] }),
+        '{not-json}',
+        JSON.stringify({ role: 'assistant', content: [{ type: 'text', text: 'after' }] }),
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const parsed = await readSessionRecords(root, id);
+    expect(parsed.messages).toHaveLength(2);
+    expect(parsed.diagnostics).toEqual([
+      expect.objectContaining({ line: 2, code: 'invalid_json', fatal: true }),
+    ]);
+    await expect(readMessages(root, id)).rejects.toBeInstanceOf(SessionCorruptionError);
+  });
+
   it('listSessions sorts newest first', async () => {
     await writeMeta(root, {
       id: 'a',
@@ -82,6 +150,22 @@ describe('session storage', () => {
     });
     const list = await listSessions(root);
     expect(list.map((s) => s.id)).toEqual(['b', 'a']);
+  });
+
+  it('listSessions includes desktop-only JSONL sessions', async () => {
+    await writeFile(
+      sessionFiles(root, 'desktop-list').jsonlPath,
+      `${JSON.stringify({
+        type: 'session_meta',
+        id: 'desktop-list',
+        cwd: '/desktop',
+        created_at: 1_767_225_600,
+      })}\n`,
+      'utf8',
+    );
+    await expect(listSessions(root)).resolves.toEqual([
+      expect.objectContaining({ id: 'desktop-list', cwd: '/desktop' }),
+    ]);
   });
 
   it('sessionFiles returns sensible paths', () => {

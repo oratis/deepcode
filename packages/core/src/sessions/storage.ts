@@ -2,11 +2,41 @@
 // Each line is one StoredMessage envelope.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.5
 
-import { promises as fs, createReadStream } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { createInterface } from 'node:readline';
 import type { StoredMessage } from '../types.js';
+
+export type SessionFormat = 'core-v0' | 'desktop-v0' | 'empty';
+
+export interface SessionDiagnostic {
+  line: number;
+  code: 'truncated_tail' | 'invalid_json' | 'invalid_message';
+  message: string;
+  fatal: boolean;
+}
+
+export interface SessionReadResult {
+  format: SessionFormat;
+  meta: SessionMeta | null;
+  messages: StoredMessage[];
+  diagnostics: SessionDiagnostic[];
+}
+
+export class SessionCorruptionError extends Error {
+  constructor(
+    readonly sessionId: string,
+    readonly diagnostics: SessionDiagnostic[],
+  ) {
+    super(
+      `Session ${sessionId} is corrupted at ${diagnostics
+        .filter((d) => d.fatal)
+        .map((d) => `line ${d.line}: ${d.message}`)
+        .join('; ')}`,
+    );
+    this.name = 'SessionCorruptionError';
+  }
+}
 
 export interface SessionMeta {
   id: string;
@@ -47,7 +77,9 @@ export async function readMeta(root: string, sessionId: string): Promise<Session
     const raw = await fs.readFile(files.metaPath, 'utf8');
     return JSON.parse(raw) as SessionMeta;
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+      return (await readSessionRecords(root, sessionId)).meta;
+    }
     throw err;
   }
 }
@@ -63,23 +95,141 @@ export async function appendMessage(
 }
 
 export async function readMessages(root: string, sessionId: string): Promise<StoredMessage[]> {
+  const result = await readSessionRecords(root, sessionId);
+  const fatal = result.diagnostics.filter((diagnostic) => diagnostic.fatal);
+  if (fatal.length > 0) throw new SessionCorruptionError(sessionId, fatal);
+  return result.messages;
+}
+
+function isStoredMessage(value: unknown): value is StoredMessage {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return (record.role === 'user' || record.role === 'assistant') && Array.isArray(record.content);
+}
+
+function desktopMeta(value: Record<string, unknown>, updatedAt: string): SessionMeta | null {
+  if (value.type !== 'session_meta' || typeof value.id !== 'string') return null;
+  const createdAt =
+    typeof value.created_at === 'number'
+      ? new Date(value.created_at * 1000).toISOString()
+      : typeof value.created_at === 'string'
+        ? value.created_at
+        : updatedAt;
+  return {
+    id: value.id,
+    cwd: typeof value.cwd === 'string' ? value.cwd : '',
+    createdAt,
+    updatedAt,
+    model: typeof value.model === 'string' ? value.model : undefined,
+    title: typeof value.title === 'string' ? value.title : undefined,
+  };
+}
+
+/** Parse both historical JSONL layouts without modifying either one. */
+export async function readSessionRecords(
+  root: string,
+  sessionId: string,
+): Promise<SessionReadResult> {
   const files = sessionFiles(root, sessionId);
+  let raw: string;
+  let updatedAt: string;
   try {
-    await fs.access(files.jsonlPath);
-  } catch {
-    return [];
+    const [text, stat] = await Promise.all([
+      fs.readFile(files.jsonlPath, 'utf8'),
+      fs.stat(files.jsonlPath),
+    ]);
+    raw = text;
+    updatedAt = stat.mtime.toISOString();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { format: 'empty', meta: null, messages: [], diagnostics: [] };
+    }
+    throw error;
   }
-  const out: StoredMessage[] = [];
-  const rl = createInterface({ input: createReadStream(files.jsonlPath, { encoding: 'utf8' }) });
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-    try {
-      out.push(JSON.parse(line) as StoredMessage);
-    } catch {
-      // skip malformed lines (forward-compat)
+
+  const lines = raw.split('\n');
+  let lastContentIndex = -1;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    if (lines[index]!.trim().length > 0) {
+      lastContentIndex = index;
+      break;
     }
   }
-  return out;
+  const messages: StoredMessage[] = [];
+  const diagnostics: SessionDiagnostic[] = [];
+  let meta: SessionMeta | null = null;
+  let format: SessionFormat = 'empty';
+
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index]!;
+    if (!line.trim()) continue;
+    let value: unknown;
+    try {
+      value = JSON.parse(line);
+    } catch (error) {
+      const isTruncatedTail = index === lastContentIndex && !raw.endsWith('\n');
+      diagnostics.push({
+        line: index + 1,
+        code: isTruncatedTail ? 'truncated_tail' : 'invalid_json',
+        message: isTruncatedTail
+          ? 'ignored an incomplete final JSONL record'
+          : `invalid JSON: ${(error as Error).message}`,
+        fatal: !isTruncatedTail,
+      });
+      continue;
+    }
+    if (!value || typeof value !== 'object') {
+      diagnostics.push({
+        line: index + 1,
+        code: 'invalid_message',
+        message: 'record must be a JSON object',
+        fatal: true,
+      });
+      continue;
+    }
+
+    const record = value as Record<string, unknown>;
+    if (record.type === 'session_meta') {
+      format = 'desktop-v0';
+      meta ??= desktopMeta(record, updatedAt);
+      continue;
+    }
+    if (record.type === 'message') {
+      format = 'desktop-v0';
+      if (isStoredMessage(record)) {
+        messages.push({
+          role: record.role,
+          content: record.content,
+          timestamp: typeof record.timestamp === 'string' ? record.timestamp : undefined,
+        });
+      } else {
+        diagnostics.push({
+          line: index + 1,
+          code: 'invalid_message',
+          message: 'message record has an invalid role or content array',
+          fatal: true,
+        });
+      }
+      continue;
+    }
+    if (record.type === undefined) {
+      format = 'core-v0';
+      if (isStoredMessage(record)) messages.push(record);
+      else {
+        diagnostics.push({
+          line: index + 1,
+          code: 'invalid_message',
+          message: 'bare record has an invalid role or content array',
+          fatal: true,
+        });
+      }
+      continue;
+    }
+    // Unknown typed records are reserved for forward-compatible lifecycle
+    // items. They are not messages and are intentionally ignored.
+  }
+
+  return { format, meta, messages, diagnostics };
 }
 
 export async function listSessions(root: string): Promise<SessionMeta[]> {
@@ -89,12 +239,15 @@ export async function listSessions(root: string): Promise<SessionMeta[]> {
     return [];
   }
   const entries = await fs.readdir(root);
-  const metaFiles = entries.filter((f) => f.endsWith('.meta.json'));
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.endsWith('.meta.json')) ids.add(entry.slice(0, -'.meta.json'.length));
+    else if (entry.endsWith('.jsonl')) ids.add(entry.slice(0, -'.jsonl'.length));
+  }
   const metas = await Promise.all(
-    metaFiles.map(async (f) => {
+    [...ids].map(async (id) => {
       try {
-        const raw = await fs.readFile(join(root, f), 'utf8');
-        return JSON.parse(raw) as SessionMeta;
+        return await readMeta(root, id);
       } catch {
         return null;
       }
