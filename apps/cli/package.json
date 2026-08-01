@@ -21,6 +21,7 @@
     "start": "node ./dist/cli.js"
   },
   "dependencies": {
+    "@deepcode/app-server": "workspace:*",
     "@deepcode/core": "workspace:*",
     "@deepcode/shared-ui": "workspace:*"
   },

@@ -285,6 +285,7 @@ USAGE
   deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
   deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
   deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
+  deepcode app-server                  Run the experimental lifecycle server (JSONL stdio)
   deepcode trust [--plan-only]          Trust this directory's project config (hooks/MCP/...)
   deepcode plugins list [--json]        List installed plugins
   deepcode plugins install <spec>       Install a plugin (gh:owner/repo | name@npm | ./path)

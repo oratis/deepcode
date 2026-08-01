@@ -9,5 +9,9 @@
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../../packages/core" }, { "path": "../../packages/shared-ui" }]
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/shared-ui" },
+    { "path": "../server" }
+  ]
 }

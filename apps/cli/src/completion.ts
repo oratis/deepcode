@@ -53,6 +53,7 @@ const SUBCOMMANDS = [
   'doctor',
   'upgrade',
   'mcp',
+  'app-server',
   'trust',
   'plugins',
   'skills',

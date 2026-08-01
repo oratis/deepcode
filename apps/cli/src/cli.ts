@@ -4,6 +4,7 @@
 // M2: onboarding + REPL + slash commands + settings + permissions matcher.
 
 import { CredentialsStore, VERSION, redact } from '@deepcode/core';
+import { runAppServer } from '@deepcode/app-server';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { runHeadless } from './headless.js';
@@ -79,6 +80,14 @@ async function main(): Promise<number> {
       output: process.stdout,
       errOutput: process.stderr,
     });
+  }
+  if (args.positional[0] === 'app-server') {
+    await runAppServer({
+      input: process.stdin,
+      output: process.stdout,
+      home: process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode'),
+    });
+    return 0;
   }
   if (args.positional[0] === 'trust') {
     return runTrustCommand(args.positional.slice(1), {
