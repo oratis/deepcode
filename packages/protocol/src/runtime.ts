@@ -39,8 +39,10 @@ export interface ProtocolRuntimeOptions {
   store: ThreadStore;
   now?: () => string;
   newId?: (prefix: 'thread' | 'turn' | 'item') => string;
+  newTraceId?: () => string;
   onEvent?: (event: ProtocolEvent) => void;
   configDiagnostics?: boolean;
+  diagnosticExport?: boolean;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -53,6 +55,7 @@ export class ProtocolInvariantError extends Error {
 export class ProtocolRuntime {
   private readonly now: () => string;
   private readonly newId: (prefix: 'thread' | 'turn' | 'item') => string;
+  private readonly newTraceId: () => string;
 
   constructor(private readonly options: ProtocolRuntimeOptions) {
     this.now = options.now ?? (() => new Date().toISOString());
@@ -60,6 +63,9 @@ export class ProtocolRuntime {
       options.newId ??
       ((prefix) =>
         `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`);
+    this.newTraceId =
+      options.newTraceId ??
+      (() => `trace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
   }
 
   initialize(): InitializeResult {
@@ -73,11 +79,12 @@ export class ProtocolRuntime {
         structuredToolEvents: true,
         interactiveRequests: true,
         configDiagnostics: this.options.configDiagnostics ?? false,
+        diagnosticExport: this.options.diagnosticExport ?? false,
       },
     };
   }
 
-  async startThread(cwd: string): Promise<ThreadSnapshot> {
+  async startThread(cwd: string, traceId?: string): Promise<ThreadSnapshot> {
     const now = this.now();
     const thread: ThreadSnapshot = {
       id: this.newId('thread'),
@@ -87,7 +94,7 @@ export class ProtocolRuntime {
       turns: [],
     };
     await this.options.store.save(thread);
-    this.emit({ type: 'thread.started', thread: clone(thread) });
+    this.emit({ type: 'thread.started', traceId, thread: clone(thread) });
     return clone(thread);
   }
 
@@ -99,7 +106,11 @@ export class ProtocolRuntime {
     return this.requireThread(threadId);
   }
 
-  async startTurn(threadId: string, input: Record<string, unknown>): Promise<TurnSnapshot> {
+  async startTurn(
+    threadId: string,
+    input: Record<string, unknown>,
+    traceId = this.newTraceId(),
+  ): Promise<TurnSnapshot> {
     const thread = await this.requireThread(threadId);
     if (thread.turns.some((turn) => turn.status === 'in_progress')) {
       throw new ProtocolInvariantError(`Thread ${threadId} already has an active turn`);
@@ -108,6 +119,7 @@ export class ProtocolRuntime {
     const inputItem = this.completedItem('user_message', input, now);
     const turn: TurnSnapshot = {
       id: this.newId('turn'),
+      traceId,
       threadId,
       status: 'in_progress',
       startedAt: now,
@@ -116,8 +128,14 @@ export class ProtocolRuntime {
     thread.turns.push(turn);
     thread.updatedAt = now;
     await this.options.store.save(thread);
-    this.emit({ type: 'turn.started', threadId, turn: clone(turn) });
-    this.emit({ type: 'item.completed', threadId, turnId: turn.id, item: clone(inputItem) });
+    this.emit({ type: 'turn.started', traceId, threadId, turn: clone(turn) });
+    this.emit({
+      type: 'item.completed',
+      traceId,
+      threadId,
+      turnId: turn.id,
+      item: clone(inputItem),
+    });
     return clone(turn);
   }
 
@@ -136,7 +154,13 @@ export class ProtocolRuntime {
     turn.items.push(item);
     thread.updatedAt = item.completedAt;
     await this.options.store.save(thread);
-    this.emit({ type: 'item.completed', threadId, turnId, item: clone(item) });
+    this.emit({
+      type: 'item.completed',
+      traceId: turn.traceId,
+      threadId,
+      turnId,
+      item: clone(item),
+    });
     return clone(item);
   }
 
@@ -175,7 +199,7 @@ export class ProtocolRuntime {
         : requested === 'interrupted'
           ? 'turn.interrupted'
           : 'turn.failed';
-    this.emit({ type, threadId, turn: clone(turn) } as DurableProtocolEvent);
+    this.emit({ type, traceId: turn.traceId, threadId, turn: clone(turn) } as DurableProtocolEvent);
     return clone(turn);
   }
 

@@ -1,4 +1,4 @@
-import { mkdir, stat } from 'node:fs/promises';
+import { mkdir, readFile, stat } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -7,6 +7,10 @@ import { build } from 'esbuild';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(packageRoot, 'dist');
+const settingsSchema = await readFile(
+  resolve(packageRoot, '..', '..', 'packages', 'core', 'schemas', 'settings.schema.json'),
+  'utf8',
+);
 await mkdir(outputRoot, { recursive: true });
 
 await Promise.all([
@@ -19,6 +23,7 @@ await Promise.all([
     target: 'node22',
     external: ['vscode'],
     define: {
+      __DEEPCODE_SETTINGS_SCHEMA__: JSON.stringify(settingsSchema),
       'import.meta.url': '__deepcode_import_meta_url',
     },
     banner: {
@@ -37,6 +42,10 @@ await Promise.all([
     minify: true,
     sourcemap: false,
     legalComments: 'none',
+    define: {
+      __DEEPCODE_SETTINGS_SCHEMA__: JSON.stringify(settingsSchema),
+      'import.meta.url': 'undefined',
+    },
   }),
 ]);
 

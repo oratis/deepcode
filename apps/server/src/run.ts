@@ -8,6 +8,8 @@ import { createDefaultTurnExecutor } from './default-runtime.js';
 import { AppServer, type TurnExecutor } from './server.js';
 import { CanonicalThreadStore } from './store.js';
 import { ProtocolLineWriter, serveStdio } from './stdio.js';
+import { exportDiagnosticBundle } from './diagnostic-export.js';
+import { StructuredLogger } from './structured-logger.js';
 
 export interface RunAppServerOptions {
   input: Readable;
@@ -20,6 +22,13 @@ export interface RunAppServerOptions {
 export async function runAppServer(options: RunAppServerOptions): Promise<void> {
   const writer = new ProtocolLineWriter(options.output);
   const trustStore = new DirectoryTrustStore({ directory: options.home });
+  const logger = new StructuredLogger({ directory: join(options.home, 'logs') });
+  const diagnosticsFor = async (cwd: string) =>
+    diagnoseSettings({
+      cwd,
+      directory: options.home,
+      trustStatus: await trustStore.statusFor(cwd),
+    });
   const server = new AppServer({
     executor:
       options.executor ??
@@ -30,16 +39,31 @@ export async function runAppServer(options: RunAppServerOptions): Promise<void> 
       join(options.home, 'threads-v1'),
       join(options.home, 'sessions'),
     ),
-    configDiagnostics: async (cwd) =>
-      diagnoseSettings({
+    configDiagnostics: diagnosticsFor,
+    diagnosticExport: async (cwd) => {
+      await logger.flush();
+      return exportDiagnosticBundle({
+        home: options.home,
         cwd,
-        directory: options.home,
-        trustStatus: await trustStore.statusFor(cwd),
-      }),
+        config: await diagnosticsFor(cwd),
+        logPath: logger.path,
+      });
+    },
+    onTrace: (record) => {
+      logger.record(
+        record,
+        record.status === 'error' || record.status === 'failed' ? 'error' : 'info',
+      );
+    },
     onEvent: (event) => {
+      logger.recordProtocolEvent(event);
       const notification: ProtocolNotification = { method: 'event', params: event };
       void writer.enqueue(notification);
     },
   });
-  await serveStdio(server, options.input, writer);
+  try {
+    await serveStdio(server, options.input, writer);
+  } finally {
+    await logger.flush();
+  }
 }

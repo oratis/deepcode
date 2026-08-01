@@ -326,8 +326,12 @@ model tool call
 - project/local command hook 已收敛到规范化定义哈希审核：未审阅或已变化的定义默认跳过，
   `deepcode hooks list|trust <hash...|--all>|revoke` 提供显式管理，diagnostics 暴露来源与审核状态；
   目录 trust 只是第一道门，user/explicit override 仍是可信层。
+- app-server 已为 turn 生成稳定 `traceId` 并贯穿 durable/transient 事件；有界 NDJSON 只允许
+  关联 ID、事件、状态码与耗时，不序列化协议 payload。`diagnostics/export` 与 CLI 共用脱敏器，
+  路径哈希化、配置值/issue message 省略，导出前再次白名单清洗；删除 `logs/`/`diagnostics/`
+  即可回滚，不影响 canonical thread。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
-- diff review、可定位反馈、trace id、结构化日志与脱敏导出。
+- diff review、可定位反馈。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。
 - release candidate、迁移演练、性能预算和回滚说明。
 

@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -32,7 +32,8 @@ describe('runAppServer', () => {
 
     input.end(
       `${JSON.stringify({ id: 1, method: 'initialize', params: {} })}\n` +
-        `${JSON.stringify({ id: 2, method: 'config/diagnostics', params: { cwd } })}\n`,
+        `${JSON.stringify({ id: 2, method: 'config/diagnostics', params: { cwd } })}\n` +
+        `${JSON.stringify({ id: 3, method: 'diagnostics/export', params: { cwd } })}\n`,
     );
     await runAppServer({
       input,
@@ -60,5 +61,10 @@ describe('runAppServer', () => {
         }),
       }),
     );
+    const exported = responses[2]?.result as { path: string; recordCount: number };
+    expect(exported.recordCount).toBeGreaterThan(0);
+    const bundle = await readFile(exported.path, 'utf8');
+    expect(bundle).toContain('protocol.request.completed');
+    expect(bundle).not.toContain(cwd);
   });
 });

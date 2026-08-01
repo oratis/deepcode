@@ -7,6 +7,7 @@ import { CredentialsStore, VERSION, diagnoseSettings, redact } from '@deepcode/c
 import { runAppServer } from '@deepcode/app-server';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
+import { runDiagnosticsCommand } from './diagnostics-cmd.js';
 import { runHeadless } from './headless.js';
 import { runMcpCommand } from './mcp-cmd.js';
 import { runOnboarding } from './onboarding.js';
@@ -90,6 +91,15 @@ async function main(): Promise<number> {
       home: process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode'),
     });
     return 0;
+  }
+  if (args.positional[0] === 'diagnostics') {
+    const home = process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode');
+    return runDiagnosticsCommand(args.positional.slice(1), {
+      home,
+      cwd: process.cwd(),
+      output: process.stdout,
+      errOutput: process.stderr,
+    });
   }
   if (args.positional[0] === 'trust') {
     return runTrustCommand(args.positional.slice(1), {

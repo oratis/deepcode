@@ -4,6 +4,7 @@ import {
   ProtocolRuntime,
   type CompletedItemType,
   type ConfigDiagnosticsResult,
+  type DiagnosticExportResult,
   type ProtocolEvent,
   type ProtocolRequest,
   type ProtocolResponse,
@@ -53,8 +54,25 @@ export interface AppServerOptions {
   store?: ThreadStore;
   now?: () => string;
   newId?: (prefix: 'thread' | 'turn' | 'item') => string;
+  newTraceId?: () => string;
   onEvent?: (event: ProtocolEvent) => void;
+  onTrace?: (record: AppServerTraceRecord) => void;
   configDiagnostics?: (cwd: string) => Promise<ConfigDiagnosticsResult>;
+  diagnosticExport?: (cwd: string) => Promise<DiagnosticExportResult>;
+}
+
+/** Strictly metadata-only records; no prompt, tool payload, command, or error message. */
+export interface AppServerTraceRecord {
+  event: string;
+  traceId: string;
+  protocolRequestId?: string | number;
+  method?: string;
+  threadId?: string;
+  turnId?: string;
+  itemId?: string;
+  status?: string;
+  code?: string;
+  durationMs?: number;
 }
 
 interface ActiveTurn {
@@ -85,20 +103,43 @@ export class AppServer {
   private readonly terminalTransitions = new Map<string, Promise<TurnSnapshot>>();
   private readonly pendingInteractions = new Map<string, PendingInteraction>();
   private interactionSequence = 0;
+  private readonly newTraceId: () => string;
 
   constructor(private readonly options: AppServerOptions) {
+    this.newTraceId =
+      options.newTraceId ??
+      (() => `trace-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`);
     this.lifecycle = new ProtocolRuntime({
       store: options.store ?? new MemoryThreadStore(),
       now: options.now,
       newId: options.newId,
+      newTraceId: this.newTraceId,
       onEvent: options.onEvent,
       configDiagnostics: options.configDiagnostics !== undefined,
+      diagnosticExport: options.diagnosticExport !== undefined,
     });
   }
 
   async handle(request: ProtocolRequest): Promise<ProtocolResponse> {
+    const traceId = this.newTraceId();
+    const startedAt = Date.now();
+    this.trace({
+      event: 'protocol.request.started',
+      traceId,
+      protocolRequestId: request.id,
+      method: request.method,
+    });
     try {
-      return { id: request.id, result: await this.dispatch(request) };
+      const result = await this.dispatch(request, traceId);
+      this.trace({
+        event: 'protocol.request.completed',
+        traceId,
+        protocolRequestId: request.id,
+        method: request.method,
+        status: 'ok',
+        durationMs: Date.now() - startedAt,
+      });
+      return { id: request.id, result };
     } catch (error) {
       const code =
         error instanceof ProtocolInvariantError
@@ -106,6 +147,15 @@ export class AppServer {
           : error instanceof RequestValidationError
             ? 'invalid_request'
             : 'internal_error';
+      this.trace({
+        event: 'protocol.request.failed',
+        traceId,
+        protocolRequestId: request.id,
+        method: request.method,
+        status: 'error',
+        code,
+        durationMs: Date.now() - startedAt,
+      });
       return {
         id: request.id,
         error: {
@@ -132,7 +182,7 @@ export class AppServer {
     await Promise.allSettled(active.map(([, { task }]) => task));
   }
 
-  private async dispatch(request: ProtocolRequest): Promise<unknown> {
+  private async dispatch(request: ProtocolRequest, traceId: string): Promise<unknown> {
     switch (request.method) {
       case 'initialize':
         return this.lifecycle.initialize();
@@ -141,14 +191,19 @@ export class AppServer {
           throw new RequestValidationError('Configuration diagnostics are not available');
         }
         return this.options.configDiagnostics(requiredString(request.params, 'cwd'));
+      case 'diagnostics/export':
+        if (!this.options.diagnosticExport) {
+          throw new RequestValidationError('Diagnostic export is not available');
+        }
+        return this.options.diagnosticExport(requiredString(request.params, 'cwd'));
       case 'thread/start':
-        return this.lifecycle.startThread(requiredString(request.params, 'cwd'));
+        return this.lifecycle.startThread(requiredString(request.params, 'cwd'), traceId);
       case 'thread/read':
         return this.lifecycle.readThread(requiredId(request.params, 'threadId'));
       case 'thread/resume':
         return this.resumeThread(requiredId(request.params, 'threadId'));
       case 'turn/start':
-        return this.startTurn(request.params);
+        return this.startTurn(request.params, traceId);
       case 'turn/interrupt':
         return this.interruptTurn(request.params);
       case 'approval/respond':
@@ -170,11 +225,11 @@ export class AppServer {
     return thread;
   }
 
-  private async startTurn(params: Record<string, unknown>): Promise<TurnSnapshot> {
+  private async startTurn(params: Record<string, unknown>, traceId: string): Promise<TurnSnapshot> {
     const threadId = requiredId(params, 'threadId');
     const input = requiredRecord(params, 'input');
     const thread = await this.lifecycle.resumeThread(threadId);
-    const turn = await this.lifecycle.startTurn(threadId, input);
+    const turn = await this.lifecycle.startTurn(threadId, input, traceId);
     const controller = new AbortController();
     const task = this.executeTurn(thread, turn, input, controller);
     this.activeTurns.set(turn.id, { threadId, controller, task });
@@ -202,6 +257,15 @@ export class AppServer {
     input: Record<string, unknown>,
     controller: AbortController,
   ): Promise<void> {
+    const traceId = turn.traceId ?? this.newTraceId();
+    const startedAt = Date.now();
+    this.trace({
+      event: 'turn.execution.started',
+      traceId,
+      threadId: thread.id,
+      turnId: turn.id,
+      status: 'in_progress',
+    });
     try {
       const result = await this.options.executor.execute({
         thread,
@@ -210,6 +274,7 @@ export class AppServer {
         signal: controller.signal,
         publishDelta: (itemId, delta) => {
           this.lifecycle.publishDelta({
+            traceId,
             threadId: thread.id,
             turnId: turn.id,
             itemId,
@@ -219,6 +284,7 @@ export class AppServer {
         publishToolStarted: (itemId, name, input) => {
           this.options.onEvent?.({
             type: 'tool.started',
+            traceId,
             threadId: thread.id,
             turnId: turn.id,
             itemId,
@@ -229,6 +295,7 @@ export class AppServer {
         publishToolCompleted: (itemId, result) => {
           this.options.onEvent?.({
             type: 'tool.completed',
+            traceId,
             threadId: thread.id,
             turnId: turn.id,
             itemId,
@@ -238,17 +305,26 @@ export class AppServer {
         publishUsage: (usage) => {
           this.options.onEvent?.({
             type: 'usage.updated',
+            traceId,
             threadId: thread.id,
             turnId: turn.id,
             usage,
           });
         },
         requestApproval: (toolName, reason) =>
-          this.requestApproval(thread.id, turn.id, toolName, reason),
-        requestUserInput: (request) => this.requestUserInput(thread.id, turn.id, request),
+          this.requestApproval(traceId, thread.id, turn.id, toolName, reason),
+        requestUserInput: (request) => this.requestUserInput(traceId, thread.id, turn.id, request),
       });
       if (controller.signal.aborted) {
         await this.finishOnce(turn.id, () => this.lifecycle.interruptTurn(thread.id, turn.id));
+        this.trace({
+          event: 'turn.execution.completed',
+          traceId,
+          threadId: thread.id,
+          turnId: turn.id,
+          status: 'interrupted',
+          durationMs: Date.now() - startedAt,
+        });
         return;
       }
       for (const item of result.items ?? []) {
@@ -256,8 +332,24 @@ export class AppServer {
       }
       if (result.status === 'failed') {
         await this.finishOnce(turn.id, () => this.lifecycle.failTurn(thread.id, turn.id));
+        this.trace({
+          event: 'turn.execution.completed',
+          traceId,
+          threadId: thread.id,
+          turnId: turn.id,
+          status: 'failed',
+          durationMs: Date.now() - startedAt,
+        });
       } else {
         await this.finishOnce(turn.id, () => this.lifecycle.completeTurn(thread.id, turn.id));
+        this.trace({
+          event: 'turn.execution.completed',
+          traceId,
+          threadId: thread.id,
+          turnId: turn.id,
+          status: 'completed',
+          durationMs: Date.now() - startedAt,
+        });
       }
     } catch (error) {
       if (controller.signal.aborted || (error as Error).name === 'AbortError') {
@@ -268,6 +360,16 @@ export class AppServer {
         });
         await this.finishOnce(turn.id, () => this.lifecycle.failTurn(thread.id, turn.id));
       }
+      const interrupted = controller.signal.aborted || (error as Error).name === 'AbortError';
+      this.trace({
+        event: interrupted ? 'turn.execution.completed' : 'turn.execution.failed',
+        traceId,
+        threadId: thread.id,
+        turnId: turn.id,
+        status: interrupted ? 'interrupted' : 'failed',
+        code: errorCode(error),
+        durationMs: Date.now() - startedAt,
+      });
     } finally {
       this.cancelInteractions(turn.id);
       this.activeTurns.delete(turn.id);
@@ -275,6 +377,7 @@ export class AppServer {
   }
 
   private requestApproval(
+    traceId: string,
     threadId: string,
     turnId: string,
     toolName: string,
@@ -291,6 +394,7 @@ export class AppServer {
     });
     this.options.onEvent?.({
       type: 'approval.requested',
+      traceId,
       threadId,
       turnId,
       requestId,
@@ -301,6 +405,7 @@ export class AppServer {
   }
 
   private requestUserInput(
+    traceId: string,
     threadId: string,
     turnId: string,
     request: {
@@ -320,6 +425,7 @@ export class AppServer {
     });
     this.options.onEvent?.({
       type: 'user-input.requested',
+      traceId,
       threadId,
       turnId,
       requestId,
@@ -379,6 +485,14 @@ export class AppServer {
     return `request-${Date.now().toString(36)}-${++this.interactionSequence}`;
   }
 
+  private trace(record: AppServerTraceRecord): void {
+    try {
+      this.options.onTrace?.(record);
+    } catch {
+      // Observability must never change protocol or execution behavior.
+    }
+  }
+
   private finishOnce(
     turnId: string,
     transition: () => Promise<TurnSnapshot>,
@@ -395,6 +509,13 @@ export class AppServer {
     void pending.then(cleanup, cleanup);
     return pending;
   }
+}
+
+function errorCode(error: unknown): string {
+  if (error instanceof ProtocolInvariantError) return 'invalid_state';
+  if (error instanceof RequestValidationError) return 'invalid_request';
+  if (error instanceof Error && error.name === 'AbortError') return 'aborted';
+  return 'internal_error';
 }
 
 function requiredString(params: Record<string, unknown>, key: string): string {

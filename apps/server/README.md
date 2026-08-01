@@ -33,3 +33,12 @@ failures become value-free turn diagnostics, and every subprocess/connection clo
 Trusted-directory project/local command hooks still require exact-definition review. The shared
 hook trust store disables pending or changed definitions and exposes value-free warnings through
 `config/diagnostics`; use `deepcode hooks list` and `deepcode hooks trust <hash>` to review them.
+
+The host generates one `traceId` per turn and attaches it to durable and transient protocol events.
+Bounded NDJSON logs live under `logs/app-server.ndjson`; their schema only permits correlation ids,
+event names, status codes, and durations. It never serializes protocol payloads, prompts, commands,
+tool arguments/results, or error messages. `diagnostics/export` (also available as
+`deepcode diagnostics export`) writes a mode-0600 support bundle under `diagnostics/`. The export
+hashes workspace/config paths, omits issue messages and configuration values, re-sanitizes every log
+record, and can be removed without affecting threads. Removing `logs/` and `diagnostics/` is the
+rollback for this optional observability layer.

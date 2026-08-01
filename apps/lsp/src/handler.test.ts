@@ -21,6 +21,7 @@ const capabilities: InitializeResult = {
     structuredToolEvents: true,
     interactiveRequests: true,
     configDiagnostics: true,
+    diagnosticExport: true,
   },
 };
 

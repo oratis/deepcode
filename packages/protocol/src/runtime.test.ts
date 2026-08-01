@@ -36,6 +36,7 @@ describe('ProtocolRuntime', () => {
         structuredToolEvents: true,
         interactiveRequests: true,
         configDiagnostics: false,
+        diagnosticExport: false,
       },
     });
   });
@@ -46,12 +47,14 @@ describe('ProtocolRuntime', () => {
     const runtime = deterministicRuntime(store, events);
     const thread = await runtime.startThread('/workspace');
     const turn = await runtime.startTurn(thread.id, { text: 'inspect the repository' });
+    expect(turn.traceId).toMatch(/^trace-/);
     const assistant = await runtime.appendCompletedItem(thread.id, turn.id, 'assistant_message', {
       text: 'working',
     });
 
     const savesBeforeDelta = store.saveCount;
     runtime.publishDelta({
+      traceId: turn.traceId,
       threadId: thread.id,
       turnId: turn.id,
       itemId: assistant.id,
@@ -77,6 +80,11 @@ describe('ProtocolRuntime', () => {
       'item.delta',
       'turn.completed',
     ]);
+    expect(
+      events
+        .filter((event) => event.type !== 'thread.started')
+        .every((event) => event.traceId === turn.traceId),
+    ).toBe(true);
   });
 
   it('allows only one active turn per thread', async () => {

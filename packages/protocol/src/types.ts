@@ -19,6 +19,8 @@ export interface CompletedItem {
 
 export interface TurnSnapshot {
   id: string;
+  /** Host-generated correlation id. Optional when reading pre-tracing snapshots. */
+  traceId?: string;
   threadId: string;
   status: TurnStatus;
   startedAt: string;
@@ -35,15 +37,22 @@ export interface ThreadSnapshot {
 }
 
 export type DurableProtocolEvent =
-  | { type: 'thread.started'; thread: ThreadSnapshot }
-  | { type: 'turn.started'; threadId: string; turn: TurnSnapshot }
-  | { type: 'item.completed'; threadId: string; turnId: string; item: CompletedItem }
-  | { type: 'turn.completed'; threadId: string; turn: TurnSnapshot }
-  | { type: 'turn.interrupted'; threadId: string; turn: TurnSnapshot }
-  | { type: 'turn.failed'; threadId: string; turn: TurnSnapshot };
+  | { type: 'thread.started'; traceId?: string; thread: ThreadSnapshot }
+  | { type: 'turn.started'; traceId?: string; threadId: string; turn: TurnSnapshot }
+  | {
+      type: 'item.completed';
+      traceId?: string;
+      threadId: string;
+      turnId: string;
+      item: CompletedItem;
+    }
+  | { type: 'turn.completed'; traceId?: string; threadId: string; turn: TurnSnapshot }
+  | { type: 'turn.interrupted'; traceId?: string; threadId: string; turn: TurnSnapshot }
+  | { type: 'turn.failed'; traceId?: string; threadId: string; turn: TurnSnapshot };
 
 export interface ToolStartedEvent {
   type: 'tool.started';
+  traceId?: string;
   threadId: string;
   turnId: string;
   itemId: string;
@@ -53,6 +62,7 @@ export interface ToolStartedEvent {
 
 export interface ToolCompletedEvent {
   type: 'tool.completed';
+  traceId?: string;
   threadId: string;
   turnId: string;
   itemId: string;
@@ -61,6 +71,7 @@ export interface ToolCompletedEvent {
 
 export interface UsageUpdatedEvent {
   type: 'usage.updated';
+  traceId?: string;
   threadId: string;
   turnId: string;
   usage: {
@@ -73,6 +84,7 @@ export interface UsageUpdatedEvent {
 
 export interface ApprovalRequestedEvent {
   type: 'approval.requested';
+  traceId?: string;
   threadId: string;
   turnId: string;
   requestId: string;
@@ -82,6 +94,7 @@ export interface ApprovalRequestedEvent {
 
 export interface UserInputRequestedEvent {
   type: 'user-input.requested';
+  traceId?: string;
   threadId: string;
   turnId: string;
   requestId: string;
@@ -92,6 +105,7 @@ export interface UserInputRequestedEvent {
 
 export interface TransientDeltaEvent {
   type: 'item.delta';
+  traceId?: string;
   threadId: string;
   turnId: string;
   itemId: string;
@@ -118,6 +132,7 @@ export interface InitializeResult {
     structuredToolEvents: true;
     interactiveRequests: true;
     configDiagnostics: boolean;
+    diagnosticExport: boolean;
   };
 }
 
@@ -143,9 +158,16 @@ export interface ConfigDiagnosticsResult {
   }>;
 }
 
+export interface DiagnosticExportResult {
+  path: string;
+  generatedAt: string;
+  recordCount: number;
+}
+
 export type ProtocolMethod =
   | 'initialize'
   | 'config/diagnostics'
+  | 'diagnostics/export'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'

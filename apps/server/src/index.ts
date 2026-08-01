@@ -6,3 +6,5 @@ export * from './stdio.js';
 export * from './run.js';
 export * from './client.js';
 export * from './runtime-composition.js';
+export * from './structured-logger.js';
+export * from './diagnostic-export.js';
