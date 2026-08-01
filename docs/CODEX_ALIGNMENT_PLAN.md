@@ -290,6 +290,8 @@ model tool call
   `mac-agent` 仅作 feature fallback。
 - app-server 已补齐按 active thread/turn 绑定的 approval、AskUserQuestion、tool 与 usage 事件；interrupt
   会解除所有待响应请求，避免 sidecar 因 UI 离线而悬挂。
+- protocol snapshot 与 canonical session-v1 共享 id；新 thread 会进入现有 session 索引，旧 session
+  在首次 resume 时惰性投影为 compatibility turn，避免桌面迁移形成第二套不可见历史。
 - React 只消费协议事件；接入真实 interrupt、恢复与 structured items。
 - 把 `preview-app.html` 变成自动化 fixture harness；收敛现有 Changes/Files/Inspector。
 

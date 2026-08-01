@@ -9,6 +9,7 @@ import {
   readMessages,
   readMeta,
   readSessionRecords,
+  replaceSession,
   SessionCorruptionError,
   SessionWriterConflictError,
   sessionFiles,
@@ -73,6 +74,33 @@ describe('session storage', () => {
       expect.objectContaining({ type: 'message', schema_version: 1, role: 'user' }),
       expect.objectContaining({ type: 'message', schema_version: 1, role: 'assistant' }),
     ]);
+  });
+
+  it('materializes an idempotent full projection while preserving an existing title', async () => {
+    const meta = {
+      id: 'protocol-thread',
+      cwd: '/workspace',
+      createdAt: '2026-08-01T00:00:00.000Z',
+      updatedAt: '2026-08-01T00:00:01.000Z',
+      title: 'User title',
+    };
+    await replaceSession(root, meta, [
+      { role: 'user', content: [{ type: 'text', text: 'first' }] },
+    ]);
+    await replaceSession(
+      root,
+      { ...meta, updatedAt: '2026-08-01T00:00:02.000Z', title: undefined },
+      [
+        { role: 'user', content: [{ type: 'text', text: 'first' }] },
+        { role: 'assistant', content: [{ type: 'text', text: 'second' }] },
+      ],
+    );
+
+    await expect(readMeta(root, meta.id)).resolves.toMatchObject({
+      title: 'User title',
+      updatedAt: '2026-08-01T00:00:02.000Z',
+    });
+    await expect(readMessages(root, meta.id)).resolves.toHaveLength(2);
   });
 
   it('readMessages returns [] when jsonl missing', async () => {

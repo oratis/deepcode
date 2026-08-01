@@ -5,7 +5,7 @@ import type { ProtocolNotification } from '@deepcode/protocol';
 
 import { createDefaultTurnExecutor } from './default-runtime.js';
 import { AppServer, type TurnExecutor } from './server.js';
-import { FileThreadStore } from './store.js';
+import { CanonicalThreadStore } from './store.js';
 import { ProtocolLineWriter, serveStdio } from './stdio.js';
 
 export interface RunAppServerOptions {
@@ -19,7 +19,10 @@ export async function runAppServer(options: RunAppServerOptions): Promise<void> 
   const writer = new ProtocolLineWriter(options.output);
   const server = new AppServer({
     executor: options.executor ?? createDefaultTurnExecutor(),
-    store: new FileThreadStore(join(options.home, 'threads-v1')),
+    store: new CanonicalThreadStore(
+      join(options.home, 'threads-v1'),
+      join(options.home, 'sessions'),
+    ),
     onEvent: (event) => {
       const notification: ProtocolNotification = { method: 'event', params: event };
       void writer.enqueue(notification);

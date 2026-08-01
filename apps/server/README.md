@@ -8,6 +8,9 @@ Approval and user-input responses are bound to their active thread and turn. The
 is single-client stdio, matching the desktop packaging decision in
 `docs/adr/0001-desktop-runtime-sidecar.md`.
 
+Lifecycle snapshots live under `threads-v1`; their message projection uses the same id in the
+canonical session-v1 index. Legacy-only sessions are imported lazily on resume.
+
 After a workspace build, run `node apps/server/dist/cli.js` and send one JSON request per line:
 
 ```json

@@ -54,10 +54,12 @@ tool process after a crash.
 
 ## Storage and security
 
-The Node-specific `FileThreadStore` writes one mode-0600 JSON snapshot per thread through a
-same-directory temporary file and atomic rename. The app-server CLI stores these under
-`~/.deepcode/threads-v1` by default. This is the protocol rollout store; canonical session-v1 files
-remain readable compatibility data until the client migration joins their indexes.
+The Node-specific `CanonicalThreadStore` writes one mode-0600 lifecycle snapshot per thread under
+`~/.deepcode/threads-v1` through a same-directory temporary file and atomic rename. It also
+materializes the message history under the same id in canonical `~/.deepcode/sessions/*.v1.jsonl`,
+using the shared cross-process writer lock. Existing CLI/desktop session lists therefore see new
+protocol threads immediately. If only a canonical or legacy session exists, the store lazily
+imports its messages into a completed compatibility turn without modifying the legacy file.
 
 `RuntimeHostExecutor` reconstructs exact stored provider messages from completed protocol items.
 The default server runtime resolves credentials only in the trusted backend and uses the central
@@ -83,5 +85,3 @@ headless output contracts remain unchanged during this experimental phase.
 - config provenance;
 - thread listing, archive, fork, and search;
 - multi-client subscriptions or active-turn attachment;
-- joining the new thread snapshot index with legacy/canonical session listings;
-- a production-bundled CommonJS app-server artifact and pinned Node 22 runtime.
