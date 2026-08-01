@@ -1,9 +1,14 @@
 # DeepCode × Codex 整体改造计划
 
-> 状态：已完成正反方审议，按仲裁结论执行<br>
+> 状态：正反方审议与仲裁范围内的实现已完成，等待 stacked draft PR 审阅/合并<br>
 > 基线：`main@38fcc3a`<br>
 > 日期：2026-08-01<br>
 > 决策原则：采用 Codex 已公开验证的产品与工程模式，但保留 DeepCode 的 DeepSeek 定位、品牌和向后兼容性。
+
+交付实现位于 stacked draft PR #180–#210：从计划与安全 runtime 开始，依次落地 canonical
+Thread/Turn/Item、app-server 与三类薄客户端、配置/扩展/观测、review apply/revert、legacy 清理、
+release gate 和桌面最小权限。真实 release tag、npm publication、Apple 签名/公证和 updater 私钥配置
+不在代码改造中代替用户执行；发布前必须按 `docs/RELEASING.md` 完成外部凭证与 DMG smoke gate。
 
 ## 1. 结论先行
 
