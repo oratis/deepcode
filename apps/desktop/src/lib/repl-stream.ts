@@ -89,22 +89,48 @@ export function attachToolResult(
   content: string,
   status: 'ok' | 'err',
 ): Msg[] {
-  return msgs.map((m): Msg => {
-    if (m.role !== 'assistant') return m;
-    let idx = m.turn.tools.findIndex((t) => t.toolId === toolId);
-    if (idx === -1) {
-      for (let j = m.turn.tools.length - 1; j >= 0; j--) {
-        if (m.turn.tools[j]!.status === 'running') {
-          idx = j;
-          break;
-        }
-      }
+  let messageIndex = -1;
+  let toolIndex = -1;
+
+  // Prefer an exact id, newest first. If a legacy provider omitted/mutated the
+  // id, fall back once to the globally newest running tool — never once per
+  // assistant message, which would rewrite unrelated resumed history.
+  for (let i = msgs.length - 1; i >= 0 && toolIndex === -1; i--) {
+    const message = msgs[i]!;
+    if (message.role !== 'assistant') continue;
+    const candidate = lastToolIndex(message.turn.tools, (tool) => tool.toolId === toolId);
+    if (candidate !== -1) {
+      messageIndex = i;
+      toolIndex = candidate;
     }
-    if (idx === -1) return m;
-    const tools = [...m.turn.tools];
-    tools[idx] = { ...tools[idx]!, status, resultText: content };
-    return { ...m, turn: { ...m.turn, tools } };
+  }
+  for (let i = msgs.length - 1; i >= 0 && toolIndex === -1; i--) {
+    const message = msgs[i]!;
+    if (message.role !== 'assistant') continue;
+    const candidate = lastToolIndex(message.turn.tools, (tool) => tool.status === 'running');
+    if (candidate !== -1) {
+      messageIndex = i;
+      toolIndex = candidate;
+    }
+  }
+  if (messageIndex === -1 || toolIndex === -1) return msgs;
+
+  return msgs.map((message, index): Msg => {
+    if (index !== messageIndex || message.role !== 'assistant') return message;
+    const tools = [...message.turn.tools];
+    tools[toolIndex] = { ...tools[toolIndex]!, status, resultText: content };
+    return { ...message, turn: { ...message.turn, tools } };
   });
+}
+
+function lastToolIndex(
+  tools: ToolInvocation[],
+  predicate: (tool: ToolInvocation) => boolean,
+): number {
+  for (let i = tools.length - 1; i >= 0; i--) {
+    if (predicate(tools[i]!)) return i;
+  }
+  return -1;
 }
 
 /** Clear the streaming flag on ALL assistant turns (not just the last one). */

@@ -295,7 +295,8 @@ model tool call
 - renderer 只能查询 credential presence/base URL，不能读取 API key/auth token；原生 mutation/bash
   commands 已从 Tauri invoke surface 移除，tool 执行统一经过 RuntimeHost。
 - React 只消费协议事件；接入真实 interrupt、恢复与 structured items。
-- 把 `preview-app.html` 变成自动化 fixture harness；收敛现有 Changes/Files/Inspector。
+- `preview-app.html` 已使用官方 Tauri event mock 变成协议 fixture harness；Playwright CI 覆盖三栏
+  几何、session resume、快速 turn、approval、tool/usage 完成事件以及 Files 的 Source/Diff/History。
 
 验收：签名 app、凭证边界、Tauri IPC、重启恢复、浏览器 fixture 与视觉测试。
 

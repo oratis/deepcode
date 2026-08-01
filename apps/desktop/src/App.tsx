@@ -36,7 +36,12 @@ export function App(): JSX.Element {
   const [update, setUpdate] = useState<UpdateInfo | null>(null);
   const [screen, setScreen] = useState<ScreenName>('repl');
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessionEpoch, setSessionEpoch] = useState(0);
+  // Sidebar refreshes must not remount the active REPL: a completed turn is
+  // persisted asynchronously and refreshing the session list used to erase
+  // the just-streamed transcript. Only explicit session/project transitions
+  // advance the REPL epoch.
+  const [sidebarEpoch, setSidebarEpoch] = useState(0);
+  const [replEpoch, setReplEpoch] = useState(0);
   // Reconstructed messages for a resumed session; seeded into ReplScreen on its
   // next remount. Cleared when starting a fresh session.
   const [resumedMessages, setResumedMessages] = useState<Msg[] | undefined>(undefined);
@@ -112,7 +117,8 @@ export function App(): JSX.Element {
       setResumedMessages(undefined);
       setActiveSessionId(null);
       setScreen('repl');
-      setSessionEpoch((k) => k + 1);
+      setSidebarEpoch((k) => k + 1);
+      setReplEpoch((k) => k + 1);
     });
     const offComma = registerShortcut('meta+,', () => setScreen('settings'));
     const offSlash = registerShortcut('meta+/', () => setScreen('about'));
@@ -194,7 +200,7 @@ export function App(): JSX.Element {
       )}
       {update && <UpdateBanner info={update} />}
       <Sidebar
-        key={`sb-${sessionEpoch}`}
+        key={`sb-${sidebarEpoch}`}
         projectPath={projectPath}
         activeSessionId={activeSessionId}
         onPickSession={async (id) => {
@@ -208,7 +214,8 @@ export function App(): JSX.Element {
           }
           setActiveSessionId(id);
           setScreen('repl');
-          setSessionEpoch((k) => k + 1);
+          setSidebarEpoch((k) => k + 1);
+          setReplEpoch((k) => k + 1);
         }}
         onNewSession={() => {
           clearAgentHistory();
@@ -216,7 +223,8 @@ export function App(): JSX.Element {
           setActiveSessionId(null);
           setScreen('repl');
           // Force ReplScreen to remount with a clean message history
-          setSessionEpoch((k) => k + 1);
+          setSidebarEpoch((k) => k + 1);
+          setReplEpoch((k) => k + 1);
         }}
         onSwitchProject={async () => {
           // Force-show the picker again by clearing state. Also clear
@@ -226,7 +234,8 @@ export function App(): JSX.Element {
           setResumedMessages(undefined);
           setProjectPath(null);
           setActiveSessionId(null);
-          setSessionEpoch((k) => k + 1);
+          setSidebarEpoch((k) => k + 1);
+          setReplEpoch((k) => k + 1);
         }}
         onSessionRemoved={() => {
           // The active session was archived/deleted — reset to a fresh chat.
@@ -234,15 +243,16 @@ export function App(): JSX.Element {
           setResumedMessages(undefined);
           setActiveSessionId(null);
           setScreen('repl');
-          setSessionEpoch((k) => k + 1);
+          setSidebarEpoch((k) => k + 1);
+          setReplEpoch((k) => k + 1);
         }}
       />
-      <main className="chat-main" key={`main-${sessionEpoch}`}>
+      <main className="chat-main" key={`main-${replEpoch}`}>
         {renderScreen(
           screen,
           setScreen,
           projectPath,
-          () => setSessionEpoch((k) => k + 1),
+          () => setSidebarEpoch((k) => k + 1),
           setActiveSessionId,
           handleInspector,
           resumedMessages,

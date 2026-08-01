@@ -68,6 +68,33 @@ describe('repl-stream mutators', () => {
     });
   });
 
+  it('falls back to only the newest running tool across resumed turns', () => {
+    const m: Msg[] = [
+      {
+        role: 'assistant',
+        turn: { text: 'old', tools: [tool('old', 'Write')], streaming: false },
+      },
+      { role: 'user', text: 'next turn' },
+      {
+        role: 'assistant',
+        turn: { text: 'new', tools: [tool('new', 'Edit')], streaming: true },
+      },
+    ];
+
+    const out = attachToolResult(m, 'provider-changed-id', 'updated', 'ok');
+    const oldTurn = out[0];
+    const newTurn = out[2];
+    if (oldTurn?.role !== 'assistant' || newTurn?.role !== 'assistant') {
+      throw new Error('expected assistant turns');
+    }
+    expect(oldTurn.turn.tools[0]).toMatchObject({ toolId: 'old', status: 'running' });
+    expect(newTurn.turn.tools[0]).toMatchObject({
+      toolId: 'new',
+      status: 'ok',
+      resultText: 'updated',
+    });
+  });
+
   it('finalizeStreaming clears the flag on ALL assistant turns', () => {
     // Even if a prior turn was left streaming (defensive), finalize clears it.
     const m: Msg[] = [
