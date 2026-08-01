@@ -91,6 +91,9 @@ headless output contracts remain unchanged during this experimental phase.
 request correlation, timeouts, disconnect rejection, reconnection, and event fan-out; each host
 supplies only an ordered message connection. The desktop implementation is now a thin Tauri
 adapter, and editor clients use the same client state machine instead of duplicating RPC logic.
+Node hosts use `SpawnedAppServerConnection`, which resolves the packaged app-server entrypoint,
+honors stdio backpressure, bounds stderr diagnostics, treats exit as a protocol disconnect, and
+closes stdin first so the server can interrupt and persist active turns before a timed SIGTERM.
 
 ## Deferred from this slice
 

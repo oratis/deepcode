@@ -15,7 +15,9 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@deepcode/core": "workspace:*"
+    "@deepcode/app-server": "workspace:*",
+    "@deepcode/core": "workspace:*",
+    "@deepcode/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

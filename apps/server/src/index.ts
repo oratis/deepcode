@@ -4,3 +4,4 @@ export * from './runtime-executor.js';
 export * from './default-runtime.js';
 export * from './stdio.js';
 export * from './run.js';
+export * from './client.js';
