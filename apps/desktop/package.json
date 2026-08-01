@@ -17,7 +17,7 @@
     "tauri:build:universal": "tauri build --target universal-apple-darwin",
     "typecheck": "tsc -b",
     "test": "vitest run --passWithNoTests",
-    "test:e2e": "playwright test",
+    "test:e2e": "pnpm --workspace-root build && playwright test",
     "lint": "echo 'lint: configured at repo root' && exit 0",
     "clean": "rm -rf dist src-tauri/target *.tsbuildinfo"
   },
