@@ -350,7 +350,10 @@ model tool call
 - 已删除无生产引用的 core renderer IPC、desktop native mutation/tool facade 与 `chat` 路由别名；
   Tauri 仅保留 credential presence、文件/快照只读投影和 sidecar supervision。legacy session importer
   继续只读，旧文件不迁移、不覆盖；用户文档已改为 app-server 架构。
-- release candidate、迁移演练、性能预算和回滚说明。
+- `pnpm release:check` 已对真实 VS Code/app-server/VSIX 产物执行包体预算、v1 capability、
+  create/read、配置诊断、workspace diff、重启 read/resume 与薄客户端边界扫描；Ubuntu/macOS CI
+  与 tag validate 共用该门禁，tag 还必须通过 desktop Playwright journey。迁移、隔离 home 回滚演练、
+  fail-closed 协议升级和签名 DMG smoke test 已记录在 `docs/design/release-gates-v1.md`。
 
 验收：端到端 golden journey、性能基线、安全 review、文档与 release gate。
 
@@ -379,9 +382,10 @@ model tool call
 
 ### 7.4 性能
 
-- PR 4 spike 记录 app-server/sidecar 冷启动、安装包体积与内存基线，再据实设预算。
-- 取消请求到子进程停止的目标预算在 PR 1 基准测试后锁定。
-- thread list 和长列表 UI 的 SLO 在有真实数据模型与 fixtures 后锁定，避免先写任意数字。
+- release gate 以实测产物锁定 extension 64 KiB、app-server 768 KiB、VSIX 256 KiB 上限。
+- 打包 app-server 冷启动 initialize 预算 5 秒，metadata request 2 秒，workspace diff 10 秒；报告随
+  CI failure artifact 上传。提高预算必须附 before/after 数据和新增用户价值。
+- thread list、长列表 UI 与 provider 首 token 仍需真实分布数据后再锁 SLO，不用本地单样本伪造目标。
 
 ## 8. 风险与缓解
 

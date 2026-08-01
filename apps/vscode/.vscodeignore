@@ -2,6 +2,8 @@ src/**
 scripts/**
 node_modules/**
 dist/*.map
+dist/release-gate-report.json
+dist/*.vsix
 dist/.tsbuildinfo
 **/*.test.*
 tsconfig.json

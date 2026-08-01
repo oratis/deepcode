@@ -23,6 +23,8 @@
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "docs:check": "node scripts/check-docs.mjs",
+    "release:gate": "node scripts/release-gate.mjs",
+    "release:check": "pnpm build && pnpm --dir apps/vscode build && pnpm --dir apps/vscode package --out dist/deepcode-release-gate.vsix && pnpm release:gate",
     "spike:desktop-sidecar": "node scripts/spike-desktop-sidecar.mjs",
     "clean": "pnpm -r clean",
     "prepare": "husky || true"
