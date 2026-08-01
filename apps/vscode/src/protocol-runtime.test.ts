@@ -1,4 +1,5 @@
 import type {
+  ConfigDiagnosticsResult,
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
@@ -65,6 +66,7 @@ class FakeClient {
       return this.turn as T;
     }
     if (method === 'turn/interrupt') return { interrupted: true } as T;
+    if (method === 'config/diagnostics') return diagnostics as T;
     return { accepted: true } as T;
   }
 
@@ -75,7 +77,41 @@ class FakeClient {
   }
 }
 
+const diagnostics: ConfigDiagnosticsResult = {
+  cwd: '/workspace',
+  trustStatus: 'untrusted',
+  layers: [],
+  provenance: {},
+  gated: ['permissions'],
+  issues: [],
+};
+
 describe('EditorProtocolRuntime', () => {
+  it('reads configuration diagnostics from the app-server for the editor workspace', async () => {
+    const client = new FakeClient();
+    const runtime = new EditorProtocolRuntime(client, () => '/workspace');
+
+    await expect(runtime.diagnostics()).resolves.toEqual(diagnostics);
+    expect(client.requests).toEqual([
+      expect.objectContaining({ method: 'config/diagnostics', params: { cwd: '/workspace' } }),
+    ]);
+  });
+
+  it('honors diagnostics capability negotiation', async () => {
+    const client = new FakeClient();
+    client.connect = async () => {
+      const initialized = await new FakeClient().connect();
+      return {
+        ...initialized,
+        capabilities: { ...initialized.capabilities, configDiagnostics: false },
+      };
+    };
+    const runtime = new EditorProtocolRuntime(client, () => '/workspace');
+
+    await expect(runtime.diagnostics()).rejects.toThrow(/does not support/);
+    expect(client.requests).toEqual([]);
+  });
+
   it('buffers fast turn events and reuses the canonical thread', async () => {
     const client = new FakeClient();
     const runtime = new EditorProtocolRuntime(client, () => '/workspace');

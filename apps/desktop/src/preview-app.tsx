@@ -193,6 +193,30 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
         },
       });
       break;
+    case 'config/diagnostics':
+      await respond({
+        cwd: String(request.params.cwd),
+        trustStatus: 'untrusted',
+        layers: [
+          {
+            layer: 'project',
+            path: `${String(request.params.cwd)}/.deepcode/settings.json`,
+            present: true,
+            trusted: false,
+          },
+        ],
+        provenance: {},
+        gated: ['permissions'],
+        issues: [
+          {
+            severity: 'warning',
+            code: 'untrusted_setting_gated',
+            message: 'Ignored project setting /permissions until this directory is trusted',
+            pointer: '/permissions',
+          },
+        ],
+      });
+      break;
     case 'thread/start': {
       activeThreadId = `preview-thread-${nextThread++}`;
       const thread = threadSnapshot(activeThreadId);

@@ -23,6 +23,7 @@
   "activationEvents": [
     "onCommand:deepcode.openPanel",
     "onCommand:deepcode.run",
+    "onCommand:deepcode.showDiagnostics",
     "onStartupFinished"
   ],
   "contributes": {
@@ -38,6 +39,10 @@
       {
         "command": "deepcode.review",
         "title": "DeepCode: Review current diff"
+      },
+      {
+        "command": "deepcode.showDiagnostics",
+        "title": "DeepCode: Show Configuration Diagnostics"
       }
     ],
     "configuration": {

@@ -3,7 +3,7 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §5 / §5a
 // M2: onboarding + REPL + slash commands + settings + permissions matcher.
 
-import { CredentialsStore, VERSION, redact } from '@deepcode/core';
+import { CredentialsStore, VERSION, diagnoseSettings, redact } from '@deepcode/core';
 import { runAppServer } from '@deepcode/app-server';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
@@ -14,6 +14,7 @@ import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
 import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
+import { TrustStore } from './trust.js';
 import { runPluginsCommand, runSkillsCommand } from './list-cmd.js';
 import { runSetupToken } from './setup-token.js';
 import { runCompletion } from './completion.js';
@@ -184,11 +185,13 @@ async function main(): Promise<number> {
 }
 
 async function doctor(): Promise<number> {
+  const cwd = resolve(process.cwd());
   process.stdout.write(`DeepCode v${VERSION}\n`);
   process.stdout.write(`Node: ${process.version}\n`);
   process.stdout.write(`Platform: ${process.platform} ${process.arch}\n`);
   process.stdout.write(`Home: ${homedir()}\n`);
-  process.stdout.write(`CWD: ${resolve(process.cwd())}\n`);
+  process.stdout.write(`CWD: ${cwd}\n`);
+  let failed = false;
   try {
     const store = new CredentialsStore();
     const creds = await store.load();
@@ -197,7 +200,26 @@ async function doctor(): Promise<number> {
   } catch (err) {
     process.stdout.write(`Credentials error: ${(err as Error).message}\n`);
   }
-  return 0;
+  try {
+    const trustStatus = await new TrustStore().statusFor(cwd);
+    const config = await diagnoseSettings({ cwd, trustStatus });
+    process.stdout.write(`Configuration trust: ${config.trustStatus}\n`);
+    for (const layer of config.layers) {
+      const status = layer.present ? (layer.trusted ? 'active' : 'untrusted') : 'missing';
+      process.stdout.write(`Config ${layer.layer}: ${status} (${layer.path})\n`);
+    }
+    process.stdout.write(
+      `Config gated: ${config.gated.length ? config.gated.join(', ') : 'none'}\n`,
+    );
+    for (const issue of config.issues) {
+      process.stdout.write(`Config ${issue.severity}: [${issue.code}] ${issue.message}\n`);
+      if (issue.severity === 'error') failed = true;
+    }
+  } catch (error) {
+    process.stdout.write(`Configuration error: ${(error as Error).message}\n`);
+    failed = true;
+  }
+  return failed ? 1 : 0;
 }
 
 main().then(

@@ -1,4 +1,5 @@
 import type {
+  ConfigDiagnosticsResult,
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
@@ -70,6 +71,14 @@ export class EditorProtocolRuntime {
   async read(threadId: string): Promise<ThreadSnapshot> {
     await this.client.connect();
     return this.client.request('thread/read', { threadId });
+  }
+
+  async diagnostics(): Promise<ConfigDiagnosticsResult> {
+    const initialized = await this.client.connect();
+    if (!initialized.capabilities.configDiagnostics) {
+      throw new Error('The app-server does not support configuration diagnostics');
+    }
+    return this.client.request('config/diagnostics', { cwd: this.cwd() });
   }
 
   async interrupt(turnId: string): Promise<boolean> {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 import {
   ProtocolClient,
+  type ConfigDiagnosticsResult,
   type InitializeResult,
   type ProtocolEvent,
   type ProtocolMethod,
@@ -64,6 +65,7 @@ const COMMANDS = [
   'deepcode.respondApproval',
   'deepcode.respondUserInput',
   'deepcode.listSkills',
+  'deepcode.configDiagnostics',
 ];
 
 export async function handleMessage(msg: LspMessage, send: SendFn): Promise<void> {
@@ -166,6 +168,8 @@ async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn):
       );
     case 'deepcode.listSkills':
       return handleListSkills();
+    case 'deepcode.configDiagnostics':
+      return handleConfigDiagnostics();
     default:
       throw new Error(`Unknown command: ${params.command}`);
   }
@@ -386,6 +390,15 @@ async function handleListSkills(): Promise<{ skills: unknown[] }> {
       path: skill.path,
     })),
   };
+}
+
+async function handleConfigDiagnostics(): Promise<ConfigDiagnosticsResult> {
+  const client = await getClient();
+  const initialized = await client.connect();
+  if (!initialized.capabilities.configDiagnostics) {
+    throw new Error('The app-server does not support configuration diagnostics');
+  }
+  return client.request('config/diagnostics', { cwd: workspacePath() });
 }
 
 export const __test = {

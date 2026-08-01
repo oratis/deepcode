@@ -1,4 +1,5 @@
 import type {
+  ConfigDiagnosticsResult,
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
@@ -41,9 +42,19 @@ class FakeTransport implements ProtocolTransport {
     if (method === 'thread/resume') return thread as T;
     if (method === 'turn/start') return turn as T;
     if (method === 'turn/interrupt') return { interrupted: true } as T;
+    if (method === 'config/diagnostics') return diagnostics as T;
     return { accepted: true } as T;
   }
 }
+
+const diagnostics: ConfigDiagnosticsResult = {
+  cwd: '/workspace',
+  trustStatus: 'untrusted',
+  layers: [],
+  provenance: {},
+  gated: ['permissions'],
+  issues: [],
+};
 
 const thread: ThreadSnapshot = {
   id: 'thread-1',
@@ -62,6 +73,16 @@ const turn: TurnSnapshot = {
 };
 
 describe('DesktopProtocolAgent', () => {
+  it('reads value-free diagnostics from the shared app-server', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+
+    await expect(agent.diagnostics('/workspace')).resolves.toEqual(diagnostics);
+    expect(transport.requests).toEqual([
+      { method: 'config/diagnostics', params: { cwd: '/workspace' } },
+    ]);
+  });
+
   it('buffers fast server events until turn/start returns, then projects them in order', async () => {
     vi.useFakeTimers();
     const transport = new FakeTransport();

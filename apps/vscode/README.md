@@ -5,7 +5,7 @@ protocol and canonical threads as the desktop client.
 
 ## Current state
 
-- Three commands, an activity-bar chat view, model/effort settings, and a default
+- Four commands, an activity-bar chat view, model/effort settings, and a default
   `Cmd/Ctrl+Shift+D` keybinding.
 - Canonical thread reuse, structured text/tool events, real interrupt plumbing, approval via
   warning actions, and AskUserQuestion via QuickPick/InputBox.
@@ -38,11 +38,12 @@ Then:
 
 ## Commands
 
-| ID                   | Default keybinding | What it does                            |
-| -------------------- | ------------------ | --------------------------------------- |
-| `deepcode.openPanel` | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view           |
-| `deepcode.run`       | (palette)          | Run agent on the selected text          |
-| `deepcode.review`    | (palette)          | Run `code-review` skill on current diff |
+| ID                         | Default keybinding | What it does                                            |
+| -------------------------- | ------------------ | ------------------------------------------------------- |
+| `deepcode.openPanel`       | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view                           |
+| `deepcode.run`             | (palette)          | Run agent on the selected text                          |
+| `deepcode.review`          | (palette)          | Run `code-review` skill on current diff                 |
+| `deepcode.showDiagnostics` | (palette)          | Show value-free config sources, trust gates, and issues |
 
 ## Settings
 

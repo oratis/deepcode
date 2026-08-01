@@ -5,6 +5,7 @@ import { ProtocolClient, type ProtocolEvent } from '@deepcode/protocol';
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
 import { EditorProtocolRuntime } from './protocol-runtime.js';
+import { formatConfigDiagnostics } from './diagnostics.js';
 
 type V = typeof import('vscode');
 
@@ -55,6 +56,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscodeMod,
         runtime,
       );
+    }),
+    commands.registerCommand('deepcode.showDiagnostics', async () => {
+      const out = window.createOutputChannel('DeepCode Diagnostics');
+      out.show(true);
+      try {
+        const report = await runtime.diagnostics();
+        for (const line of formatConfigDiagnostics(report)) out.appendLine(line);
+      } catch (error) {
+        out.appendLine(`✕ ${(error as Error).message ?? String(error)}`);
+      }
     }),
     window.registerWebviewViewProvider('deepcode.chat', new ChatViewProvider(vscodeMod, runtime)),
   );

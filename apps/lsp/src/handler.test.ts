@@ -1,4 +1,5 @@
 import type {
+  ConfigDiagnosticsResult,
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
@@ -21,6 +22,15 @@ const capabilities: InitializeResult = {
     interactiveRequests: true,
     configDiagnostics: true,
   },
+};
+
+const diagnostics: ConfigDiagnosticsResult = {
+  cwd: '/tmp/x',
+  trustStatus: 'untrusted',
+  layers: [],
+  provenance: {},
+  gated: ['permissions'],
+  issues: [],
 };
 
 class FakeClient {
@@ -94,6 +104,8 @@ class FakeClient {
       case 'approval/respond':
       case 'user-input/respond':
         return { accepted: true } as T;
+      case 'config/diagnostics':
+        return diagnostics as T;
       default:
         throw new Error(`Unexpected method: ${method}`);
     }
@@ -132,12 +144,31 @@ describe('handleMessage — initialize', () => {
         'deepcode.resumeThread',
         'deepcode.respondApproval',
         'deepcode.respondUserInput',
+        'deepcode.configDiagnostics',
       ]),
     );
   });
 });
 
 describe('handleMessage — protocol commands', () => {
+  it('returns app-server configuration diagnostics for the LSP workspace', async () => {
+    const client = new FakeClient();
+    __test.setClientFactory(() => client);
+    const out: LspMessage[] = [];
+
+    await handleMessage(
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { rootUri: 'file:///tmp/x' } },
+      (message) => out.push(message),
+    );
+    await execute(2, 'deepcode.configDiagnostics', {}, (message) => out.push(message));
+
+    expect(out.find((message) => message.id === 2)?.result).toEqual(diagnostics);
+    expect(client.requests.at(-1)).toMatchObject({
+      method: 'config/diagnostics',
+      params: { cwd: '/tmp/x' },
+    });
+  });
+
   it('starts a canonical thread and emits native protocol events in order', async () => {
     const client = new FakeClient();
     __test.setClientFactory(() => client);
