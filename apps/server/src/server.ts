@@ -3,6 +3,7 @@ import {
   ProtocolInvariantError,
   ProtocolRuntime,
   type CompletedItemType,
+  type ConfigDiagnosticsResult,
   type ProtocolEvent,
   type ProtocolRequest,
   type ProtocolResponse,
@@ -53,6 +54,7 @@ export interface AppServerOptions {
   now?: () => string;
   newId?: (prefix: 'thread' | 'turn' | 'item') => string;
   onEvent?: (event: ProtocolEvent) => void;
+  configDiagnostics?: (cwd: string) => Promise<ConfigDiagnosticsResult>;
 }
 
 interface ActiveTurn {
@@ -90,6 +92,7 @@ export class AppServer {
       now: options.now,
       newId: options.newId,
       onEvent: options.onEvent,
+      configDiagnostics: options.configDiagnostics !== undefined,
     });
   }
 
@@ -133,6 +136,11 @@ export class AppServer {
     switch (request.method) {
       case 'initialize':
         return this.lifecycle.initialize();
+      case 'config/diagnostics':
+        if (!this.options.configDiagnostics) {
+          throw new RequestValidationError('Configuration diagnostics are not available');
+        }
+        return this.options.configDiagnostics(requiredString(request.params, 'cwd'));
       case 'thread/start':
         return this.lifecycle.startThread(requiredString(request.params, 'cwd'));
       case 'thread/read':

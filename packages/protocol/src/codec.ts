@@ -7,6 +7,7 @@ import type {
 
 const protocolMethods = new Set<ProtocolMethod>([
   'initialize',
+  'config/diagnostics',
   'thread/start',
   'thread/read',
   'thread/resume',

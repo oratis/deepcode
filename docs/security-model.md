@@ -1,6 +1,6 @@
 # DeepCode Security Model
 
-> Last updated: 2026-06-02 (M3.5-ext: Linux selective per-domain network allowlist landed)
+> Last updated: 2026-08-01 (shared app-server trust and config provenance)
 
 This document is the **single source of truth** for what DeepCode protects
 against, what it doesn't, and how each layer composes. If you're reviewing a
@@ -30,7 +30,12 @@ First time DeepCode opens a folder, you're asked **"Do you trust this
 directory?"**. If you say no, the agent runs in a heavily restricted mode:
 no exec, no writes outside the project, no `bypassPermissions` mode allowed.
 
-Decisions persist in `~/.deepcode/trust.json`.
+Decisions persist in `~/.deepcode/trusted-dirs.json`. The CLI, desktop sidecar, VS Code, and LSP
+app-server entrypoints all consult the same core trust store. Until a directory is trusted,
+project/local settings cannot replace provider endpoints, model/cost policy, permissions, auto
+mode, sandbox, environment, hooks, MCP, credential helpers, executable voice paths, worktree/update
+policy, or status-line commands. `config/diagnostics` reports which fields were gated without
+returning their values.
 
 ### Layer 1 — Mode + Permissions
 

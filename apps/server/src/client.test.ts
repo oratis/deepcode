@@ -13,7 +13,8 @@ lines.on('line', (line) => {
   const result = request.method === 'initialize'
     ? { protocolVersion: 1, capabilities: {
         threadResume: true, turnInterrupt: true, completedItemPersistence: true,
-        transientDeltas: true, structuredToolEvents: true, interactiveRequests: true
+        transientDeltas: true, structuredToolEvents: true, interactiveRequests: true,
+        configDiagnostics: true
       } }
     : { echoed: request.method };
   process.stdout.write(JSON.stringify({ id: request.id, result }) + '\n');

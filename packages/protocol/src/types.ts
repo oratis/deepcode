@@ -117,11 +117,35 @@ export interface InitializeResult {
     transientDeltas: true;
     structuredToolEvents: true;
     interactiveRequests: true;
+    configDiagnostics: boolean;
   };
+}
+
+export type ConfigLayerName = 'user' | 'project' | 'local' | 'override';
+
+export interface ConfigDiagnosticsResult {
+  cwd: string;
+  trustStatus: 'trusted' | 'plan-only' | 'untrusted';
+  layers: Array<{
+    layer: ConfigLayerName;
+    path: string;
+    present: boolean;
+    trusted: boolean;
+  }>;
+  provenance: Record<string, { layer: ConfigLayerName; path: string }>;
+  gated: string[];
+  issues: Array<{
+    severity: 'info' | 'warning' | 'error';
+    code: string;
+    message: string;
+    pointer?: string;
+    source?: { layer: ConfigLayerName; path: string };
+  }>;
 }
 
 export type ProtocolMethod =
   | 'initialize'
+  | 'config/diagnostics'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'

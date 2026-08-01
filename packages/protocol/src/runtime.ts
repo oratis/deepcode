@@ -40,6 +40,7 @@ export interface ProtocolRuntimeOptions {
   now?: () => string;
   newId?: (prefix: 'thread' | 'turn' | 'item') => string;
   onEvent?: (event: ProtocolEvent) => void;
+  configDiagnostics?: boolean;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -71,6 +72,7 @@ export class ProtocolRuntime {
         transientDeltas: true,
         structuredToolEvents: true,
         interactiveRequests: true,
+        configDiagnostics: this.options.configDiagnostics ?? false,
       },
     };
   }

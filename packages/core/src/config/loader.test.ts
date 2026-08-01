@@ -84,6 +84,27 @@ describe('settings loader', () => {
     expect(s.merged.model).toBe('override');
   });
 
+  it('tracks the winning source of each leaf without exposing values', async () => {
+    const userPath = join(home, '.deepcode', 'settings.json');
+    const projectPath = join(cwd, '.deepcode', 'settings.json');
+    await writeSettings(userPath, {
+      model: 'deepseek-chat',
+      permissions: { allow: ['Read'] },
+    });
+    await writeSettings(projectPath, {
+      model: 'deepseek-reasoner',
+      permissions: { deny: ['Bash'] },
+    });
+
+    const loaded = await loadSettings({ cwd, home });
+    expect(loaded.provenance).toEqual({
+      '/model': { layer: 'project', path: projectPath },
+      '/permissions/allow': { layer: 'user', path: userPath },
+      '/permissions/deny': { layer: 'project', path: projectPath },
+    });
+    expect(JSON.stringify(loaded.provenance)).not.toContain('deepseek-reasoner');
+  });
+
   it('deepMerge merges nested objects, arrays replace', () => {
     const merged = deepMerge<Record<string, unknown>>(
       { a: { x: 1, y: 2 }, list: [1, 2] },
@@ -110,6 +131,15 @@ describe('settings loader', () => {
     await fs.mkdir(join(home, '.deepcode'), { recursive: true });
     await fs.writeFile(path, '{ not valid json');
     await expect(loadSettings({ cwd, home })).rejects.toThrow(/parse/i);
+  });
+
+  it('rejects non-object settings and prototype-pollution keys', async () => {
+    const path = join(home, '.deepcode', 'settings.json');
+    await fs.mkdir(join(home, '.deepcode'), { recursive: true });
+    await fs.writeFile(path, '[]');
+    await expect(loadSettings({ cwd, home })).rejects.toThrow(/JSON object/);
+    await fs.writeFile(path, '{"permissions":{"__proto__":{"allow":["Bash"]}}}');
+    await expect(loadSettings({ cwd, home })).rejects.toThrow(/Unsafe settings key/);
   });
 
   it('merges permissions objects (not arrays)', async () => {

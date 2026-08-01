@@ -33,16 +33,17 @@ by expecting partial deltas to replay.
 
 ## Methods
 
-| Method               | Required parameters             | Result                                            |
-| -------------------- | ------------------------------- | ------------------------------------------------- |
-| `initialize`         | none                            | version and capabilities                          |
-| `thread/start`       | `cwd`                           | new thread snapshot                               |
-| `thread/read`        | `threadId`                      | thread snapshot or null                           |
-| `thread/resume`      | `threadId`                      | resumable snapshot                                |
-| `turn/start`         | `threadId`, object `input`      | in-progress turn snapshot                         |
-| `turn/interrupt`     | `threadId`, `turnId`            | whether interruption won the state race           |
-| `approval/respond`   | thread, turn, request, decision | whether the pending request accepted the response |
-| `user-input/respond` | thread, turn, request, answer   | whether the pending request accepted the response |
+| Method               | Required parameters             | Result                                             |
+| -------------------- | ------------------------------- | -------------------------------------------------- |
+| `initialize`         | none                            | version and capabilities                           |
+| `thread/start`       | `cwd`                           | new thread snapshot                                |
+| `thread/read`        | `threadId`                      | thread snapshot or null                            |
+| `thread/resume`      | `threadId`                      | resumable snapshot                                 |
+| `turn/start`         | `threadId`, object `input`      | in-progress turn snapshot                          |
+| `turn/interrupt`     | `threadId`, `turnId`            | whether interruption won the state race            |
+| `approval/respond`   | thread, turn, request, decision | whether the pending request accepted the response  |
+| `user-input/respond` | thread, turn, request, answer   | whether the pending request accepted the response  |
+| `config/diagnostics` | workspace cwd                   | value-free layers, provenance, trust gates, issues |
 
 `turn/start` returns before model work finishes. The server emits transient deltas while the turn
 runs, then persists new provider-history messages as completed items before emitting exactly one
@@ -69,11 +70,16 @@ thread, turn, request id, and request kind. Interrupt and shutdown resolve pendi
 waiting for the executor, so an abandoned UI cannot strand the server.
 
 The desktop sidecar loads credentials from its private data directory in file-only mode because
-Tauri onboarding writes that file and never returns its secret fields to the webview. It consumes
-only user-level permissions/sandbox settings until project trust provenance moves into
-`RuntimeHost`; project files cannot widen the desktop runtime boundary in the meantime. The
-canonical SessionManager remains attached for pre/post file snapshots, with message appends
-disabled because `CanonicalThreadStore` is the single message materializer.
+Tauri onboarding writes that file and never returns its secret fields to the webview. Every host
+uses the core directory-trust store: untrusted project/local layers cannot replace permissions,
+auto mode, sandbox, environment, hooks, MCP, helpers, or status-line configuration. The canonical
+SessionManager remains attached for pre/post file snapshots, with message appends disabled because
+`CanonicalThreadStore` is the single message materializer.
+
+Configuration diagnostics expose only JSON-pointer key paths and source filenames. Values are
+never serialized, so provider credentials, hook headers, MCP environment values, and helpers stay
+inside the app-server. The report distinguishes discovered layers from effective trust gating and
+includes shallow schema issues.
 
 ## Entrypoints
 
@@ -97,6 +103,5 @@ closes stdin first so the server can interrupt and persist active turns before a
 
 ## Deferred from this slice
 
-- config provenance;
 - thread listing, archive, fork, and search;
 - multi-client subscriptions or active-turn attachment;

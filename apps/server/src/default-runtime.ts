@@ -1,5 +1,5 @@
 import { CredentialsStore, resolveCredentials } from '@deepcode/core/credentials';
-import { loadSettings } from '@deepcode/core/config';
+import { DirectoryTrustStore, gateUntrustedSettings, loadSettings } from '@deepcode/core/config';
 import { DeepSeekProvider } from '@deepcode/core/dist/providers/deepseek.js';
 import { RuntimeHost, SAFE_READONLY_TOOLS } from '@deepcode/core/runtime';
 import { SessionManager } from '@deepcode/core/sessions';
@@ -11,15 +11,15 @@ export function createDefaultTurnExecutor(
   home?: string,
   options: { forceFileCredentials?: boolean } = {},
 ): RuntimeHostExecutor {
+  const trustStore = new DirectoryTrustStore({ directory: home });
   const sessionManager = new SessionManager({
     root: home ? `${home}/sessions` : undefined,
   });
   return new RuntimeHostExecutor({
     createHost: async (cwd, mode) => {
       const loaded = await loadSettings({ cwd, directory: home });
-      // Until trust provenance moves into RuntimeHost, only user-level settings
-      // may widen the desktop sidecar's permissions or sandbox profile.
-      const settings = loaded.layers.user ?? {};
+      const trustStatus = await trustStore.statusFor(cwd);
+      const { settings } = gateUntrustedSettings(loaded, trustStatus);
       const credentials = await resolveCredentials({
         store: new CredentialsStore({
           directory: home,
