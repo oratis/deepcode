@@ -1,38 +1,27 @@
 # @deepcode/core
 
-DeepCode 的内核包 —— agent loop / providers / tools / MCP / sandbox / harness。
-**完全 UI 无关**，CLI 和 Mac 桌面客户端都依赖这个包。
+DeepCode 的 TypeScript 内核包：agent loop、DeepSeek provider、tools、config、sessions、MCP、sandbox、hooks、skills、plugins、tasks 与 worktrees。
 
-> 详见 [`docs/DEVELOPMENT_PLAN.md`](../../docs/DEVELOPMENT_PLAN.md) §3 关键模块设计。
+> 当前架构方向见 [`docs/CODEX_ALIGNMENT_PLAN.md`](../../docs/CODEX_ALIGNMENT_PLAN.md)。原始模块规划保留在 [`docs/DEVELOPMENT_PLAN.md`](../../docs/DEVELOPMENT_PLAN.md) 中作为历史快照。
 
 ## 当前状态
 
-M0 骨架 — 所有模块都是 placeholder。实际实现按 §6 里程碑展开：
+主要模块均已有实现与测试。当前最重要的已知限制不是“缺少骨架”，而是不同 host 对 `runAgent` 的组装不一致：CLI 传入完整 permissions/hooks/sandbox/session/task services，desktop、LSP 与 VS Code 只传入其中一部分。后续通过不可绕过的 `RuntimeHost` 收敛，而不是继续增加 host-specific wiring。
 
-| 模块                                                          | 文件                        | 里程碑 |
-| ------------------------------------------------------------- | --------------------------- | ------ |
-| agent loop                                                    | `src/agent.ts`              | M1     |
-| DeepSeek provider                                             | `src/providers/deepseek.ts` | M1     |
-| Read/Write/Edit/Bash/Grep/Glob tools                          | `src/tools/`                | M1     |
-| Sessions (jsonl + 文件快照)                                   | `src/sessions.ts`           | M1     |
-| Credentials (Keychain + 文件)                                 | `src/credentials.ts`        | M2     |
-| Config (settings.json 三层)                                   | `src/config.ts`             | M2     |
-| Slash commands                                                | `src/slash-commands.ts`     | M2     |
-| Hooks (9 events × 5 handler types)                            | `src/hooks.ts`              | M3     |
-| MCP client                                                    | `src/mcp.ts`                | M3     |
-| Compaction                                                    | `src/compaction.ts`         | M3     |
-| Memory dual system                                            | `src/memory.ts`             | M3     |
-| Harness (system-reminder injector / plan mode / tasks / cron) | `src/harness.ts`            | M3     |
-| Sandbox (bwrap / sandbox-exec)                                | `src/sandbox.ts`            | M3.5   |
-| Skills                                                        | `src/skills.ts`             | M4     |
-| Sub-agents                                                    | `src/sub-agents.ts`         | M4     |
-| Output styles                                                 | `src/output-styles.ts`      | M4     |
-| Plugins                                                       | `src/plugins.ts`            | M5     |
+关键入口：
+
+- `src/agent.ts`：现有 agent loop 与兼容 facade。
+- `src/providers/`：DeepSeek provider 与 capability/pricing。
+- `src/tools/`：内置工具和 registry。
+- `src/harness/tool-dispatcher.ts`：mode、permissions 与 hook gate。
+- `src/sessions/`：legacy JSONL session 与 snapshots。
+- `src/config/`：多层 `settings.json` loader。
+- `src/sandbox/`：macOS sandbox-exec 与 Linux bwrap/network isolation。
 
 ## API 入口
 
 ```ts
-import { VERSION, PROJECT_NAME } from '@deepcode/core';
+import { runAgent, ToolRegistry, BUILTIN_TOOLS } from '@deepcode/core';
 ```
 
-完整 API 表面将随 M1 实现展开，参见 `docs/core-api.md`（M1 产出）。
+公共 API 见 [`docs/core-api.md`](../../docs/core-api.md)。新 host 不应直接复制 CLI 的组装代码；在 `RuntimeHost` 落地前，新增入口必须显式传入 mode、permissions、trust 与 sandbox policy。

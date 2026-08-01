@@ -22,6 +22,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"**/*.{ts,tsx,json,md,yml,yaml}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,json,md,yml,yaml}\"",
+    "docs:check": "node scripts/check-docs.mjs",
     "clean": "pnpm -r clean",
     "prepare": "husky || true"
   },

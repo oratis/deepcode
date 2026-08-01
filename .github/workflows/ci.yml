@@ -77,13 +77,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
-      - name: Verify required docs exist
+      - name: Verify current documentation
+        run: node scripts/check-docs.mjs
+
+  desktop-rust:
+    name: Desktop Rust check + test
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - name: Show Rust toolchain
+        run: rustc --version && cargo --version
+      - name: Check and test Tauri backend
         run: |
-          for f in README.md CONTRIBUTING.md SECURITY.md \
-                   docs/DEVELOPMENT_PLAN.md docs/VISUAL_DESIGN.html \
-                   docs/design/sandbox-plan-worktree.md \
-                   docs/design/plugin-security.md \
-                   docs/design/effort-levels.md; do
-            test -f "$f" || { echo "MISSING: $f"; exit 1; }
-          done
-          echo "All M0 docs present"
+          cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked
+          cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --locked

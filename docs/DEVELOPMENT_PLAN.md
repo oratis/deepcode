@@ -1,5 +1,7 @@
 # DeepCode 开发方案 v0.5
 
+> **历史快照（原始里程碑计划）**：本文保留早期产品决策与实现背景，其中 Electron、测试数、完成度和部分能力声明已经过期。新架构决策与执行顺序以 [`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md) 为准。
+
 > **一句话定位**：DeepCode 是 Claude Code 的 DeepSeek 版 —— 整体复刻 Claude Code 的全部能力（agent loop / 工具调用 / MCP / 子代理 / hooks / 沙箱 / 会话恢复 / 上下文压缩 / 审批模式 / skills / plugins / harness / 输出风格 / checkpointing），但底层 LLM 全面切换到 **DeepSeek**，提供 **Mac 客户端 + Node.js CLI** 双形态（v1.1 追加 VS Code + JetBrains IDE 扩展），用户首次启动即填入 `DEEPSEEK_API_KEY` 立即可用。Mac 客户端支持 **Claude Code 式自动更新**（后台拉新版 → "Relaunch to update vX.Y.Z" 浮层 → 一键重启升级）。所有 release 走 **GitHub Releases**。
 
 > **变更记录**：

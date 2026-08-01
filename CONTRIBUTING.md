@@ -1,14 +1,14 @@
 # Contributing to DeepCode
 
-感谢你对 DeepCode 感兴趣。DeepCode 是 Claude Code 的 DeepSeek 版 —— 完整复刻 Claude Code 全部能力，底层 LLM 切换到 DeepSeek。
+感谢你对 DeepCode 感兴趣。DeepCode 是一个由 DeepSeek 驱动的本地 coding agent，正在收敛 CLI、桌面端和编辑器端的运行时语义。
 
 > 在写代码前请先读：
 >
-> 1. [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md) — 整体开发方案 v0.5
-> 2. [`docs/VISUAL_DESIGN.html`](docs/VISUAL_DESIGN.html) — 视觉设计 v0.4（11 屏 mockup）
-> 3. [`docs/design/sandbox-plan-worktree.md`](docs/design/sandbox-plan-worktree.md) — sandbox × plan mode × worktree 三者关系
-> 4. [`docs/design/plugin-security.md`](docs/design/plugin-security.md) — plugin 安全模型
-> 5. [`docs/design/effort-levels.md`](docs/design/effort-levels.md) — effort levels 到 DeepSeek 的参数映射
+> 1. [`AGENTS.md`](AGENTS.md) — 仓库操作、验证与安全约束
+> 2. [`docs/CODEX_ALIGNMENT_PLAN.md`](docs/CODEX_ALIGNMENT_PLAN.md) — 当前架构与 PR 路线
+> 3. [`docs/DEVELOPMENT_PLAN.md`](docs/DEVELOPMENT_PLAN.md) — 原始里程碑历史快照
+> 4. [`docs/design/sandbox-plan-worktree.md`](docs/design/sandbox-plan-worktree.md) — sandbox × plan mode × worktree 三者关系
+> 5. [`docs/design/plugin-security.md`](docs/design/plugin-security.md) — plugin 安全模型
 
 ## 项目结构
 
@@ -21,7 +21,7 @@ deepcode/
 │   └── shared-ui/          # CLI 与桌面客户端共享类型
 ├── apps/
 │   ├── cli/                # @deepcode/cli — npm 包，命令 `deepcode`
-│   └── desktop/            # Mac 客户端（Electron + React）
+│   └── desktop/            # Mac 客户端（Tauri 2 + Rust + React）
 ├── docs/
 │   ├── DEVELOPMENT_PLAN.md
 │   ├── VISUAL_DESIGN.html
@@ -36,7 +36,7 @@ deepcode/
 
 ### 必需
 
-- Node.js ≥ 20（推荐 LTS）
+- Node.js ≥ 22
 - pnpm ≥ 9
 - Git ≥ 2.30
 - ripgrep（CLI Grep 工具依赖）
@@ -55,6 +55,8 @@ cd deepcode
 pnpm install
 pnpm typecheck
 pnpm build
+pnpm test
+pnpm docs:check
 ```
 
 ## 工作流
@@ -70,8 +72,7 @@ pnpm build
 ```bash
 git checkout -b feat/<topic>
 # ... write code ...
-pnpm test         # 跑单测
-pnpm test:e2e     # 跑集成测试（需 DEEPSEEK_API_KEY）
+pnpm test
 pnpm lint
 pnpm typecheck
 ```
@@ -141,21 +142,13 @@ pnpm --filter @deepcode/core test    # 单包
 
 使用 vitest。test 文件 `*.test.ts` 与源码并列。
 
-### 集成测试
+### 集成与真实 provider 测试
 
-```bash
-pnpm test:e2e
-```
-
-需要 `DEEPSEEK_API_KEY` 环境变量。CI 自动注入；本地开发需要在 `.env.local` 里设。
+默认测试不请求 DeepSeek API。真实 provider 用例位于 `packages/core/src/providers/deepseek.live.test.ts`，只有显式提供测试凭证并按测试文件说明启用时才运行；不要把凭证写入仓库或测试日志。
 
 ### 安全测试（M3.5 起强制）
 
-```bash
-pnpm test:security
-```
-
-跑 `docs/design/sandbox-plan-worktree.md` §7 + `docs/design/plugin-security.md` §9 的全部测试。每个改 `packages/core/src/sandbox/` 或 `packages/core/src/plugins/` 的 PR 必须跑。
+安全测试属于 `@deepcode/core` 测试套件。每个修改 `packages/core/src/sandbox/`、permissions、credentials、hooks、process execution 或 plugins 的 PR 必须运行 core 全套测试和对应的 focused test files；Linux kernel sandbox 集成测试还需要 bwrap/slirp4netns 与 CI 中的 opt-in 环境。
 
 ## 代码风格
 

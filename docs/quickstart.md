@@ -1,8 +1,10 @@
 # DeepCode Quickstart
 
-DeepCode is a Claude-Code-parity coding agent driven by **DeepSeek**. It ships
-two ways: a **CLI** (`deepcode`) and a **macOS desktop app**. Both share the same
-`@deepcode/core` kernel, so behavior is identical.
+DeepCode is a coding agent driven by **DeepSeek**. It ships as a **CLI**
+(`deepcode`) and a **macOS desktop app**, with VS Code/LSP integrations under
+active development. The clients reuse `@deepcode/core`, but some runtime,
+permission, and recovery behavior is still being unified; see the
+[alignment plan](CODEX_ALIGNMENT_PLAN.md) for current gaps.
 
 > Requirements: **Node ≥ 22** for the CLI. A **DeepSeek API key** (get one at
 > <https://platform.deepseek.com/>). macOS 12+ for the desktop app.

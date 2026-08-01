@@ -2,11 +2,10 @@
 
 # DeepCode
 
-**Claude Code 的 DeepSeek 版** —— 完整复刻 Claude Code 全部能力，底层 LLM 切换到 **DeepSeek**
+**面向真实代码库的 DeepSeek coding agent** —— CLI、macOS 桌面端与编辑器接入共享一个持续演进的核心
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-549%20passing-brightgreen.svg)](.github/workflows/ci.yml)
-[![v1 scope](https://img.shields.io/badge/v1%20scope-~98%25-brightgreen.svg)](MORNING_REPORT.md)
+[![CI](https://github.com/oratis/deepcode/actions/workflows/ci.yml/badge.svg)](https://github.com/oratis/deepcode/actions/workflows/ci.yml)
 
 </div>
 
@@ -14,12 +13,12 @@
 
 ## 这是什么
 
-如果你在用 **Claude Code** 但希望底层模型用 **DeepSeek** 而不是 Claude，DeepCode 就是为你做的。
+DeepCode 让 DeepSeek 可以在本地代码库中执行读取、编辑、命令、审阅、MCP 和可恢复会话工作。项目最初以 Claude Code 兼容为目标，现在正转向经过验证的 Codex 式运行模型：统一任务生命周期、可靠中断、清晰权限边界和跨客户端一致行为。
 
-- ✅ **完整对齐** Claude Code 的全部能力：工具调用 / MCP / 子代理 / hooks / skills / plugins / sandbox / checkpointing / 输出风格 / 5 档 effort levels
-- ✅ **四种形态**：Node.js CLI · Mac 客户端 · VS Code 扩展 · LSP bridge (Neovim/Emacs/Sublime)
-- ✅ **零迁移成本**：settings.json / hooks / MCP servers / skills / agents 与 Claude Code 1:1 对齐。见 [docs/MIGRATION_FROM_CLAUDE_CODE.md](docs/MIGRATION_FROM_CLAUDE_CODE.md)
-- ✅ **同安全保证**：sandbox-exec (macOS) + bwrap (Linux) + ed25519 marketplace signatures + DNS proxy + pipeline analysis ([docs/security-model.md](docs/security-model.md))
+- **已可用**：Node.js CLI、Tauri macOS 客户端、核心工具、MCP、hooks、skills、plugins、sandbox、sessions、background tasks 与 voice input。
+- **在收敛**：VS Code/LSP、统一权限、真实取消、thread/turn/item 协议与跨客户端恢复。
+- **兼容优先**：继续读取既有 `settings.json`、`DEEPCODE.md`、`AGENTS.md` 和 Claude 风格扩展资产，但不以未经验证的“1:1 parity”作为安全或完成度承诺。
+- **设计路线**：完整审查、正反方审议和分阶段 PR 见 [Codex alignment plan](docs/CODEX_ALIGNMENT_PLAN.md)。
 
 ## 快速上手
 
@@ -38,30 +37,11 @@ deepcode --model deepseek-reasoner --effort high
 
 Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboarding。
 
-## 完成度
+## 当前工程基线
 
-```
-M0  设计骨架            ████████████████████ 100%
-M1  内核 MVP            ████████████████████ 100%
-M2  CLI MVP             ████████████████████ 100%
-M3  modes/hooks/memory  ████████████████████ 100%
-M3c MCP/compact/etc.    ████████████████████ 100%
-M3c-rest                ████████████████████ 100%
-M3.5 sandbox            ████████████████████ 100%
-M4  skills/agents/style ████████████████████ 100%
-M5  plugins manifest    ████████████████████ 100%
-M5.1 plugin subprocess  ████████████████████ 100%
-M5.2 marketplace        ████████████████████ 100%
-M6  Mac client          ██████████████████░░  90% (UI 11 屏 + IPC 协议完，等装 Electron binary)
-M7  file panel + rewind ████░░░░░░░░░░░░░░░░  20% (UI 骨架；Monaco 等 binary)
-M8  polish              ████████████████████ 100%
-M9  release pipeline    ██████████████████░░  90%
-v1.1  VS Code/JetBrains █████░░░░░░░░░░░░░░░  25% (VS Code 骨架 + LSP 骨架)
-```
+主分支执行 typecheck、lint、format、Vitest、TypeScript build，并在 CI 中覆盖 macOS/Linux；Tauri Rust backend 也纳入单独检查。不要从 README 中读取静态测试总数，当前结果以 [CI](https://github.com/oratis/deepcode/actions/workflows/ci.yml) 为准。
 
-**549 个测试通过 · CI ubuntu + macOS 双矩阵绿色**。
-
-详细汇报：[MORNING_REPORT.md](MORNING_REPORT.md)
+已知架构差距和处理顺序记录在 [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)。[MORNING_REPORT.md](MORNING_REPORT.md) 是早期历史快照，不再表示当前进度。
 
 ## 文档地图
 
@@ -79,6 +59,7 @@ v1.1  VS Code/JetBrains █████░░░░░░░░░░░░░�
 
 | 文件                                                                         | 内容                                                |
 | ---------------------------------------------------------------------------- | --------------------------------------------------- |
+| [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)                 | 当前整体改造计划、审计证据、正反方审议与 PR 路线    |
 | [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)                         | 整体开发方案 v0.5（1500+ 行 / §3 模块 / §6 里程碑） |
 | [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html)                           | 视觉设计 v0.4（11 屏 mockup）                       |
 | [docs/security-model.md](docs/security-model.md)                             | 威胁模型 + 防御层 + 攻击向量测试 + 已知缺口         |
@@ -95,7 +76,7 @@ packages/
   shared-ui/     # @deepcode/shared-ui — types shared between CLI + Mac client + VS Code
 apps/
   cli/           # deepcode-cli — Node.js CLI (npm publishable)
-  desktop/       # @deepcode/desktop — Electron Mac client
+  desktop/       # @deepcode/desktop — Tauri 2 + React Mac client
   vscode/        # @deepcode/vscode — VS Code extension (v1.1)
   lsp/           # @deepcode/lsp — LSP bridge for Neovim/Emacs/Sublime (v1.1)
 docs/
@@ -113,7 +94,8 @@ scripts/
 
 ## 致谢
 
-- **Anthropic** 的 [Claude Code](https://github.com/anthropics/claude-code) —— 对齐基准
+- **OpenAI Codex** —— 当前运行模型与客户端架构的重要公开参考
+- **Anthropic Claude Code** —— 早期兼容设计的重要参考
 - **DeepSeek** —— 模型与 API
 - **MCP** 生态 —— Model Context Protocol 协议
 
