@@ -178,7 +178,14 @@ async function waitForApproval(
  * TodoWrite/AskUserQuestion/ExitPlanMode) runs sequentially to preserve snapshot
  * ordering, mutation order, and one-at-a-time interactive prompts.
  */
-const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']);
+const READ_ONLY_TOOLS = new Set([
+  'Read',
+  'Grep',
+  'Glob',
+  'WebFetch',
+  'WebSearch',
+  'SubmitReviewFinding',
+]);
 
 /**
  * Runs the agent loop until the model produces an end_turn (no tool calls),

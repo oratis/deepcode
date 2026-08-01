@@ -1,7 +1,7 @@
 // VS Code extension entry — thin UI over the shared app-server protocol.
 
 import type * as vscode from 'vscode';
-import { ProtocolClient, type ProtocolEvent } from '@deepcode/protocol';
+import { ProtocolClient, type ProtocolEvent, type ReviewFindingPayload } from '@deepcode/protocol';
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
 import { EditorProtocolRuntime } from './protocol-runtime.js';
@@ -71,6 +71,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
       }
     }),
+    commands.registerCommand(
+      'deepcode.applyReviewFinding',
+      async (finding: ReviewFindingPayload | undefined) => {
+        if (!finding?.findingId) {
+          void window.showErrorMessage('DeepCode: a review finding is required.');
+          return;
+        }
+        await runFindingInOutput(finding, vscodeMod, runtime);
+      },
+    ),
     commands.registerCommand('deepcode.showDiagnostics', async () => {
       const out = window.createOutputChannel('DeepCode Diagnostics');
       out.show(true);
@@ -83,6 +93,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     window.registerWebviewViewProvider('deepcode.chat', new ChatViewProvider(vscodeMod, runtime)),
   );
+}
+
+async function runFindingInOutput(
+  finding: ReviewFindingPayload,
+  vscodeMod: V,
+  runtime: EditorProtocolRuntime,
+): Promise<void> {
+  const out = vscodeMod.window.createOutputChannel('DeepCode');
+  out.show(true);
+  out.appendLine(`Applying review finding: ${finding.title}`);
+  try {
+    await runtime.applyFinding(finding, (event) => {
+      projectOutputEvent(event, out);
+      void respondToInteraction(event, vscodeMod, runtime);
+    });
+  } catch (error) {
+    out.appendLine(`\n✕ ${(error as Error).message ?? String(error)}`);
+  }
 }
 
 export async function deactivate(): Promise<void> {
@@ -149,6 +177,15 @@ function projectOutputEvent(event: ProtocolEvent, out: vscode.OutputChannel): vo
       break;
     case 'turn.failed':
       out.appendLine(`\n✕ ${turnError(event.turn) ?? 'turn failed'}\n`);
+      break;
+    case 'item.completed':
+      if (event.item.type === 'review_finding') {
+        const finding = event.item.payload;
+        out.appendLine(
+          `\n[P${String(finding.priority)}] ${String(finding.title)} — ${String(finding.path)}:${String(finding.startLine)}`,
+        );
+        out.appendLine(`  ${String(finding.body)}`);
+      }
       break;
   }
 }

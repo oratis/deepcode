@@ -1,11 +1,13 @@
-import type {
-  ConfigDiagnosticsResult,
-  InitializeResult,
-  ProtocolEvent,
-  ProtocolMethod,
-  ThreadSnapshot,
-  TurnSnapshot,
-  WorkspaceDiffResult,
+import {
+  reviewApplyPrompt,
+  type ConfigDiagnosticsResult,
+  type InitializeResult,
+  type ProtocolEvent,
+  type ProtocolMethod,
+  type ReviewFindingPayload,
+  type ThreadSnapshot,
+  type TurnSnapshot,
+  type WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 import { setActiveSessionId } from './mac-session.js';
@@ -100,6 +102,10 @@ export class DesktopProtocolAgent {
     }
     if (!this.threadId) throw new Error('No active workspace thread');
     return this.transport.request('workspace/diff', { threadId: this.threadId });
+  }
+
+  applyFinding(finding: ReviewFindingPayload) {
+    return this.start({ userMessage: reviewApplyPrompt(finding) });
   }
 
   clear(): void {
@@ -226,6 +232,16 @@ export class DesktopProtocolAgent {
           multiSelect: event.multiSelect,
         });
         break;
+      case 'item.completed':
+        if (event.item.type === 'review_finding') {
+          this.emit({
+            kind: 'event',
+            turnId: event.turnId,
+            type: 'review_finding',
+            ...event.item.payload,
+          });
+        }
+        break;
       case 'turn.completed':
         this.finish(event.turn.id, 'end_turn');
         break;
@@ -318,6 +334,10 @@ export function getConfigDiagnostics(cwd: string) {
 
 export function getWorkspaceDiff() {
   return defaultAgent.diff();
+}
+
+export function applyReviewFinding(finding: ReviewFindingPayload) {
+  return defaultAgent.applyFinding(finding);
 }
 
 export function abortProtocolTurn(turnId: string) {

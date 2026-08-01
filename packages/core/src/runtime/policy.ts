@@ -14,6 +14,7 @@ export const SAFE_READONLY_TOOLS = Object.freeze([
   'WebFetch',
   'WebSearch',
   'AskUserQuestion',
+  'SubmitReviewFinding',
   'ExitPlanMode',
   'ToolSearch',
 ] as const);

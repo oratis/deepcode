@@ -2,6 +2,7 @@ import {
   type AgentEvent,
   type Effort,
   type Mode,
+  type ReviewFinding,
   type RuntimeHost,
   type SessionManager,
   type StoredMessage,
@@ -148,7 +149,11 @@ export class RuntimeHostExecutor implements TurnExecutor {
       });
 
       const newMessages = result.history.slice(baselineLength);
-      const items = [...interactionItems, ...completedItemsFromMessages(newMessages, text)];
+      const items = [
+        ...interactionItems,
+        ...reviewFindingsFromEvents(events),
+        ...completedItemsFromMessages(newMessages, text),
+      ];
       if (result.stopReason === 'error') {
         const error = [...events].reverse().find((event) => event.type === 'error');
         if (error?.type === 'error') {
@@ -163,6 +168,39 @@ export class RuntimeHostExecutor implements TurnExecutor {
       await lease.close?.();
     }
   }
+}
+
+export function reviewFindingsFromEvents(events: AgentEvent[]): TurnExecutionItem[] {
+  const calls = new Map<string, Record<string, unknown>>();
+  const items: TurnExecutionItem[] = [];
+  for (const event of events) {
+    if (event.type === 'tool_use' && event.name === 'SubmitReviewFinding') {
+      calls.set(event.id, event.input);
+    } else if (event.type === 'tool_result' && calls.has(event.id) && !event.result.isError) {
+      const finding = event.result.data?.finding;
+      if (isReviewFinding(finding)) {
+        items.push({
+          type: 'review_finding',
+          payload: { findingId: event.id, ...finding },
+        });
+      }
+      calls.delete(event.id);
+    }
+  }
+  return items;
+}
+
+function isReviewFinding(value: unknown): value is ReviewFinding {
+  if (!value || typeof value !== 'object') return false;
+  const finding = value as Partial<ReviewFinding>;
+  return (
+    typeof finding.title === 'string' &&
+    typeof finding.body === 'string' &&
+    typeof finding.path === 'string' &&
+    Number.isInteger(finding.startLine) &&
+    Number.isInteger(finding.endLine) &&
+    Number.isInteger(finding.priority)
+  );
 }
 
 const MODES = new Set<Mode>([

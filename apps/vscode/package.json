@@ -41,6 +41,10 @@
         "title": "DeepCode: Review current diff"
       },
       {
+        "command": "deepcode.applyReviewFinding",
+        "title": "DeepCode: Apply Review Finding"
+      },
+      {
         "command": "deepcode.showDiagnostics",
         "title": "DeepCode: Show Configuration Diagnostics"
       }

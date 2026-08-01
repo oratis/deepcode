@@ -9,6 +9,8 @@ import {
   type InitializeResult,
   type ProtocolEvent,
   type ProtocolMethod,
+  reviewApplyPrompt,
+  type ReviewFindingPayload,
   type ThreadSnapshot,
   type TurnSnapshot,
   type WorkspaceDiffResult,
@@ -68,6 +70,7 @@ const COMMANDS = [
   'deepcode.listSkills',
   'deepcode.configDiagnostics',
   'deepcode.workspaceDiff',
+  'deepcode.applyReviewFinding',
 ];
 
 export async function handleMessage(msg: LspMessage, send: SendFn): Promise<void> {
@@ -174,6 +177,13 @@ async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn):
       return handleConfigDiagnostics();
     case 'deepcode.workspaceDiff':
       return handleWorkspaceDiff();
+    case 'deepcode.applyReviewFinding':
+      return handleRunAgent(
+        {
+          prompt: reviewApplyPrompt((params.arguments?.[0] ?? {}) as ReviewFindingPayload),
+        },
+        send,
+      );
     default:
       throw new Error(`Unknown command: ${params.command}`);
   }

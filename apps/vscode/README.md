@@ -38,12 +38,13 @@ Then:
 
 ## Commands
 
-| ID                         | Default keybinding | What it does                                            |
-| -------------------------- | ------------------ | ------------------------------------------------------- |
-| `deepcode.openPanel`       | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view                           |
-| `deepcode.run`             | (palette)          | Run agent on the selected text                          |
-| `deepcode.review`          | (palette)          | Run `code-review` skill on current diff                 |
-| `deepcode.showDiagnostics` | (palette)          | Show value-free config sources, trust gates, and issues |
+| ID                            | Default keybinding | What it does                                             |
+| ----------------------------- | ------------------ | -------------------------------------------------------- |
+| `deepcode.openPanel`          | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view                            |
+| `deepcode.run`                | (palette)          | Run agent on the selected text                           |
+| `deepcode.review`             | (palette)          | Run `code-review` skill on current diff                  |
+| `deepcode.applyReviewFinding` | (API/context)      | Apply one structured finding through a normal agent turn |
+| `deepcode.showDiagnostics`    | (palette)          | Show value-free config sources, trust gates, and issues  |
 
 ## Settings
 
@@ -58,7 +59,7 @@ trusted `settings.json` model and effort remain authoritative.
 
 ## Roadmap
 
-- Inline review comments and per-finding apply/revert controls
+- Inline review comments, context actions, and per-finding revert controls
 - File panel showing live edits as the agent works
 - Inline webview approval cards (host-native warning actions work today)
 - Custom commands via skills (mirror CLI's `/skills` dir)

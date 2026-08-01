@@ -8,6 +8,7 @@ export type CompletedItemType =
   | 'tool_result'
   | 'approval'
   | 'ask_user'
+  | 'review_finding'
   | 'error';
 
 export interface CompletedItem {
@@ -199,6 +200,17 @@ export interface WorkspaceDiffResult {
   base: 'HEAD' | 'empty' | null;
   files: WorkspaceDiffFile[];
   truncated: boolean;
+}
+
+export interface ReviewFindingPayload {
+  findingId: string;
+  title: string;
+  body: string;
+  path: string;
+  startLine: number;
+  endLine: number;
+  priority: 0 | 1 | 2 | 3;
+  replacement?: string;
 }
 
 export type ProtocolMethod =
