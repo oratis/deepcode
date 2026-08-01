@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { runAgent } from './agent.js';
+import { runAgent as runAgentCore, type RunAgentOptions } from './agent.js';
 import { HookDispatcher } from './hooks/index.js';
 import { SessionManager } from './sessions/index.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -15,6 +15,13 @@ import type {
   ToolUseBlock,
 } from './types.js';
 import type { Provider, ProviderResult, ProviderRunOpts } from './providers/types.js';
+
+type TestRunAgentOptions = Omit<RunAgentOptions, 'mode'> & { mode?: RunAgentOptions['mode'] };
+
+/** Most loop tests predate policy dispatch and focus on orchestration behavior. */
+function runAgent(opts: TestRunAgentOptions) {
+  return runAgentCore({ mode: 'bypassPermissions', ...opts });
+}
 
 /**
  * MockProvider — pulls scripted responses from a queue, allowing fully deterministic
@@ -188,6 +195,104 @@ describe('runAgent', () => {
     });
     expect(result.stopReason).toBe('aborted');
     expect(result.turnsUsed).toBe(0);
+  });
+
+  it('classifies a provider AbortError as an aborted run', async () => {
+    const ac = new AbortController();
+    let markEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    const provider: Provider = {
+      name: 'abortable',
+      runTurn: async () => {
+        markEntered();
+        await new Promise<void>((_resolve, reject) => {
+          ac.signal.addEventListener(
+            'abort',
+            () => reject(Object.assign(new Error('cancelled'), { name: 'AbortError' })),
+            { once: true },
+          );
+        });
+        throw new Error('unreachable');
+      },
+    };
+    const pending = runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'go',
+      model: 'deepseek-chat',
+      cwd,
+      signal: ac.signal,
+    });
+    await entered;
+    ac.abort();
+    await expect(pending).resolves.toMatchObject({ stopReason: 'aborted', turnsUsed: 1 });
+  });
+
+  it('fails safe for a legacy caller that omits mode and permissions', async () => {
+    const provider = new MockProvider([
+      toolUse('writing', {
+        type: 'tool_use',
+        id: 'write-1',
+        name: 'Write',
+        input: { file_path: 'blocked.txt', content: 'must not exist' },
+      }),
+      endTurn('done'),
+    ]);
+
+    const result = await runAgentCore({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'write a file',
+      model: 'deepseek-chat',
+      cwd,
+    } as RunAgentOptions);
+
+    expect(result.stopReason).toBe('end_turn');
+    await expect(fs.access(join(cwd, 'blocked.txt'))).rejects.toThrow();
+    const toolResult = result.history
+      .flatMap((message) => message.content)
+      .find((block) => block.type === 'tool_result');
+    expect(toolResult).toMatchObject({ is_error: true });
+  });
+
+  it('aborts while an approval prompt is pending', async () => {
+    const ac = new AbortController();
+    let approvalStarted!: () => void;
+    const started = new Promise<void>((resolve) => {
+      approvalStarted = resolve;
+    });
+    const provider = new MockProvider([
+      toolUse('writing', {
+        type: 'tool_use',
+        id: 'write-pending',
+        name: 'Write',
+        input: { file_path: 'pending.txt', content: 'must not exist' },
+      }),
+    ]);
+
+    const pending = runAgentCore({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'write a file',
+      model: 'deepseek-chat',
+      cwd,
+      signal: ac.signal,
+      mode: 'default',
+      approval: async () => {
+        approvalStarted();
+        return new Promise<boolean>(() => {});
+      },
+    });
+    await started;
+    ac.abort();
+
+    await expect(pending).resolves.toMatchObject({ stopReason: 'aborted', turnsUsed: 1 });
+    await expect(fs.access(join(cwd, 'pending.txt'))).rejects.toThrow();
   });
 
   it('persists messages and captures snapshots when session is provided', async () => {

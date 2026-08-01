@@ -73,6 +73,22 @@ describe('createWorktree / removeWorktree', () => {
     expect(await fs.readFile(join(h.path, 'a.txt'), 'utf8')).toBe('A');
     await removeWorktree(h);
     await expect(fs.access(h.path)).rejects.toThrow();
+    const branch = spawnSync('git', ['-C', src, 'rev-parse', '--verify', h.branch], {
+      encoding: 'utf8',
+      env: cleanGitEnv(),
+    });
+    expect(branch.status).toBe(0);
+  });
+
+  it('refuses to remove a dirty worktree', async () => {
+    const h = await createWorktree({ source: src, parentDir: parent });
+    const changed = join(h.path, 'a.txt');
+    await fs.writeFile(changed, 'unsaved work');
+
+    await expect(removeWorktree(h)).rejects.toThrow(/worktree remove/);
+    expect(await fs.readFile(changed, 'utf8')).toBe('unsaved work');
+
+    runOrFail('git', ['worktree', 'remove', '--force', h.path], src);
   });
 
   it('honors baseRef from config', async () => {

@@ -6,7 +6,7 @@
 //   that can't be set up (e.g. can't bind the DNS proxy on :53), fail CLOSED to
 //   deny-all-net rather than running unrestricted.
 
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -39,6 +39,7 @@ type SandboxCtx = ToolContext & {
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
 const MAX_OUTPUT_BYTES = 30_000;
+type TerminationReason = 'timeout' | 'aborted';
 
 // Monotonic suffix so two background spawns in the same millisecond from the
 // same pid don't collide on a log filename.
@@ -54,7 +55,7 @@ function capStream(s: string, label: string): string {
 function summarize(
   stdout: string,
   stderr: string,
-  killed: boolean,
+  terminationReason: TerminationReason | undefined,
   code: number | null,
   timeoutMs: number,
   note?: string,
@@ -63,13 +64,37 @@ function summarize(
   if (note) parts.push(note);
   if (stdout) parts.push(`<stdout>\n${stdout}\n</stdout>`);
   if (stderr) parts.push(`<stderr>\n${stderr}\n</stderr>`);
-  if (killed) parts.push(`[killed by timeout after ${timeoutMs}ms]`);
+  if (terminationReason === 'timeout') parts.push(`[killed by timeout after ${timeoutMs}ms]`);
+  if (terminationReason === 'aborted') parts.push('[aborted by user]');
   parts.push(`exit: ${code ?? 'unknown'}`);
   return {
     content: parts.join('\n'),
-    data: { exitCode: code, killed, stdoutBytes: stdout.length, stderrBytes: stderr.length },
-    isError: killed || (code !== null && code !== 0),
+    data: {
+      exitCode: code,
+      killed: terminationReason !== undefined,
+      terminationReason,
+      stdoutBytes: stdout.length,
+      stderrBytes: stderr.length,
+    },
+    isError: terminationReason !== undefined || (code !== null && code !== 0),
   };
+}
+
+/** Kill the whole foreground process group on POSIX, not just its shell. */
+function killProcessTree(child: ChildProcess, signal: NodeJS.Signals): void {
+  if (process.platform !== 'win32' && child.pid !== undefined) {
+    try {
+      process.kill(-child.pid, signal);
+      return;
+    } catch {
+      // The group may already have exited; fall back to the direct child.
+    }
+  }
+  try {
+    child.kill(signal);
+  } catch {
+    // Process already exited.
+  }
 }
 
 /**
@@ -87,7 +112,7 @@ async function runForegroundNet(
   return new Promise<ToolResult>((resolve) => {
     let stdout = '';
     let stderr = '';
-    let killed = false;
+    let terminationReason: TerminationReason | undefined;
     let settled = false;
     const finish = (r: ToolResult): void => {
       if (!settled) {
@@ -96,11 +121,11 @@ async function runForegroundNet(
       }
     };
     const timer = setTimeout(() => {
-      killed = true;
+      terminationReason = 'timeout';
       void handle.close();
     }, timeoutMs);
     const onAbort = (): void => {
-      killed = true;
+      terminationReason = 'aborted';
       void handle.close();
     };
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
@@ -114,7 +139,7 @@ async function runForegroundNet(
       .then((code) => {
         clearTimeout(timer);
         ctx.signal?.removeEventListener('abort', onAbort);
-        finish(summarize(stdout, stderr, killed, code, timeoutMs));
+        finish(summarize(stdout, stderr, terminationReason, code, timeoutMs));
       })
       .catch((err: unknown) => {
         clearTimeout(timer);
@@ -152,6 +177,13 @@ export const BashTool: ToolHandler = {
     const input = rawInput as unknown as BashInput;
     if (!input?.command || typeof input.command !== 'string') {
       return { content: 'Error: command is required (string).', isError: true };
+    }
+    if (ctx.signal?.aborted) {
+      return {
+        content: '[aborted by user]',
+        isError: true,
+        data: { terminationReason: 'aborted' },
+      };
     }
     const timeoutMs = Math.max(1_000, input.timeout ?? DEFAULT_TIMEOUT_MS);
 
@@ -239,20 +271,33 @@ export const BashTool: ToolHandler = {
     return new Promise((resolvePromise) => {
       const child = spawn(wrapped.command, wrapped.args, {
         cwd: ctx.cwd,
-        signal: ctx.signal,
+        detached: process.platform !== 'win32',
       });
       let stdout = '';
       let stderr = '';
-      let killed = false;
-      const timer = setTimeout(() => {
-        killed = true;
-        // SIGKILL + destroy pipes — on Ubuntu CI, dash leaves orphaned children
-        // whose inherited stdout/stderr fds keep `close` from firing on the
-        // parent. Destroying the pipes forces close.
-        child.kill('SIGKILL');
+      let terminationReason: TerminationReason | undefined;
+      let settled = false;
+      const finish = (result: ToolResult): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        ctx.signal?.removeEventListener('abort', onAbort);
+        resolvePromise(result);
+      };
+      const terminate = (reason: TerminationReason): void => {
+        if (terminationReason) return;
+        terminationReason = reason;
+        killProcessTree(child, 'SIGKILL');
+        // Descendants can inherit these descriptors; destroying them also
+        // prevents an orphan from keeping the Promise open indefinitely.
         child.stdout?.destroy();
         child.stderr?.destroy();
+      };
+      const timer = setTimeout(() => {
+        terminate('timeout');
       }, timeoutMs);
+      const onAbort = (): void => terminate('aborted');
+      ctx.signal?.addEventListener('abort', onAbort, { once: true });
 
       child.stdout.on('data', (chunk: Buffer) => {
         stdout = capStream(stdout + chunk.toString('utf8'), 'stdout');
@@ -262,16 +307,14 @@ export const BashTool: ToolHandler = {
       });
 
       child.on('error', (err) => {
-        clearTimeout(timer);
-        resolvePromise({
+        finish({
           content: `Error spawning command: ${err.message}`,
           isError: true,
         });
       });
 
       child.on('close', (code) => {
-        clearTimeout(timer);
-        resolvePromise(summarize(stdout, stderr, killed, code, timeoutMs, failNote));
+        finish(summarize(stdout, stderr, terminationReason, code, timeoutMs, failNote));
       });
     });
   },

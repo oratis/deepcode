@@ -203,7 +203,7 @@ export async function startAgentTurn(args: StartTurnArgs): Promise<StartTurnResu
         temperature: effortParams.temperature,
         cwd: args.cwd ?? '/',
         signal: abort.signal,
-        mode: args.mode,
+        mode: args.mode ?? 'default',
         // Disable system reminders in the renderer — they require node:fs
         // (reads todos.json + stats files). The Mac UI surfaces those
         // contextually elsewhere.
