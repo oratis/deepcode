@@ -5,6 +5,8 @@
     { "path": "./packages/core" },
     { "path": "./packages/shared-ui" },
     { "path": "./apps/cli" },
-    { "path": "./apps/desktop" }
+    { "path": "./apps/desktop" },
+    { "path": "./apps/lsp" },
+    { "path": "./apps/vscode" }
   ]
 }

@@ -1,5 +1,7 @@
 # 进度汇报 — 第七轮 "继续推进 to completion"
 
+> **历史快照（2026-05）**：本文件保留当时的交接记录，不代表当前能力、测试数或发布状态。当前方向与事实基线见 [`docs/CODEX_ALIGNMENT_PLAN.md`](docs/CODEX_ALIGNMENT_PLAN.md)，实时验证以 CI 为准。
+
 > 持续覆盖。前六轮内容见 git 历史。
 
 ## TL;DR

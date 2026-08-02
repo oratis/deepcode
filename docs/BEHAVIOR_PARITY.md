@@ -1,5 +1,7 @@
 # Behavior Parity — DeepCode vs Claude Code
 
+> **历史快照（Claude 兼容矩阵）**：本文件记录既有兼容目标，不再作为当前完成度或安全保证。当前事实、已知分叉与 Codex 对齐路线见 [`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md)。
+
 > This document tracks where DeepCode's behavior **aligns with**, **deviates from**, or **deliberately enhances** Claude Code. It grows alongside the codebase. Last updated reflects what main contains.
 
 Legend: `✅` matches · `🟡` matches with caveats · `🔄` deferred · `⚠️` deliberately differs · `🆕` DeepCode-only addition
