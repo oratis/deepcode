@@ -7,8 +7,13 @@ export type { SessionManagerOpts } from './manager.js';
 export {
   defaultSessionsDir,
   newSessionId,
+  readSessionRecords,
+  SessionCorruptionError,
   type SessionMeta,
   type SessionFiles,
+  type SessionDiagnostic,
+  type SessionFormat,
+  type SessionReadResult,
 } from './storage.js';
 export {
   captureSnapshot,

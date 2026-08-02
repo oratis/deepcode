@@ -58,6 +58,8 @@ export {
   SessionManager,
   defaultSessionsDir,
   newSessionId,
+  readSessionRecords,
+  SessionCorruptionError,
   captureSnapshot,
   captureGitCheckpoint,
   listSnapshots,
@@ -65,6 +67,9 @@ export {
   type SessionMeta,
   type SessionFiles,
   type SessionManagerOpts,
+  type SessionDiagnostic,
+  type SessionFormat,
+  type SessionReadResult,
   type Snapshot,
 } from './sessions/index.js';
 

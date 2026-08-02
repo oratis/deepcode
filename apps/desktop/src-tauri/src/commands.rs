@@ -189,14 +189,26 @@ pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(format!("read {}: {}", path.display(), e)),
     };
+    parse_session_messages(&text)
+}
+
+fn parse_session_messages(text: &str) -> Result<Vec<serde_json::Value>, String> {
+    let lines: Vec<&str> = text.split('\n').collect();
+    let last_content = lines.iter().rposition(|line| !line.trim().is_empty());
     let mut out = Vec::new();
-    for line in text.lines() {
+    for (index, line) in lines.iter().enumerate() {
         let line = line.trim();
         if line.is_empty() {
             continue;
         }
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue; // tolerate a partial trailing line
+        let v = match serde_json::from_str::<serde_json::Value>(line) {
+            Ok(value) => value,
+            Err(_) if Some(index) == last_content && !text.ends_with('\n') => {
+                continue; // recover an interrupted final append only
+            }
+            Err(error) => {
+                return Err(format!("corrupt session at line {}: {}", index + 1, error));
+            }
         };
         // Desktop sessions tag messages with type:"message"; CLI/headless sessions
         // write bare {role, content} lines with no type. Accept both, skip meta.
@@ -206,6 +218,12 @@ pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
             Some("user") | Some("assistant")
         );
         if t == Some("message") || (t.is_none() && is_role_msg) {
+            if !v.get("content").is_some_and(|content| content.is_array()) {
+                return Err(format!(
+                    "corrupt session at line {}: message content must be an array",
+                    index + 1
+                ));
+            }
             out.push(v);
         }
     }
@@ -771,6 +789,29 @@ mod contract_tests {
     fn parse_skill_frontmatter_none_without_fence() {
         let (name, desc) = parse_skill_frontmatter("no frontmatter here");
         assert!(name.is_none() && desc.is_none());
+    }
+
+    #[test]
+    fn session_parser_accepts_both_legacy_formats_and_truncated_tail() {
+        let text = concat!(
+            "{\"type\":\"session_meta\",\"id\":\"x\"}\n",
+            "{\"type\":\"message\",\"role\":\"user\",\"content\":[]}\n",
+            "{\"role\":\"assistant\",\"content\":[]}\n",
+            "{\"role\":\"assistant\""
+        );
+        let messages = parse_session_messages(text).unwrap();
+        assert_eq!(messages.len(), 2);
+    }
+
+    #[test]
+    fn session_parser_rejects_middle_corruption() {
+        let text = concat!(
+            "{\"role\":\"user\",\"content\":[]}\n",
+            "{not-json}\n",
+            "{\"role\":\"assistant\",\"content\":[]}\n"
+        );
+        let error = parse_session_messages(text).unwrap_err();
+        assert!(error.contains("line 2"), "got {error}");
     }
 
     #[test]
