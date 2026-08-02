@@ -181,7 +181,11 @@ export type { ApprovalCallback, ApprovalDecision } from './agent.js';
 export {
   SAFE_DEFAULT_PERMISSIONS,
   SAFE_READONLY_TOOLS,
+  RuntimeHost,
+  createRuntimeHost,
   resolveRuntimePolicy,
+  type RuntimeHostOptions,
+  type RuntimeTurnOptions,
   type RuntimePolicyInput,
 } from './runtime/index.js';
 

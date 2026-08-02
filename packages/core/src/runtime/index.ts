@@ -4,3 +4,9 @@ export {
   resolveRuntimePolicy,
   type RuntimePolicyInput,
 } from './policy.js';
+export {
+  RuntimeHost,
+  createRuntimeHost,
+  type RuntimeHostOptions,
+  type RuntimeTurnOptions,
+} from './host.js';
