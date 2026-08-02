@@ -5,6 +5,100 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-08-02
+
+Largest release so far: the desktop app, VS Code extension, and LSP server stop
+being independent runtimes and become thin clients of a single supervised
+app-server. Landed as a reviewed 31-PR stack (#180–#210) plus dependency work.
+
+### 🔒 Security
+
+- **The central tool gate could be skipped entirely.** `runAgent` gated dispatch
+  behind `if (opts.mode)`, and `mode` was optional — so any caller that omitted
+  it bypassed mode policy, permission rules, and the PreToolUse hook chain, and
+  every tool call was allowed. Both VS Code entry points and the LSP handler were
+  such callers. `mode` is now required, with a fail-safe fallback for untyped
+  callers. (#181)
+- **Provider credentials left the desktop renderer.** The Tauri WebView no longer
+  holds API keys or runs the agent loop; `read_credentials` is replaced by a
+  presence-only `credential_status`, and the renderer's read-only file preview
+  refuses to resolve the backend credentials path. (#192, #207)
+- **Untrusted project settings can no longer widen policy** — provider/base-URL,
+  model cost, permissions, sandbox, environment, hooks, MCP, worktree, update,
+  and executable config are all gated by directory trust, with leaf-level
+  provenance tracking and prototype-pollution rejection. (#197)
+- **Project hook commands now require exact-definition review** on top of
+  directory trust, with automatic invalidation when a definition changes.
+  New `deepcode hooks list|trust|revoke`. (#201)
+- **Tauri capabilities cut to least privilege** — the filesystem plugin is
+  removed entirely, `dialog`/`opener`/`process` narrowed to single permissions,
+  and the provider API dropped from the renderer CSP. (#209)
+- **`/add-dir` is enforced.** `permissions.additionalDirectories` was declared in
+  the schema but consumed nowhere; it now folds into the sandbox's writable roots
+  across every host — CLI, headless, and app-server (desktop/VS Code/LSP). (#214)
+- Real cancellation: LSP `abort` previously deleted a bookkeeping entry and
+  reported success while the turn kept running. Aborts now propagate through
+  providers, pending approvals, and POSIX process groups. (#181, #184)
+
+### ✨ Added
+
+- **App-server** (`deepcode app-server`) — single-owner, line-delimited JSON
+  protocol with atomic thread snapshots, orphaned-turn recovery on resume, and
+  backpressure that may drop only transient deltas, never completed items.
+  (#186, #188, #190)
+- **Desktop runtime as a supervised Node 22 sidecar**, checksum-pinned and signed
+  before the app bundle. (#187, #189)
+- **Canonical session v1** format shared by core and desktop, with a
+  cross-process writer lock, legacy dual-read, and exact-line corruption
+  diagnostics. Legacy files are never rewritten. (#182, #185, #191)
+- **Workspace diff review** (`workspace/diff`) — shell-free Git invocation with
+  inherited `GIT_*` stripped, external diff/textconv disabled, and refusal to
+  read untracked symlink targets or binary content. (#203)
+- **Review findings lifecycle** — `SubmitReviewFinding`, `review/apply` (single
+  and batch), and conflict-safe `review/revert` with all-files compare-and-swap
+  against exact post-images. Apply and revert run as ordinary turns, so they keep
+  normal permissions, approvals, hooks, sandboxing, cancellation, and snapshots.
+  (#204, #205, #206)
+- **Trust-aware config diagnostics** surfaced through `deepcode doctor`, Desktop
+  About, VS Code, and the LSP bridge — value-free, from one shared DTO. (#197, #198)
+- **Redacted structured tracing** with a strict metadata allowlist, mode-0600
+  bounded NDJSON, and `deepcode diagnostics export`. Best-effort: a broken trace
+  sink cannot affect protocol or execution. (#202)
+- **Release gates** over real packaged artifacts — bundle budgets, protocol
+  journeys, and a thin-client scan asserting clients never import the provider,
+  credentials, agent loop, or `RuntimeHost`. npm publication now waits until the
+  VSIX and signed DMG succeed. (#208)
+- Desktop Playwright protocol journey in CI, driving the production renderer
+  bridge. (#193)
+
+### ♻️ Changed
+
+- `RunAgentOptions.mode` is now **required** (breaking for library consumers).
+- Host services are assembled once behind `RuntimeHost` instead of per-client. (#184)
+- MCP servers and plugins are composed inside a turn-scoped lease with
+  deterministic teardown on success, interruption, preprocessing failure, and
+  shutdown. Plugin trees are hashed whole and symlinks rejected. (#199, #200)
+- `react` 18 → 19, `react-dom` 18 → 19 (React 19 removed the global `JSX`
+  namespace; 38 annotations across 25 files now import it explicitly). (#211)
+- `vite` 5 → 8 and `@vitejs/plugin-react` 4 → 6. Previously blocked by rolldown
+  failing to resolve `openai` from the renderer graph — removing provider code
+  from renderer bundles in #192 cleared it. (#212)
+- `typescript-eslint` 8.18 → 8.65; root lint is now `--max-warnings=0`. (#213, #210)
+- GitHub Actions: `checkout` 6→7, `setup-node` 6→7, `cache` 4→6,
+  `download-artifact` 4→8 (v8 fails on digest mismatch instead of warning).
+  (#177, #178, #179, #155)
+
+### ⚠️ Upgrade notes
+
+- **The macOS desktop app grows from ~6.7 MB to ~115 MB.** That is the cost of
+  bundling a Node 22 sidecar so provider credentials and the agent loop leave the
+  WebView. Deliberate trade, measured in #187.
+- **Plugins are not OS-sandboxed.** The capability RPC gates the supported plugin
+  API; it is not a boundary against a plugin calling Node APIs directly. Earlier
+  docs overstated this. Treat third-party plugins as trusted code. (#200, #209)
+- `@types/vscode` stays pinned at `^1.85.0` to match `engines.vscode`; raising it
+  would drop support for VS Code 1.85–1.124.
+
 ## [0.1.6] — 2026-05-28
 
 ### 🐛 Critical fix — Bash tool calls were always reporting "error"
