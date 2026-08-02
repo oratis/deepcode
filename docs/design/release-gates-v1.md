@@ -44,8 +44,8 @@ workspace file contents.
 
 The root gate complements, rather than replaces, these checks:
 
-- typecheck, lint, formatting, unit/integration tests, build, and documentation checks on Ubuntu and
-  macOS;
+- typecheck, warning-free lint, formatting, unit/integration tests, build, and documentation checks
+  on Ubuntu and macOS;
 - the Playwright desktop protocol journey, including approval, tool/usage events, session resume,
   and Files Source/Diff/History;
 - Cargo check and tests for Tauri supervision and read-only commands;
