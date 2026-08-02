@@ -1,7 +1,7 @@
 // Sessions list — design-aligned. Browse + filter + resume past
 // conversations. Per spec screen #5.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Card, Screen } from '../components/Screen.js';
 import { listSessions, type SessionMeta } from '../lib/tauri-api.js';
 

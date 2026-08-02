@@ -2,7 +2,7 @@
 // Spec: docs/VISUAL_DESIGN.html
 // Milestone: 0.1.2 — adds project-folder flow + inspector wiring + session refresh.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
 import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
 import { FilePanel } from './components/FilePanel.js';
 import { InspectorPanel } from './components/InspectorPanel.js';

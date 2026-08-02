@@ -6,7 +6,7 @@
 // positioned absolute below the trigger. Good enough for composer
 // dropdowns that don't need to escape clipping.
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode, type JSX } from 'react';
 
 export interface DropdownOption<T extends string> {
   value: T;

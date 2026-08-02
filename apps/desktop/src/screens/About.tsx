@@ -1,7 +1,7 @@
 // About screen — design-aligned per docs/VISUAL_DESIGN.html.
 // Brand mark + version + diagnostics + docs links.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import type { ConfigDiagnosticsResult } from '@deepcode/protocol';
 import { BrandMark } from '../components/BrandMark.js';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';

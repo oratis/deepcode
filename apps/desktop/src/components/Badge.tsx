@@ -1,7 +1,7 @@
 // Status badge — three flavors per the design spec (#3 / #6).
 // .badge-ok / .badge-warn / .badge-err / .badge-info live in index.css.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, JSX } from 'react';
 
 export type BadgeKind = 'ok' | 'warn' | 'err' | 'info';
 

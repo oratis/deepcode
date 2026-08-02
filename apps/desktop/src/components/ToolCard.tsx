@@ -8,7 +8,7 @@
 //   │ <body — output or diff>                       │  ← tc-body
 //   └──────────────────────────────────────────────┘
 
-import type { ReactNode } from 'react';
+import type { ReactNode, JSX } from 'react';
 import { Badge, type BadgeKind } from './Badge.js';
 
 interface ToolCardProps {

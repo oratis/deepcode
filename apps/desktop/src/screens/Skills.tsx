@@ -2,7 +2,7 @@
 // List available skills (built-in + user + project + plugin) + show the
 // SKILL.md body for inspection. Per spec screen #11.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Screen } from '../components/Screen.js';
 

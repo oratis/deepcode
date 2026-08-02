@@ -7,6 +7,8 @@
 //   • ⚙ Settings  — the Settings shell (a main-area screen, not a right panel)
 // The active panel's icon is highlighted; clicking it again closes the panel.
 
+import type { JSX } from 'react';
+
 interface InspectorRailProps {
   /** Inspector panel is the visible right panel. */
   inspectorActive: boolean;

@@ -6,7 +6,7 @@
 // Matches the design language: chat-main column, padded body, header
 // pinned at top. No 3-column shell — that's the App-level grid.
 
-import type { ReactNode } from 'react';
+import type { ReactNode, JSX } from 'react';
 
 interface ScreenProps {
   title: string;

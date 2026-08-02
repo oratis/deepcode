@@ -3,7 +3,7 @@
 // Sits absolute-positioned above the composer toolbar (opens upward so
 // it doesn't get clipped by the chat-stream above the composer).
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 
 export interface PlusMenuItem {
   icon: string; // emoji or single-char icon

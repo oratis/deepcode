@@ -9,7 +9,7 @@
 // Only screens that actually exist are listed — no dead links. (The spec's
 // Models / Hooks / Memory / Statusline items land with their screens later.)
 
-import type { ReactNode } from 'react';
+import type { ReactNode, JSX } from 'react';
 import type { ScreenName } from '../types/screens.js';
 
 /** The screens that live inside the Settings shell, in nav order. */

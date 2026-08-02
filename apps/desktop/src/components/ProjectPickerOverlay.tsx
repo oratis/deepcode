@@ -3,7 +3,7 @@
 // path is persisted to settings.json#projectPath and threaded into
 // every agent.start as `cwd`.
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { BrandMark } from './BrandMark.js';
 import { pickFolder } from '../lib/tauri-api.js';
 

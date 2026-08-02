@@ -5,7 +5,7 @@
 // Mounts FilePanel with mock fixtures + a working resize drag so the panel's
 // appearance can be screenshotted without the Tauri backend.
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { createRoot } from 'react-dom/client';
 import { FilePanel } from './components/FilePanel.js';
 import {

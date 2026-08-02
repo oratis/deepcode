@@ -17,7 +17,7 @@
 // CSS class names (which now match the design tokens) and the addition
 // of richer tool-card rendering.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import {
   DEFAULT_KEYBINDINGS,
   VimState,

@@ -3,7 +3,7 @@
 // enable/disable, install new ones. Install IPC still stubbed (P3
 // will wire installFromSpec).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Screen } from '../components/Screen.js';
 import { loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';

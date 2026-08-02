@@ -2,7 +2,7 @@
 // downloaded a new release. Clicking Relaunch calls tauri-plugin-process.relaunch().
 // Spec: docs/VISUAL_DESIGN.html screen #11
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { relaunchNow } from '../lib/updater.js';
 import type { UpdateInfo } from '../types/global.js';
 
