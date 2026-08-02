@@ -37,6 +37,7 @@ describe('ProtocolRuntime', () => {
         interactiveRequests: true,
         configDiagnostics: false,
         diagnosticExport: false,
+        workspaceDiff: false,
       },
     });
   });

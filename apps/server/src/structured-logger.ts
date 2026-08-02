@@ -34,6 +34,7 @@ const PROTOCOL_METHODS = new Set([
   'initialize',
   'config/diagnostics',
   'diagnostics/export',
+  'workspace/diff',
   'thread/start',
   'thread/read',
   'thread/resume',

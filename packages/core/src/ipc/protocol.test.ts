@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { newQuestionId, newTurnId } from './protocol.js';
 
 describe('newTurnId', () => {
-  it('returns turn-<base36 ts>-<random>', () => {
+  it('returns turn-<base36 ts>-<cryptographic random hex>', () => {
     const id = newTurnId();
-    expect(id).toMatch(/^turn-[0-9a-z]+-[0-9a-z]+$/);
+    expect(id).toMatch(/^turn-[0-9a-z]+-[0-9a-f]{24}$/);
   });
   it('produces unique ids across rapid calls', () => {
     const set = new Set(Array.from({ length: 50 }, newTurnId));
@@ -13,9 +13,9 @@ describe('newTurnId', () => {
 });
 
 describe('newQuestionId', () => {
-  it('returns q-<base36 ts>-<random>', () => {
+  it('returns q-<base36 ts>-<cryptographic random hex>', () => {
     const id = newQuestionId();
-    expect(id).toMatch(/^q-[0-9a-z]+-[0-9a-z]+$/);
+    expect(id).toMatch(/^q-[0-9a-z]+-[0-9a-f]{24}$/);
   });
   it('produces unique ids', () => {
     const set = new Set(Array.from({ length: 50 }, newQuestionId));

@@ -5,6 +5,7 @@ import type {
   ProtocolMethod,
   ThreadSnapshot,
   TurnSnapshot,
+  WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 export interface EditorProtocolClient {
@@ -79,6 +80,15 @@ export class EditorProtocolRuntime {
       throw new Error('The app-server does not support configuration diagnostics');
     }
     return this.client.request('config/diagnostics', { cwd: this.cwd() });
+  }
+
+  async diff(): Promise<WorkspaceDiffResult> {
+    const initialized = await this.client.connect();
+    if (!initialized.capabilities.workspaceDiff) {
+      throw new Error('The app-server does not support workspace diff');
+    }
+    const thread = await this.ensureThread();
+    return this.client.request('workspace/diff', { threadId: thread.id });
   }
 
   async interrupt(turnId: string): Promise<boolean> {

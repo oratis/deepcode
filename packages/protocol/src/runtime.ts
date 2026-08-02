@@ -43,6 +43,7 @@ export interface ProtocolRuntimeOptions {
   onEvent?: (event: ProtocolEvent) => void;
   configDiagnostics?: boolean;
   diagnosticExport?: boolean;
+  workspaceDiff?: boolean;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -80,6 +81,7 @@ export class ProtocolRuntime {
         interactiveRequests: true,
         configDiagnostics: this.options.configDiagnostics ?? false,
         diagnosticExport: this.options.diagnosticExport ?? false,
+        workspaceDiff: this.options.workspaceDiff ?? false,
       },
     };
   }

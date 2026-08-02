@@ -6,6 +6,7 @@ import type {
   ProtocolRequest,
   ThreadSnapshot,
   TurnSnapshot,
+  WorkspaceDiffResult,
 } from '@deepcode/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -41,6 +42,7 @@ class FakeClient {
         interactiveRequests: true,
         configDiagnostics: true,
         diagnosticExport: true,
+        workspaceDiff: true,
       },
     };
   }
@@ -68,6 +70,7 @@ class FakeClient {
     }
     if (method === 'turn/interrupt') return { interrupted: true } as T;
     if (method === 'config/diagnostics') return diagnostics as T;
+    if (method === 'workspace/diff') return workspaceDiff as T;
     return { accepted: true } as T;
   }
 
@@ -87,7 +90,26 @@ const diagnostics: ConfigDiagnosticsResult = {
   issues: [],
 };
 
+const workspaceDiff: WorkspaceDiffResult = {
+  repository: true,
+  base: 'HEAD',
+  files: [],
+  truncated: false,
+};
+
 describe('EditorProtocolRuntime', () => {
+  it('reads the canonical workspace diff through the active thread', async () => {
+    const client = new FakeClient();
+    const runtime = new EditorProtocolRuntime(client, () => '/workspace');
+
+    await expect(runtime.diff()).resolves.toEqual(workspaceDiff);
+    expect(client.requests.map((request) => request.method)).toEqual([
+      'thread/start',
+      'workspace/diff',
+    ]);
+    expect(client.requests.at(-1)?.params).toEqual({ threadId: 'thread-1' });
+  });
+
   it('reads configuration diagnostics from the app-server for the editor workspace', async () => {
     const client = new FakeClient();
     const runtime = new EditorProtocolRuntime(client, () => '/workspace');

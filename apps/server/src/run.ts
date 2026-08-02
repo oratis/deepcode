@@ -10,6 +10,7 @@ import { CanonicalThreadStore } from './store.js';
 import { ProtocolLineWriter, serveStdio } from './stdio.js';
 import { exportDiagnosticBundle } from './diagnostic-export.js';
 import { StructuredLogger } from './structured-logger.js';
+import { collectWorkspaceDiff } from './workspace-diff.js';
 
 export interface RunAppServerOptions {
   input: Readable;
@@ -49,6 +50,7 @@ export async function runAppServer(options: RunAppServerOptions): Promise<void> 
         logPath: logger.path,
       });
     },
+    workspaceDiff: collectWorkspaceDiff,
     onTrace: (record) => {
       logger.record(
         record,

@@ -17,3 +17,6 @@ opaque correlation value, not as authorization or a persistence key.
 
 `diagnostics/export` is capability-negotiated. It returns only the local bundle path, generation
 time, and record count; the app-server owns path hashing and payload redaction.
+
+`workspace/diff` is also capability-negotiated and requires a canonical `threadId`. It returns
+bounded file, hunk, and line objects rather than a client-specific raw patch.

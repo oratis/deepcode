@@ -42,3 +42,8 @@ tool arguments/results, or error messages. `diagnostics/export` (also available 
 hashes workspace/config paths, omits issue messages and configuration values, re-sanitizes every log
 record, and can be removed without affecting threads. Removing `logs/` and `diagnostics/` is the
 rollback for this optional observability layer.
+
+`workspace/diff` is bound to a canonical `threadId`, so clients cannot substitute an unrelated cwd.
+The server invokes Git without a shell and returns a bounded file/hunk/line DTO for tracked and
+untracked changes. Untracked symlinks and binary contents are never read into the response. Desktop,
+VS Code, and LSP consume this same capability; clients do not parse Git output independently.

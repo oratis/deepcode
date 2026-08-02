@@ -133,6 +133,7 @@ export interface InitializeResult {
     interactiveRequests: true;
     configDiagnostics: boolean;
     diagnosticExport: boolean;
+    workspaceDiff: boolean;
   };
 }
 
@@ -164,10 +165,47 @@ export interface DiagnosticExportResult {
   recordCount: number;
 }
 
+export type WorkspaceFileStatus = 'added' | 'modified' | 'deleted' | 'renamed' | 'conflicted';
+export type WorkspaceDiffLineKind = 'context' | 'addition' | 'deletion';
+
+export interface WorkspaceDiffLine {
+  kind: WorkspaceDiffLineKind;
+  oldLine?: number;
+  newLine?: number;
+  text: string;
+}
+
+export interface WorkspaceDiffHunk {
+  oldStart: number;
+  oldLines: number;
+  newStart: number;
+  newLines: number;
+  lines: WorkspaceDiffLine[];
+}
+
+export interface WorkspaceDiffFile {
+  path: string;
+  previousPath?: string;
+  status: WorkspaceFileStatus;
+  additions: number;
+  deletions: number;
+  binary: boolean;
+  truncated: boolean;
+  hunks: WorkspaceDiffHunk[];
+}
+
+export interface WorkspaceDiffResult {
+  repository: boolean;
+  base: 'HEAD' | 'empty' | null;
+  files: WorkspaceDiffFile[];
+  truncated: boolean;
+}
+
 export type ProtocolMethod =
   | 'initialize'
   | 'config/diagnostics'
   | 'diagnostics/export'
+  | 'workspace/diff'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'
