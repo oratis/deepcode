@@ -13,9 +13,9 @@ const host = process.env.TAURI_DEV_HOST;
 
 export default defineConfig({
   plugins: [react()],
-  root: resolve(__dirname, 'src'),
+  root: resolve(import.meta.dirname, 'src'),
   base: './',
-  publicDir: resolve(__dirname, 'public'),
+  publicDir: resolve(import.meta.dirname, 'public'),
   clearScreen: false,
   server: {
     port: 5173,
@@ -26,13 +26,13 @@ export default defineConfig({
   },
   envPrefix: ['VITE_', 'TAURI_'],
   build: {
-    outDir: resolve(__dirname, 'dist'),
+    outDir: resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
     sourcemap: true,
     target: 'es2022',
     minify: 'esbuild',
     rollupOptions: {
-      input: resolve(__dirname, 'src', 'index.html'),
+      input: resolve(import.meta.dirname, 'src', 'index.html'),
     },
   },
   resolve: {
@@ -42,13 +42,21 @@ export default defineConfig({
       // cherry-picked from compiled subpaths. The agent runtime is a sidecar.
       {
         find: /^@deepcode\/core\/dist\/(.+)$/,
-        replacement: resolve(__dirname, '..', '..', 'packages', 'core', 'dist') + '/$1',
+        replacement: resolve(import.meta.dirname, '..', '..', 'packages', 'core', 'dist') + '/$1',
       },
       // Bare import — anything that resolves through the index. We avoid
       // doing this in the renderer, but keep the alias so types still resolve.
       {
         find: '@deepcode/core',
-        replacement: resolve(__dirname, '..', '..', 'packages', 'core', 'src', 'index.ts'),
+        replacement: resolve(
+          import.meta.dirname,
+          '..',
+          '..',
+          'packages',
+          'core',
+          'src',
+          'index.ts',
+        ),
       },
     ],
   },
