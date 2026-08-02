@@ -15,6 +15,8 @@ const required = [
   'docs/CODEX_ALIGNMENT_PLAN.md',
   'docs/quickstart.md',
   'docs/security-model.md',
+  'docs/RELEASING.md',
+  'docs/design/release-gates-v1.md',
 ];
 
 for (const path of required) {
@@ -26,6 +28,8 @@ const currentDocs = [
   'CONTRIBUTING.md',
   'packages/core/README.md',
   'docs/quickstart.md',
+  'docs/RELEASING.md',
+  'docs/design/release-gates-v1.md',
 ];
 const staleCount = /(?:tests[- ]|测试[:：]?\s*|测试\s+)[0-9]{2,}\s*(?:passing|passed|个测试通过)?/i;
 for (const path of currentDocs) {
@@ -67,6 +71,16 @@ for (const path of [
 
 if (!read('CONTRIBUTING.md').includes('Node.js ≥ 22')) {
   failures.push('CONTRIBUTING.md: Node requirement must match package.json (>=22)');
+}
+
+const packageJson = JSON.parse(read('package.json'));
+if (!packageJson.scripts?.['release:check']) {
+  failures.push('package.json: missing release:check entrypoint');
+}
+for (const workflow of ['.github/workflows/ci.yml', '.github/workflows/release.yml']) {
+  if (!read(workflow).includes('pnpm release:check')) {
+    failures.push(`${workflow}: must enforce pnpm release:check`);
+  }
 }
 
 if (failures.length > 0) {

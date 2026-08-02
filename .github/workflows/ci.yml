@@ -68,12 +68,17 @@ jobs:
           DC_SANDBOX_NET_TEST: '1'
         run: pnpm test
 
-      - name: Build
-        run: pnpm build
+      - name: Build + app-server release gate
+        run: pnpm release:check
 
-      - name: Package VS Code extension
-        if: runner.os == 'Linux'
-        run: pnpm --filter deepcode package --out "${RUNNER_TEMP}/deepcode.vsix"
+      - name: Upload release-gate diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-gate-${{ matrix.os }}
+          path: apps/vscode/dist/release-gate-report.json
+          if-no-files-found: ignore
+          retention-days: 7
 
   link-check:
     name: Docs link check
