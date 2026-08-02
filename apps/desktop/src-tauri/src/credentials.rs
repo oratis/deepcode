@@ -14,6 +14,14 @@ pub struct Credentials {
     pub base_url: Option<String>,
 }
 
+#[derive(Debug, Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialStatus {
+    pub has_key: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+}
+
 pub fn credentials_path() -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     Some(home.join(".deepcode").join("credentials.json"))
@@ -28,6 +36,21 @@ pub fn read() -> Result<Credentials, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Credentials::default()),
         Err(e) => Err(format!("read {}: {}", path.display(), e)),
     }
+}
+
+pub fn status() -> Result<CredentialStatus, String> {
+    let credentials = read()?;
+    Ok(CredentialStatus {
+        has_key: credentials
+            .api_key
+            .as_ref()
+            .is_some_and(|value| !value.is_empty())
+            || credentials
+                .auth_token
+                .as_ref()
+                .is_some_and(|value| !value.is_empty()),
+        base_url: credentials.base_url,
+    })
 }
 
 pub fn write(creds: &Credentials) -> Result<(), String> {
@@ -49,9 +72,8 @@ pub fn write(creds: &Credentials) -> Result<(), String> {
 }
 
 // ── Serde contract ─────────────────────────────────────────────────────
-// tauri-api.ts#readCredentials reads `api_key`/`auth_token`/`base_url` (snake)
-// and maps them to camelCase itself. Lock that shape + the skip-if-None omission
-// the TS side relies on (missing field → undefined). See HANDOFF §8a.
+// Credentials remain backend-only. The renderer receives CredentialStatus,
+// while this shape stays compatible with the CLI's credentials.json.
 #[cfg(test)]
 mod contract_tests {
     use super::*;
@@ -75,5 +97,18 @@ mod contract_tests {
     fn omits_none_fields() {
         let v = serde_json::to_value(Credentials::default()).unwrap();
         assert_eq!(v.as_object().unwrap().len(), 0, "None fields must be skipped: {v}");
+    }
+
+    #[test]
+    fn status_never_serializes_credentials() {
+        let value = serde_json::to_value(CredentialStatus {
+            has_key: true,
+            base_url: Some("https://host/v1".into()),
+        })
+        .unwrap();
+        assert_eq!(value["hasKey"], true);
+        assert_eq!(value["baseUrl"], "https://host/v1");
+        assert!(value.get("api_key").is_none());
+        assert!(value.get("auth_token").is_none());
     }
 }

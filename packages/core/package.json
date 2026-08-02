@@ -20,6 +20,10 @@
       "types": "./dist/providers/deepseek.d.ts",
       "import": "./dist/providers/deepseek.js"
     },
+    "./dist/providers/model-metadata.js": {
+      "types": "./dist/providers/model-metadata.d.ts",
+      "import": "./dist/providers/model-metadata.js"
+    },
     "./dist/providers/pricing.js": {
       "types": "./dist/providers/pricing.d.ts",
       "import": "./dist/providers/pricing.js"
@@ -35,6 +39,10 @@
     "./credentials": {
       "types": "./dist/credentials/index.d.ts",
       "import": "./dist/credentials/index.js"
+    },
+    "./config": {
+      "types": "./dist/config/index.d.ts",
+      "import": "./dist/config/index.js"
     },
     "./runtime": {
       "types": "./dist/runtime/index.d.ts",

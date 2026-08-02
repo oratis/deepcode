@@ -13,12 +13,17 @@ export interface RunAppServerOptions {
   output: Writable;
   home: string;
   executor?: TurnExecutor;
+  forceFileCredentials?: boolean;
 }
 
 export async function runAppServer(options: RunAppServerOptions): Promise<void> {
   const writer = new ProtocolLineWriter(options.output);
   const server = new AppServer({
-    executor: options.executor ?? createDefaultTurnExecutor(),
+    executor:
+      options.executor ??
+      createDefaultTurnExecutor(options.home, {
+        forceFileCredentials: options.forceFileCredentials,
+      }),
     store: new CanonicalThreadStore(
       join(options.home, 'threads-v1'),
       join(options.home, 'sessions'),

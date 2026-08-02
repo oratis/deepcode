@@ -28,6 +28,14 @@ describe('CredentialsStore (file backend)', () => {
     expect(got.baseURL).toBe('https://x');
   });
 
+  it('accepts a direct DeepCode data directory', async () => {
+    const directory = join(home, 'custom-data');
+    const store = new CredentialsStore({ directory, forceFile: true });
+    await store.save({ apiKey: 'direct' });
+    expect(store.filePath()).toBe(join(directory, 'credentials.json'));
+    await expect(store.load()).resolves.toEqual({ apiKey: 'direct' });
+  });
+
   it('file has mode 0600 after save', async () => {
     const s = new CredentialsStore({ home, forceFile: true });
     await s.save({ apiKey: 'sk-test' });

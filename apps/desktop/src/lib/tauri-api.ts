@@ -51,18 +51,9 @@ export async function appServerStatus(): Promise<AppServerStatus> {
   return invoke('app_server_status');
 }
 
-export async function readCredentials(): Promise<Credentials> {
-  // Backend uses snake_case Rust fields; convert.
-  const raw = (await invoke('read_credentials')) as {
-    api_key?: string;
-    auth_token?: string;
-    base_url?: string;
-  };
-  return {
-    apiKey: raw.api_key,
-    authToken: raw.auth_token,
-    baseURL: raw.base_url,
-  };
+export async function credentialStatus(): Promise<{ hasKey: boolean; baseURL?: string }> {
+  const raw = (await invoke('credential_status')) as { hasKey: boolean; baseUrl?: string };
+  return { hasKey: raw.hasKey, baseURL: raw.baseUrl };
 }
 
 export async function saveCredentials(creds: Credentials): Promise<void> {
@@ -178,11 +169,6 @@ export async function listSkills(cwd?: string): Promise<SkillInfo[]> {
   return (await invoke('list_skills', { cwd })) as SkillInfo[];
 }
 
-/** Create a new session JSONL file. Returns the generated id. */
-export async function sessionCreate(cwd: string): Promise<string> {
-  return (await invoke('session_create', { cwd })) as string;
-}
-
 /** Set (or clear, with '') a session's manual title. */
 export async function sessionSetTitle(id: string, title: string): Promise<void> {
   await invoke('session_set_title', { id, title });
@@ -196,11 +182,6 @@ export async function sessionDelete(id: string): Promise<void> {
 /** Archive a session (moved to sessions/archived/, hidden from the list). */
 export async function sessionArchive(id: string): Promise<void> {
   await invoke('session_archive', { id });
-}
-
-/** Append one JSON message line to a session's JSONL file. */
-export async function sessionAppend(id: string, message: Record<string, unknown>): Promise<void> {
-  await invoke('session_append', { id, message });
 }
 
 /** A stored message line as written to a session's JSONL. */

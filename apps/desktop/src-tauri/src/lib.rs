@@ -3,17 +3,17 @@
 //
 // Architecture: most of DeepCode's logic lives in @deepcode/core (TypeScript).
 // The Tauri backend's job is to host the webview and expose a few native
-// commands that the frontend can't do (file dialogs, credentials read/write,
-// settings file IO, child-process spawn for CLI integration).
-//
-// During the protocol rollout, Rust also supervises the bundled app-server
-// sidecar. The renderer loop remains only as an explicit compatibility path.
+// commands that the frontend can't do (file dialogs, credential save/status,
+// settings/session index IO, and read-only file previews). Rust supervises the
+// bundled app-server sidecar; runtime/tool execution never runs in the webview.
 
 mod app_server;
 mod commands;
 mod credentials;
 mod settings;
+#[allow(dead_code)] // mutation-only snapshot helpers remain for compatibility tests
 mod snapshots;
+#[allow(dead_code)] // legacy native mutation helpers are no longer renderer commands
 mod tools;
 mod voice;
 
@@ -22,15 +22,13 @@ use app_server::{
 };
 use commands::{
     append_allow_matcher, cli_path, get_app_info, get_settings_path, list_plugins, list_sessions,
-    list_skills, load_keybindings, load_settings_file, open_url, read_credentials,
-    save_credentials, save_keybindings, save_settings_file, session_append, session_archive,
-    session_create, session_delete, session_read, session_set_title,
+    credential_status, list_skills, load_keybindings, load_settings_file, open_url,
+    save_credentials, save_keybindings, save_settings_file, session_archive, session_delete,
+    session_read, session_set_title,
 };
 use snapshots::session_snapshots;
 use tauri::Manager;
-use tools::{
-    tool_bash, tool_bash_cancel, tool_edit, tool_glob, tool_grep, tool_read, tool_write, BashState,
-};
+use tools::tool_read;
 use voice::{voice_cancel, voice_start, voice_status, voice_stop, VoiceState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -43,7 +41,6 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(VoiceState::default())
-        .manage(BashState::default())
         .manage(AppServerState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
@@ -51,7 +48,7 @@ pub fn run() {
             app_server_send,
             app_server_stop,
             app_server_status,
-            read_credentials,
+            credential_status,
             save_credentials,
             load_settings_file,
             save_settings_file,
@@ -59,8 +56,6 @@ pub fn run() {
             append_allow_matcher,
             load_keybindings,
             save_keybindings,
-            session_create,
-            session_append,
             session_read,
             session_set_title,
             session_delete,
@@ -71,12 +66,6 @@ pub fn run() {
             cli_path,
             open_url,
             tool_read,
-            tool_write,
-            tool_edit,
-            tool_bash,
-            tool_bash_cancel,
-            tool_glob,
-            tool_grep,
             session_snapshots,
             voice_status,
             voice_start,

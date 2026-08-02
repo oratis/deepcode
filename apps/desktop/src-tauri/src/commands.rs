@@ -25,8 +25,8 @@ pub fn get_app_info() -> AppInfo {
 }
 
 #[tauri::command]
-pub fn read_credentials() -> Result<Credentials, String> {
-    credentials::read()
+pub fn credential_status() -> Result<credentials::CredentialStatus, String> {
+    credentials::status()
 }
 
 #[tauri::command]
@@ -116,71 +116,10 @@ pub fn append_allow_matcher(matcher: String) -> Result<(), String> {
     settings::write_user(&value)
 }
 
-/// Create a new session JSONL with a metadata header line. Returns the
-/// generated session id. The id format matches what @deepcode/core's
-/// SessionManager produces: `YYYY-MM-DD-<random>`.
-#[tauri::command]
-pub fn session_create(cwd: String) -> Result<String, String> {
-    let Some(home) = dirs::home_dir() else {
-        return Err("no home directory".into());
-    };
-    let now = std::time::SystemTime::now();
-    let secs = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .as_secs();
-    let date = format_date(secs);
-    // Lightweight unique suffix from time-nanos — no extra crate dep
-    let nanos = now
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|e| e.to_string())?
-        .subsec_nanos();
-    let rand_id = format!("{:08x}", nanos);
-    let id = format!("{}-{}", date, rand_id);
-    let dir = home.join(".deepcode").join("sessions");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
-    let path = dir.join(format!("{}.v1.jsonl", id));
-    let header = serde_json::json!({
-        "type": "session_meta",
-        "schema_version": 1,
-        "id": id,
-        "cwd": cwd,
-        "created_at": secs,
-        "client": "desktop"
-    });
-    let line = format!("{}\n", header);
-    std::fs::write(&path, line).map_err(|e| format!("write {}: {}", path.display(), e))?;
-    Ok(id)
-}
-
-/// Append a single JSON line to a session's JSONL file.
-#[tauri::command]
-pub fn session_append(id: String, message: serde_json::Value) -> Result<(), String> {
-    safe_session_id(&id)?;
-    let Some(home) = dirs::home_dir() else {
-        return Err("no home directory".into());
-    };
-    let dir = home.join(".deepcode").join("sessions");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
-    let _lock = SessionWriterLock::acquire(&dir, &id)?;
-    let path = ensure_canonical_session(&dir, &id)?;
-    let mut normalized = message;
-    normalized["type"] = serde_json::Value::String("message".to_string());
-    normalized["schema_version"] = serde_json::Value::Number(1.into());
-    let line = format!("{}\n", normalized);
-    let mut f = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .map_err(|e| format!("open {}: {}", path.display(), e))?;
-    f.write_all(line.as_bytes())
-        .map_err(|e| format!("write {}: {}", path.display(), e))
-}
-
 /// Read a session's JSONL and return its message lines (skipping the
 /// `session_meta` header and any unparseable lines). Each returned value is the
-/// stored message object as written by session_append: `{ type, role, content,
-/// timestamp }`. Returns an empty vec if the file doesn't exist.
+/// canonical `{ type, role, content, timestamp }` object. Returns an empty vec
+/// if the file doesn't exist.
 #[tauri::command]
 pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
     safe_session_id(&id)?;
@@ -316,24 +255,6 @@ fn parse_session_messages(text: &str) -> Result<Vec<serde_json::Value>, String> 
         }
     }
     Ok(out)
-}
-
-fn format_date(secs: u64) -> String {
-    // Simple YYYY-MM-DD; days since epoch math is enough for filename use.
-    let days = secs / 86_400;
-    // Reference: 1970-01-01 was a Thursday; we compute YMD via the
-    // standard "civil_from_days" algorithm by Howard Hinnant.
-    let z = days as i64 + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{:04}-{:02}-{:02}", y, m, d)
 }
 
 /// List session files under ~/.deepcode/sessions/. Returns just metadata.

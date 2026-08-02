@@ -1,5 +1,10 @@
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import {
   RuntimeHost,
+  SessionManager,
   ToolRegistry,
   type Provider,
   type ProviderResult,
@@ -216,5 +221,70 @@ describe('RuntimeHostExecutor', () => {
         expect.objectContaining({ type: 'tool_result' }),
       ]),
     );
+  });
+
+  it('keeps session snapshots without becoming a second message writer', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'deepcode-executor-session-'));
+    try {
+      const workspace = join(root, 'workspace');
+      const filePath = join(workspace, 'file.txt');
+      await mkdir(workspace);
+      await writeFile(filePath, 'before');
+      const provider = new ToolProvider();
+      const tools = new ToolRegistry([]);
+      // The core snapshot pipeline recognizes canonical Write/Edit names.
+      provider.runTurn = async (options) => {
+        provider.calls++;
+        if (provider.calls === 1) {
+          return {
+            content: [
+              { type: 'tool_use', id: 'tool-1', name: 'Write', input: { file_path: filePath } },
+            ],
+            stopReason: 'tool_use',
+            usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0 },
+          };
+        }
+        options.handlers?.onTextDelta?.('done');
+        return {
+          content: [{ type: 'text', text: 'done' }],
+          stopReason: 'end_turn',
+          usage: { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0 },
+        };
+      };
+      tools.register({
+        name: 'Write',
+        definition: { name: 'Write', description: 'write', inputSchema: { type: 'object' } },
+        execute: async () => {
+          await writeFile(filePath, 'after');
+          return { content: 'written' };
+        },
+      });
+      const sessions = new SessionManager({ root: join(root, 'sessions') });
+      const host = new RuntimeHost({ provider, tools, cwd: workspace, mode: 'default' });
+      const executor = new RuntimeHostExecutor({
+        createHost: () => host,
+        sessionManager: sessions,
+      });
+      await executor.execute({
+        thread: { ...thread, id: 'thread-snapshots', cwd: workspace, turns: [] },
+        turn: {
+          id: 'turn-snapshots',
+          threadId: 'thread-snapshots',
+          status: 'in_progress',
+          startedAt: '2026-08-01T00:00:00.000Z',
+          items: [],
+        },
+        input: { text: 'write' },
+        signal: new AbortController().signal,
+        publishDelta: () => undefined,
+        ...protocolCallbacks(),
+        requestApproval: async () => 'allow',
+      });
+
+      await expect(sessions.load('thread-snapshots')).resolves.toBeNull();
+      await expect(sessions.snapshots('thread-snapshots')).resolves.toHaveLength(2);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });

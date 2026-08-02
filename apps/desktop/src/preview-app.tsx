@@ -146,8 +146,8 @@ const MOCK_MESSAGES = [
     switch (cmd) {
       case 'load_settings_file':
         return { projectPath: '/Users/oratis/Projects/DeepCode/test' };
-      case 'read_credentials':
-        return { api_key: 'sk-mock', base_url: 'https://api.deepseek.com/v1' };
+      case 'credential_status':
+        return { hasKey: true, baseUrl: 'https://api.deepseek.com/v1' };
       case 'get_app_info':
         return { version: '0.1.6', platform: 'macos', home_dir: '/Users/oratis' };
       case 'get_settings_path':

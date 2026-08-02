@@ -24,7 +24,7 @@ import {
   type KeyBinding,
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
-import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
 import { estimateCost } from '@deepcode/core/dist/providers/pricing.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
@@ -55,6 +55,8 @@ interface ReplScreenProps {
   projectPath: string;
   /** Called after each turn ends so the parent can refresh the sidebar. */
   onTurnComplete?: () => void;
+  /** Called once the backend creates/adopts the canonical thread id. */
+  onSessionStarted?: (sessionId: string) => void;
   /**
    * Pre-seed the chat with a resumed session's reconstructed messages. The
    * parent remounts ReplScreen (via key) when this changes, so it's only read
@@ -211,6 +213,7 @@ interface PendingQuestion {
 export function ReplScreen({
   projectPath,
   onTurnComplete,
+  onSessionStarted,
   initialMessages,
   onInspector,
   onOpenFile,
@@ -585,6 +588,7 @@ export function ReplScreen({
         cwd: projectPath,
       });
       setActiveTurnId(r.turnId);
+      if (r.sessionId) onSessionStarted?.(r.sessionId);
     } catch (err) {
       setBusy(false);
       setMessages((m) => [

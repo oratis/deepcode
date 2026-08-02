@@ -100,6 +100,11 @@ describe('settings loader', () => {
     expect(p.localPath).toBe('/proj/.deepcode/settings.local.json');
   });
 
+  it('settingsPaths accepts a direct DeepCode data directory', () => {
+    const paths = settingsPaths({ cwd: '/proj', directory: '/custom/deepcode' });
+    expect(paths.userPath).toBe('/custom/deepcode/settings.json');
+  });
+
   it('reports parse errors loudly', async () => {
     const path = join(home, '.deepcode', 'settings.json');
     await fs.mkdir(join(home, '.deepcode'), { recursive: true });

@@ -24,21 +24,23 @@ export interface Credentials {
 
 export interface CredentialsStoreOpts {
   home?: string;
+  /** Direct DeepCode data directory override (contains credentials.json). */
+  directory?: string;
   /** Force file-backend (skip Keychain) — useful for tests. */
   forceFile?: boolean;
 }
 
 export class CredentialsStore {
-  private readonly home: string;
+  private readonly directory: string;
   private readonly useKeychain: boolean;
 
   constructor(opts: CredentialsStoreOpts = {}) {
-    this.home = opts.home ?? homedir();
+    this.directory = opts.directory ?? join(opts.home ?? homedir(), '.deepcode');
     this.useKeychain = !opts.forceFile && platform() === 'darwin';
   }
 
   filePath(): string {
-    return join(this.home, '.deepcode', 'credentials.json');
+    return join(this.directory, 'credentials.json');
   }
 
   async load(): Promise<Credentials> {

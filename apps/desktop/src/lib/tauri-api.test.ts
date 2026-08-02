@@ -15,15 +15,13 @@ import {
   appServerStatus,
   appServerStop,
   appendAllowMatcher,
+  credentialStatus,
   getAppInfo,
   listPlugins,
   listSkills,
   loadSettingsFile,
-  readCredentials,
   saveCredentials,
   saveSettingsFile,
-  sessionAppend,
-  sessionCreate,
 } from './tauri-api.js';
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -33,26 +31,14 @@ beforeEach(() => {
   invokeMock.mockReset();
 });
 
-describe('readCredentials', () => {
-  it('maps Rust snake_case → renderer camelCase (the §8a direction)', async () => {
-    invokeMock.mockResolvedValue({
-      api_key: 'sk-123',
-      auth_token: 'tok-9',
-      base_url: 'https://api.deepseek.com/v1',
-    });
-    const creds = await readCredentials();
-    expect(invokeMock).toHaveBeenCalledWith('read_credentials');
-    expect(creds).toEqual({
-      apiKey: 'sk-123',
-      authToken: 'tok-9',
+describe('credentialStatus', () => {
+  it('returns only presence and endpoint metadata to the renderer', async () => {
+    invokeMock.mockResolvedValue({ hasKey: true, baseUrl: 'https://api.deepseek.com/v1' });
+    await expect(credentialStatus()).resolves.toEqual({
+      hasKey: true,
       baseURL: 'https://api.deepseek.com/v1',
     });
-  });
-
-  it('leaves missing fields undefined (does not invent empty strings)', async () => {
-    invokeMock.mockResolvedValue({ api_key: 'only-key' });
-    const creds = await readCredentials();
-    expect(creds).toEqual({ apiKey: 'only-key', authToken: undefined, baseURL: undefined });
+    expect(invokeMock).toHaveBeenCalledWith('credential_status');
   });
 });
 
@@ -63,16 +49,6 @@ describe('saveCredentials', () => {
     expect(invokeMock).toHaveBeenCalledWith('save_credentials', {
       creds: { api_key: 'sk-x', auth_token: 'tok', base_url: 'https://h/v1' },
     });
-  });
-
-  it('round-trips with readCredentials (save shape decodes back to the same camelCase)', async () => {
-    invokeMock.mockResolvedValue(undefined);
-    const input = { apiKey: 'a', authToken: 'b', baseURL: 'c' };
-    await saveCredentials(input);
-    const sent = invokeMock.mock.calls[0]![1] as { creds: Record<string, string> };
-    // Simulate the backend echoing those stored fields back on read.
-    invokeMock.mockResolvedValue(sent.creds);
-    expect(await readCredentials()).toEqual(input);
   });
 });
 
@@ -117,20 +93,6 @@ describe('command name + argument contracts', () => {
     invokeMock.mockResolvedValue(undefined);
     await appendAllowMatcher('Write');
     expect(invokeMock).toHaveBeenCalledWith('append_allow_matcher', { matcher: 'Write' });
-  });
-
-  it('sessionCreate → session_create with { cwd } and returns the id', async () => {
-    invokeMock.mockResolvedValue('sess-abc');
-    const id = await sessionCreate('/proj');
-    expect(invokeMock).toHaveBeenCalledWith('session_create', { cwd: '/proj' });
-    expect(id).toBe('sess-abc');
-  });
-
-  it('sessionAppend → session_append with { id, message }', async () => {
-    invokeMock.mockResolvedValue(undefined);
-    const msg = { type: 'message', role: 'user', content: [] };
-    await sessionAppend('sess-abc', msg);
-    expect(invokeMock).toHaveBeenCalledWith('session_append', { id: 'sess-abc', message: msg });
   });
 });
 

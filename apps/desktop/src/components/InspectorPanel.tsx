@@ -11,7 +11,7 @@
 // empty state rather than a placeholder — per HANDOFF: no fake sections.
 
 import { useEffect, useRef } from 'react';
-import { contextWindowFor } from '@deepcode/core/dist/providers/deepseek.js';
+import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
 import { projectName } from '../lib/project.js';
 import type { InspectorData, InspectorSection } from '../types/inspector.js';
 

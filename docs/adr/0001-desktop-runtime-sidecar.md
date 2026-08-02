@@ -77,15 +77,21 @@ The first implementation build on the same host adds the production-shaped artif
 
 | Measurement                           | Result                 |
 | ------------------------------------- | ---------------------- |
-| Bundled CommonJS app-server           | 214,155 bytes          |
+| Bundled CommonJS app-server           | 229,175 bytes          |
 | Thin/stripped bundled runtime         | 108,412,096 bytes      |
-| Complete sidecar-enabled `.app`       | 115,355,648 bytes      |
+| Complete sidecar-enabled `.app`       | 115,134,464 bytes      |
 | Handshake from packaged paths         | passed with empty PATH |
 | Nested-then-outer ad-hoc verification | strict deep pass       |
 
 The release workflow now pins Node 22.23.1 and verifies the official archive SHA256 before the
 Tauri build. Local ad-hoc signing proves bundle structure and signing order only; Developer ID,
 notarization, stapling, and compressed DMG size remain release gates.
+
+The production renderer now consumes this boundary exclusively: provider/agent/tool execution and
+credential plaintext were removed from the WebView bundle, and Rust no longer exposes native
+Write/Edit/Bash/Glob/Grep commands to renderer IPC. Protocol resume, interrupt, approvals,
+AskUserQuestion, tool events, usage, snapshots, and canonical session projection are wired through
+the supervised sidecar.
 
 ## Options considered
 
