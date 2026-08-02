@@ -92,3 +92,5 @@ export async function wrapBashCommand(args: {
   // Windows / unsupported: explicit per §0.2 — sandbox disabled, run unwrapped
   return { command: '/bin/sh', args: ['-c', args.userCommand] };
 }
+
+export { withAdditionalWritableDirs } from './additional-dirs.js';

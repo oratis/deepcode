@@ -221,6 +221,7 @@ export {
   denyAllNetwork,
   NetworkSandboxUnavailable,
   startDnsProxy,
+  withAdditionalWritableDirs,
   type SandboxPlatform,
   type SandboxedCommand,
   type SpawnNetworkSandboxOpts,

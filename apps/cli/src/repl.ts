@@ -41,6 +41,7 @@ import {
   resolveCredentials,
   settingsPaths,
   wirePlugins,
+  withAdditionalWritableDirs,
   collectPluginContributions,
   type Effort,
   type McpClientHandle,
@@ -435,7 +436,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
         disabled: settings.disabledPlugins,
         hooks,
         capabilities: buildPluginCapabilities(cwd),
-        sandbox: settings.sandbox,
+        sandbox: withAdditionalWritableDirs(
+          settings.sandbox,
+          settings.permissions?.additionalDirectories,
+          cwd,
+        ),
         log: (s) => output.write(s + '\n'),
       });
     } catch (err) {
@@ -453,7 +458,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     hooks,
     pluginDirs: pluginContrib.dirs,
     autoMode: settings.autoMode,
-    sandboxConfig: settings.sandbox,
+    sandboxConfig: withAdditionalWritableDirs(
+      settings.sandbox,
+      settings.permissions?.additionalDirectories,
+      cwd,
+    ),
   });
   const ctx: SessionContext = {
     cwd,

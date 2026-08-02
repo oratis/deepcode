@@ -1,4 +1,5 @@
 import type { Effort, Mode, Provider } from '@deepcode/core';
+import { withAdditionalWritableDirs } from '@deepcode/core';
 import type {
   DeepCodeSettings,
   McpServerConfig,
@@ -214,11 +215,19 @@ export async function composeRuntime(
           hooks,
           provider: options.provider,
           autoMode: settings.autoMode,
-          sandboxConfig: settings.sandbox,
+          sandboxConfig: withAdditionalWritableDirs(
+            settings.sandbox,
+            settings.permissions?.additionalDirectories,
+            cwd,
+          ),
           requestApproval: options.requestApproval,
           signal: options.signal,
         }),
-        sandbox: settings.sandbox,
+        sandbox: withAdditionalWritableDirs(
+          settings.sandbox,
+          settings.permissions?.additionalDirectories,
+          cwd,
+        ),
         log: () => undefined,
       });
       for (const plugin of pluginsWire.plugins) {

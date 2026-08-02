@@ -3,7 +3,7 @@
 // never real creds). /recap uses a mock provider; /pr_comments' renderer is pure.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CredentialsStore, SessionManager } from '@deepcode/core';
@@ -221,5 +221,68 @@ describe('/btw', () => {
   it('shows usage with no note', async () => {
     const out = await reg.match('/btw')!.cmd.run([], ctx());
     expect(out.join('\n')).toMatch(/Usage: \/btw/);
+  });
+});
+
+describe('/add-dir', () => {
+  it('persists a validated absolute directory to permissions.additionalDirectories', async () => {
+    const home = await tmpHome();
+    const path = join(home, 'settings.json');
+    const out = await reg.match('/add-dir')!.cmd.run([home], ctx({ userSettingsPath: path }));
+    expect(out.join('\n')).toMatch(/Added .* writable directory/i);
+    const written = JSON.parse(await readFile(path, 'utf8')) as {
+      permissions?: { additionalDirectories?: string[] };
+    };
+    expect(written.permissions?.additionalDirectories).toEqual([home]);
+  });
+
+  it('resolves a relative path against cwd before persisting', async () => {
+    const home = await tmpHome();
+    const path = join(home, 'settings.json');
+    await reg.match('/add-dir')!.cmd.run(['.'], ctx({ cwd: home, userSettingsPath: path }));
+    const written = JSON.parse(await readFile(path, 'utf8')) as {
+      permissions?: { additionalDirectories?: string[] };
+    };
+    // Stored absolute — a relative entry would re-anchor to whatever cwd a
+    // later session started in.
+    expect(written.permissions?.additionalDirectories?.[0]).toBe(home);
+  });
+
+  it('rejects a non-existent directory', async () => {
+    const home = await tmpHome();
+    const out = await reg
+      .match('/add-dir')!
+      .cmd.run([join(home, 'nope')], ctx({ userSettingsPath: join(home, 'settings.json') }));
+    expect(out.join('\n')).toMatch(/no such directory/i);
+  });
+
+  it('rejects a path that exists but is a file', async () => {
+    const home = await tmpHome();
+    const file = join(home, 'a-file');
+    await writeFile(file, 'x');
+    const out = await reg
+      .match('/add-dir')!
+      .cmd.run([file], ctx({ userSettingsPath: join(home, 'settings.json') }));
+    expect(out.join('\n')).toMatch(/not a directory/i);
+  });
+
+  it('does not duplicate an already-added directory', async () => {
+    const home = await tmpHome();
+    const path = join(home, 'settings.json');
+    const c = ctx({ userSettingsPath: path });
+    await reg.match('/add-dir')!.cmd.run([home], c);
+    const out = await reg.match('/add-dir')!.cmd.run([home], c);
+    expect(out.join('\n')).toMatch(/already an additional/i);
+    const written = JSON.parse(await readFile(path, 'utf8')) as {
+      permissions?: { additionalDirectories?: string[] };
+    };
+    expect(written.permissions?.additionalDirectories).toEqual([home]);
+  });
+
+  it('lists current directories with no args', async () => {
+    const out = await reg
+      .match('/add-dir')!
+      .cmd.run([], ctx({ settings: { permissions: { additionalDirectories: ['/x/y'] } } }));
+    expect(out.join('\n')).toContain('/x/y');
   });
 });
