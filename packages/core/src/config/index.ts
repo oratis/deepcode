@@ -44,6 +44,8 @@ export {
   type DirectoryTrustStoreOptions,
 } from './trust-store.js';
 
+export { HookTrustStore, hookDefinitionHash, type HookReview } from './hook-trust.js';
+
 export {
   diagnoseSettings,
   type DiagnoseSettingsOptions,

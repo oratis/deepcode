@@ -1,5 +1,10 @@
 import { CredentialsStore, resolveCredentials } from '@deepcode/core/credentials';
-import { DirectoryTrustStore, gateUntrustedSettings, loadSettings } from '@deepcode/core/config';
+import {
+  DirectoryTrustStore,
+  gateUntrustedSettings,
+  HookTrustStore,
+  loadSettings,
+} from '@deepcode/core/config';
 import { DeepSeekProvider } from '@deepcode/core/dist/providers/deepseek.js';
 import { RuntimeHost, SAFE_READONLY_TOOLS } from '@deepcode/core/runtime';
 import { SessionManager } from '@deepcode/core/sessions';
@@ -12,6 +17,7 @@ export function createDefaultTurnExecutor(
   options: { forceFileCredentials?: boolean } = {},
 ): RuntimeHostExecutor {
   const trustStore = new DirectoryTrustStore({ directory: home });
+  const hookTrustStore = new HookTrustStore({ directory: home });
   const sessionManager = new SessionManager({
     root: home ? `${home}/sessions` : undefined,
   });
@@ -19,7 +25,9 @@ export function createDefaultTurnExecutor(
     createHost: async (cwd, mode, context) => {
       const loaded = await loadSettings({ cwd, directory: home });
       const trustStatus = await trustStore.statusFor(cwd);
-      const { settings } = gateUntrustedSettings(loaded, trustStatus);
+      const gate = gateUntrustedSettings(loaded, trustStatus);
+      const hookReview = await hookTrustStore.review(cwd, loaded, gate.settings.hooks);
+      const settings = { ...gate.settings, hooks: hookReview.hooks };
       const effectiveMode = resolveComposedMode(mode, context.modeExplicit, settings);
       const credentials = await resolveCredentials({
         store: new CredentialsStore({

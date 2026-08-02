@@ -58,4 +58,21 @@ describe('diagnoseSettings', () => {
     expect(report.issues).toEqual([]);
     expect(report.layers.find((layer) => layer.layer === 'project')?.trusted).toBe(true);
   });
+
+  it('reports project command hooks that still require definition review', async () => {
+    const home = await mkdtemp(join(tmpdir(), 'dc-diagnostics-home-'));
+    const cwd = await mkdtemp(join(tmpdir(), 'dc-diagnostics-cwd-'));
+    roots.push(home, cwd);
+    await writeSettings(join(cwd, '.deepcode', 'settings.json'), {
+      hooks: { Stop: [{ hooks: [{ type: 'command', command: 'echo project' }] }] },
+    });
+
+    const report = await diagnoseSettings({ cwd, home, trustStatus: 'trusted' });
+    expect(report.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'hook_review_required', pointer: '/hooks/Stop' }),
+      ]),
+    );
+    expect(JSON.stringify(report)).not.toContain('echo project');
+  });
 });

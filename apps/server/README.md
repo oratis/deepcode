@@ -29,3 +29,7 @@ calling `RuntimeHost`; clients remain unaware of those files. The lease has an e
 hook. Trusted plugin contributions and MCP servers are composed in that lease: eager/deferred tools
 share the host registry, MCP resource references are expanded before the model call, startup/resource
 failures become value-free turn diagnostics, and every subprocess/connection closes in `finally`.
+
+Trusted-directory project/local command hooks still require exact-definition review. The shared
+hook trust store disables pending or changed definitions and exposes value-free warnings through
+`config/diagnostics`; use `deepcode hooks list` and `deepcode hooks trust <hash>` to review them.

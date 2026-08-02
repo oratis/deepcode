@@ -20,6 +20,7 @@ import {
   DeepSeekProvider,
   EFFORT_PARAMS,
   HookDispatcher,
+  HookTrustStore,
   ReadTool,
   RuntimeHost,
   SessionManager,
@@ -94,11 +95,25 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
   const trustStore = new TrustStore({ home: opts.home });
   const trustStatus = await trustStore.statusFor(cwd);
-  const { settings, gated } = gateUntrustedSettings(loaded, trustStatus);
+  const gate = gateUntrustedSettings(loaded, trustStatus);
+  let settings = gate.settings;
+  const gated = gate.gated;
   if (gated.length > 0) {
     errOutput.write(
       `Untrusted directory — ignoring project ${gated.join(', ')} (can execute code). ` +
         `Run \`deepcode trust\` to enable.\n`,
+    );
+  }
+  const hookReview = await new HookTrustStore({ home: opts.home }).review(
+    cwd,
+    loaded,
+    settings.hooks,
+  );
+  settings = { ...settings, hooks: hookReview.hooks };
+  const pendingHooks = hookReview.reviews.filter((review) => !review.trusted);
+  if (pendingHooks.length > 0) {
+    errOutput.write(
+      `${pendingHooks.length} project command hook(s) disabled; review with \`deepcode hooks list\`.\n`,
     );
   }
   const credsStore = new CredentialsStore({ home: opts.home });

@@ -3,12 +3,13 @@ import { resolve } from 'node:path';
 import { loadSettings, type LoadSettingsOpts, type SettingsLayerName } from './loader.js';
 import { validateSettingsShallow } from './validation.js';
 import { gateUntrustedSettings, type TrustStatus } from './trust-gate.js';
+import { HookTrustStore } from './hook-trust.js';
 
 export type SettingsDiagnosticSeverity = 'info' | 'warning' | 'error';
 
 export interface SettingsDiagnosticIssue {
   severity: SettingsDiagnosticSeverity;
-  code: 'schema_validation' | 'untrusted_setting_gated';
+  code: 'schema_validation' | 'untrusted_setting_gated' | 'hook_review_required';
   message: string;
   pointer?: string;
   source?: { layer: SettingsLayerName; path: string };
@@ -54,6 +55,22 @@ export async function diagnoseSettings(
       pointer,
       source: sourceForPrefix(loaded.provenance, pointer),
     });
+  }
+
+  if (options.trustStatus === 'trusted') {
+    const hookReview = await new HookTrustStore({
+      home: options.home,
+      directory: options.directory,
+    }).review(options.cwd, loaded, gate.settings.hooks);
+    for (const review of hookReview.reviews.filter((item) => !item.trusted)) {
+      issues.push({
+        severity: 'warning',
+        code: 'hook_review_required',
+        message: `Project command hook ${review.event} (${review.hash}) is disabled until reviewed`,
+        pointer: `/hooks/${review.event}`,
+        source: review.source,
+      });
+    }
   }
 
   const layerPaths: Record<SettingsLayerName, string | undefined> = {
