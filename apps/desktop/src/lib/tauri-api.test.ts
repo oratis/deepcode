@@ -10,6 +10,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import {
+  appServerSend,
+  appServerStart,
+  appServerStatus,
+  appServerStop,
   appendAllowMatcher,
   getAppInfo,
   listPlugins,
@@ -73,6 +77,22 @@ describe('saveCredentials', () => {
 });
 
 describe('command name + argument contracts', () => {
+  it('maps app-server supervision commands without exposing process details', async () => {
+    invokeMock.mockResolvedValue({ running: true, pid: 42 });
+    await expect(appServerStart()).resolves.toEqual({ running: true, pid: 42 });
+    expect(invokeMock).toHaveBeenLastCalledWith('app_server_start');
+
+    await appServerSend('{"id":1,"method":"initialize","params":{}}');
+    expect(invokeMock).toHaveBeenLastCalledWith('app_server_send', {
+      message: '{"id":1,"method":"initialize","params":{}}',
+    });
+
+    await appServerStatus();
+    expect(invokeMock).toHaveBeenLastCalledWith('app_server_status');
+    await appServerStop();
+    expect(invokeMock).toHaveBeenLastCalledWith('app_server_stop');
+  });
+
   it('getAppInfo → get_app_info (no args)', async () => {
     invokeMock.mockResolvedValue({ version: '1.0.0', platform: 'darwin', home_dir: '/Users/x' });
     await getAppInfo();

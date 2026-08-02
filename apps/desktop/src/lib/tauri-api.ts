@@ -17,6 +17,11 @@ export interface Credentials {
   baseURL?: string;
 }
 
+export interface AppServerStatus {
+  running: boolean;
+  pid?: number;
+}
+
 export interface SessionMeta {
   id: string;
   path: string;
@@ -28,6 +33,22 @@ export interface SessionMeta {
 
 export async function getAppInfo(): Promise<AppInfo> {
   return invoke('get_app_info');
+}
+
+export async function appServerStart(): Promise<AppServerStatus> {
+  return invoke('app_server_start');
+}
+
+export async function appServerSend(message: string): Promise<void> {
+  await invoke('app_server_send', { message });
+}
+
+export async function appServerStop(): Promise<void> {
+  await invoke('app_server_stop');
+}
+
+export async function appServerStatus(): Promise<AppServerStatus> {
+  return invoke('app_server_status');
 }
 
 export async function readCredentials(): Promise<Credentials> {

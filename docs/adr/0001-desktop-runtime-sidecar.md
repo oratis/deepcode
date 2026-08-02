@@ -71,6 +71,22 @@ Node 24 build, whereas production will use a pinned target-specific Node 22 dist
 and notarized artifact cannot be verified locally without release credentials, so that remains a
 release-CI gate rather than a claimed spike result.
 
+### Packaged implementation evidence
+
+The first implementation build on the same host adds the production-shaped artifacts:
+
+| Measurement                           | Result                 |
+| ------------------------------------- | ---------------------- |
+| Bundled CommonJS app-server           | 214,155 bytes          |
+| Thin/stripped bundled runtime         | 108,412,096 bytes      |
+| Complete sidecar-enabled `.app`       | 115,355,648 bytes      |
+| Handshake from packaged paths         | passed with empty PATH |
+| Nested-then-outer ad-hoc verification | strict deep pass       |
+
+The release workflow now pins Node 22.23.1 and verifies the official archive SHA256 before the
+Tauri build. Local ad-hoc signing proves bundle structure and signing order only; Developer ID,
+notarization, stapling, and compressed DMG size remain release gates.
+
 ## Options considered
 
 ### Keep the agent loop in the WebView

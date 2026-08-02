@@ -88,6 +88,17 @@ jobs:
       - uses: actions/checkout@v6
       - name: Show Rust toolchain
         run: rustc --version && cargo --version
+      # Tauri validates every externalBin path in its build script. This job
+      # only compiles/tests Rust and never executes or packages the sidecar, so
+      # use a target-correct placeholder instead of copying a 100+ MB runtime.
+      - name: Prepare Tauri sidecar placeholder
+        run: |
+          target="$(rustc -vV | sed -n 's/^host: //p')"
+          runtime="apps/desktop/src-tauri/binaries/deepcode-runtime-${target}"
+          mkdir -p "$(dirname "$runtime")"
+          touch "$runtime"
+          mkdir -p apps/server/dist-sidecar
+          touch apps/server/dist-sidecar/app-server.cjs
       - name: Check and test Tauri backend
         run: |
           cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml --locked

@@ -15,9 +15,10 @@ src/                 renderer（React + Vite，无 Tailwind，手写设计系统
   screens/           About / MCPManager / Onboarding / Permissions /
                      Plugins / Repl / Sessions / Settings / Skills
   components/        Sidebar / InspectorRail / ToolCard / UpdateBanner …
-  lib/               tauri-api（renderer↔Rust IPC 封装）· mac-agent ·
-                     mac-tools · repl-stream · updater …
+  lib/               tauri-api（renderer↔Rust IPC 封装）· protocol-client ·
+                     mac-agent（实验期 fallback）· repl-stream · updater …
 src-tauri/           Rust 主进程
+  src/app_server.rs  bundled runtime 启停、stdio 与 crash event
   src/commands.rs    #[tauri::command] —— renderer 通过 invoke() 调用
   src/credentials.rs 凭据读写（原子写入）
   src/settings.rs    设置持久化
@@ -31,6 +32,11 @@ src-tauri/           Rust 主进程
 renderer ↔ Rust 的 IPC 边界由 `src/lib/tauri-api.ts` 封装，契约测试见
 `src/lib/tauri-api.test.ts`（#84）。
 
+实验 app-server 由 Tauri 作为 target-specific sidecar 监督。`apps/server` 会被打成单个
+`app-server.cjs` resource，Node runtime 通过 `bundle.externalBin` 进入 `.app`；renderer 只能通过
+Rust commands 与版本化协议通信，不能直接使用 shell plugin。现有 `mac-agent` 在迁移期保留为显式
+fallback，不能作为长期双架构。
+
 ## 开发
 
 依赖在 monorepo 根 `pnpm install` 一次装好；Rust 工具链 + Tauri CLI 见下。
@@ -40,19 +46,20 @@ renderer ↔ Rust 的 IPC 边界由 `src/lib/tauri-api.ts` 封装，契约测试
 | `pnpm dev`                   | 仅 Vite dev server（5173）—— 一般由 Tauri 自动拉起 |
 | `pnpm tauri:dev`             | 完整 app：Tauri 启 dev server + 原生窗口，热重载   |
 | `pnpm build`                 | `tsc -b` + `vite build` → `dist/`（renderer 产物） |
-| `pnpm tauri:build`           | 当前架构的 .app / .dmg                             |
+| `pnpm tauri:build`           | 构建包含 runtime + app-server 的 `.app`            |
 | `pnpm tauri:build:universal` | universal-apple-darwin 通用二进制                  |
 | `pnpm typecheck`             | `tsc -b`                                           |
 | `pnpm test`                  | `vitest run`（lib 单测 + IPC 契约测试）            |
 
-`tauri.conf.json` 里 `beforeDevCommand` / `beforeBuildCommand` 分别接
-`pnpm dev` / `pnpm build`，所以平时只跑 `pnpm tauri:dev` 即可。
+`tauri.conf.json` 的 dev/build hooks 会先生成 app-server bundle 和目标 runtime，再启动 Vite 或
+Tauri release build，所以平时只跑 `pnpm tauri:dev` 即可。
 
 ### 前置工具
 
 - Node ≥ 22、pnpm
 - Rust 工具链（`rustup`）—— Tauri 主进程是 Rust
 - 通用构建需 `rustup target add aarch64-apple-darwin x86_64-apple-darwin`
+- 通用构建还要求 `DEEPCODE_NODE_RUNTIME` 指向同时含 arm64/x86_64 的通用 Node binary
 
 ## 打包 / 签名
 
@@ -60,5 +67,7 @@ renderer ↔ Rust 的 IPC 边界由 `src/lib/tauri-api.ts` 封装，契约测试
   `src-tauri/Entitlements.plist`。
 - 签名 + 公证需要 Apple Developer ID 证书，以及 `APPLE_ID` /
   `APPLE_APP_SPECIFIC_PASSWORD` 等环境变量（CI 走 secrets）。
+- release CI 固定 Node 22.23.1，校验官方 SHA256 后才进入 Tauri 打包；nested runtime 先签，outer
+  `.app` 后签，再做 strict deep verification 与 notarization。
 
 详见 `docs/DEVELOPMENT_PLAN.md` §4 / §4a / §4b。
