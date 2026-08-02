@@ -81,6 +81,12 @@ never serialized, so provider credentials, hook headers, MCP environment values,
 inside the app-server. The report distinguishes discovered layers from effective trust gating and
 includes shallow schema issues.
 
+The default executor composes `DEEPCODE.md`, `AGENTS.md`, project rules, persistent memory,
+user/project skills, output styles, hooks, and model/effort/mode defaults inside the backend for
+every workspace turn. `RuntimeHostExecutor` accepts a turn-scoped lease containing the host and
+composed prompt, and releases it in `finally`; this is the lifecycle boundary used by later
+MCP/plugin connections. Explicit client model/effort/mode values still override trusted settings.
+
 ## Entrypoints
 
 After `pnpm build`, either command starts the same handler:
@@ -104,4 +110,5 @@ closes stdin first so the server can interrupt and persist active turns before a
 ## Deferred from this slice
 
 - thread listing, archive, fork, and search;
+- MCP/plugin subprocess composition (requires the host lease close path added above);
 - multi-client subscriptions or active-turn attachment;

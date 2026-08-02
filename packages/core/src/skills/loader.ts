@@ -42,6 +42,8 @@ export interface Skill {
 export interface LoadSkillsOpts {
   cwd: string;
   home?: string;
+  /** Direct DeepCode data directory (contains skills/). */
+  directory?: string;
   /** Optional list of plugin directories (M5+). */
   pluginDirs?: string[];
   /** Skill name → { disabled: true } overrides from settings.json. */
@@ -52,6 +54,7 @@ export interface LoadSkillsOpts {
 
 export async function loadSkills(opts: LoadSkillsOpts): Promise<Skill[]> {
   const home = opts.home ?? homedir();
+  const directory = opts.directory ?? join(home, '.deepcode');
   const out: Skill[] = [];
 
   // 1. Built-in skills (shipped with DeepCode)
@@ -60,7 +63,7 @@ export async function loadSkills(opts: LoadSkillsOpts): Promise<Skill[]> {
   }
 
   // 2. User-level
-  await loadFromDir(join(home, '.deepcode', 'skills'), 'user', out);
+  await loadFromDir(join(directory, 'skills'), 'user', out);
 
   // 3. Project-level
   await loadFromDir(join(opts.cwd, '.deepcode', 'skills'), 'project', out);

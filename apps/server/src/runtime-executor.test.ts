@@ -11,7 +11,7 @@ import {
   type ProviderRunOpts,
 } from '@deepcode/core';
 import type { ThreadSnapshot, TurnSnapshot } from '@deepcode/protocol';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { RuntimeHostExecutor, historyFromThread } from './runtime-executor.js';
 
@@ -63,8 +63,10 @@ const thread: ThreadSnapshot = {
 class StreamingProvider implements Provider {
   readonly name = 'streaming-test';
   seenMessages: ProviderRunOpts['messages'] = [];
+  seenOptions?: ProviderRunOpts;
 
   async runTurn(options: ProviderRunOpts): Promise<ProviderResult> {
+    this.seenOptions = options;
     this.seenMessages = options.messages;
     options.handlers?.onTextDelta?.('new ');
     options.handlers?.onTextDelta?.('answer');
@@ -148,6 +150,73 @@ describe('RuntimeHostExecutor', () => {
         },
       ],
     });
+  });
+
+  it('uses per-turn composition defaults and always releases the host lease', async () => {
+    const provider = new StreamingProvider();
+    const close = vi.fn();
+    const executor = new RuntimeHostExecutor({
+      createHost: () => ({
+        host: new RuntimeHost({ provider, tools: new ToolRegistry(), cwd: '/workspace' }),
+        systemPrompt: 'composed instructions',
+        model: 'deepseek-reasoner',
+        effort: 'low',
+        close,
+      }),
+    });
+
+    await executor.execute({
+      thread: { ...thread, turns: [] },
+      turn: {
+        id: 'turn-lease',
+        threadId: thread.id,
+        status: 'in_progress',
+        startedAt: '2026-08-01T00:00:02.000Z',
+        items: [],
+      },
+      input: { text: 'use composition' },
+      signal: new AbortController().signal,
+      publishDelta: () => undefined,
+      ...protocolCallbacks(),
+    });
+
+    expect(provider.seenOptions).toEqual(
+      expect.objectContaining({
+        systemPrompt: 'composed instructions',
+        model: 'deepseek-reasoner',
+        maxTokens: 1_500,
+      }),
+    );
+    expect(close).toHaveBeenCalledOnce();
+  });
+
+  it('does not let an invalid mode suppress the trusted composed default', async () => {
+    const createHost = vi.fn(
+      (_cwd: string, _mode: string) =>
+        new RuntimeHost({
+          provider: new StreamingProvider(),
+          tools: new ToolRegistry(),
+          cwd: '/workspace',
+        }),
+    );
+    const executor = new RuntimeHostExecutor({ createHost });
+
+    await executor.execute({
+      thread: { ...thread, turns: [] },
+      turn: {
+        id: 'turn-invalid-mode',
+        threadId: thread.id,
+        status: 'in_progress',
+        startedAt: '2026-08-01T00:00:02.000Z',
+        items: [],
+      },
+      input: { text: 'use defaults', mode: 'invalid' },
+      signal: new AbortController().signal,
+      publishDelta: () => undefined,
+      ...protocolCallbacks(),
+    });
+
+    expect(createHost).toHaveBeenCalledWith('/workspace', 'default', { modeExplicit: false });
   });
 
   it('ignores non-message protocol items when rebuilding provider history', () => {

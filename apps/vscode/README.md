@@ -47,12 +47,14 @@ Then:
 
 ## Settings
 
-| Key               | Type | Default           | Notes                                 |
-| ----------------- | ---- | ----------------- | ------------------------------------- |
-| `deepcode.model`  | enum | `"deepseek-chat"` | Standard alias + concrete model names |
-| `deepcode.effort` | enum | `"medium"`        | low / medium / high / xhigh / max     |
+| Key               | Type | Default           | Notes                                            |
+| ----------------- | ---- | ----------------- | ------------------------------------------------ |
+| `deepcode.model`  | enum | `"deepseek-chat"` | Explicit VS Code value overrides shared settings |
+| `deepcode.effort` | enum | `"medium"`        | Explicit value overrides shared settings         |
 
 Credentials stay in the shared DeepCode credential store and are resolved only by the child.
+Manifest defaults are not sent as turn overrides; without a user/workspace value, the app-server's
+trusted `settings.json` model and effort remain authoritative.
 
 ## Roadmap
 

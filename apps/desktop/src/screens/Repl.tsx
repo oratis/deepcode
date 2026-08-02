@@ -81,6 +81,7 @@ const MAX_RECENT_FILES = 8;
 
 type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
+type AgentMode = 'default' | 'acceptEdits' | 'plan' | 'auto' | 'dontAsk' | 'bypassPermissions';
 
 const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
   // `meta` is the per-turn output-token budget (maxTokens) the effort maps to in
@@ -133,9 +134,7 @@ const MODEL_OPTIONS: DropdownOption<'deepseek-chat' | 'deepseek-reasoner'>[] = [
   },
 ];
 
-const MODE_OPTIONS: DropdownOption<
-  'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
->[] = [
+const MODE_OPTIONS: DropdownOption<AgentMode>[] = [
   {
     value: 'default',
     label: 'Default',
@@ -153,6 +152,12 @@ const MODE_OPTIONS: DropdownOption<
     label: 'Plan mode',
     meta: '◐',
     description: 'Read-only — write tools blocked. Use for exploring.',
+  },
+  {
+    value: 'auto',
+    label: 'Auto',
+    meta: '◈',
+    description: 'Classify each tool call and apply the configured automatic policy.',
   },
   {
     value: 'dontAsk',
@@ -248,9 +253,7 @@ export function ReplScreen({
   // current model (deepseek-reasoner output is ¥16/M vs chat's ¥2/M).
   const modelRef = useRef(model);
   modelRef.current = model;
-  const [mode, setMode] = useState<
-    'default' | 'acceptEdits' | 'plan' | 'dontAsk' | 'bypassPermissions'
-  >('default');
+  const [mode, setMode] = useState<AgentMode>('default');
   const [usage, setUsage] = useState<{ inputTokens: number; outputTokens: number }>({
     inputTokens: 0,
     outputTokens: 0,
@@ -296,11 +299,20 @@ export function ReplScreen({
         const s = (await loadSettingsFile()) as {
           effortLevel?: string;
           model?: string;
+          permissions?: { defaultMode?: string };
         };
         if (s.effortLevel && (EFFORTS as string[]).includes(s.effortLevel)) {
           setEffort(s.effortLevel as Effort);
         }
         if (s.model) setModel(s.model);
+        if (
+          s.permissions?.defaultMode &&
+          ['default', 'acceptEdits', 'plan', 'auto', 'dontAsk', 'bypassPermissions'].includes(
+            s.permissions.defaultMode,
+          )
+        ) {
+          setMode(s.permissions.defaultMode as AgentMode);
+        }
       } catch {
         /* defaults */
       }
