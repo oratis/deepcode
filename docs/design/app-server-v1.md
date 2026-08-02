@@ -87,6 +87,11 @@ node apps/cli/dist/cli.js app-server
 The second form is exposed as `deepcode app-server` in packaged CLI builds. Existing REPL and
 headless output contracts remain unchanged during this experimental phase.
 
+`@deepcode/protocol` also exports the transport-neutral `ProtocolClient`. It owns initialization,
+request correlation, timeouts, disconnect rejection, reconnection, and event fan-out; each host
+supplies only an ordered message connection. The desktop implementation is now a thin Tauri
+adapter, and editor clients use the same client state machine instead of duplicating RPC logic.
+
 ## Deferred from this slice
 
 - config provenance;
