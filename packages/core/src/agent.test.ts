@@ -126,6 +126,12 @@ describe('runAgent', () => {
     expect(toolEvents).toHaveLength(1);
     const resultEvents = events.filter((e) => e.type === 'tool_result');
     expect(resultEvents).toHaveLength(1);
+    const steps = events.filter((e) => e.type === 'model_step_complete');
+    expect(steps).toHaveLength(2);
+    expect(steps.map((event) => event.step)).toEqual([1, 2]);
+    const completed = events.filter((e) => e.type === 'turn_complete');
+    expect(completed).toHaveLength(1);
+    expect(completed[0]).toMatchObject({ stopReason: 'end_turn' });
   });
 
   it('handles unknown tool gracefully', async () => {

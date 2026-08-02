@@ -181,7 +181,14 @@ export type AgentEvent =
   | { type: 'thinking_delta'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
   | { type: 'tool_result'; id: string; result: ToolResult }
-  | { type: 'turn_complete'; message: StoredMessage }
+  /** One provider round-trip completed; a user turn may contain many steps. */
+  | { type: 'model_step_complete'; step: number; message: StoredMessage }
+  /** The whole user turn reached one terminal state. Emitted exactly once. */
+  | {
+      type: 'turn_complete';
+      stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
+      message?: StoredMessage;
+    }
   | {
       type: 'usage';
       inputTokens: number;
