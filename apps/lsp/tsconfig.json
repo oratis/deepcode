@@ -11,5 +11,9 @@
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"],
-  "references": [{ "path": "../../packages/core" }]
+  "references": [
+    { "path": "../../packages/core" },
+    { "path": "../../packages/protocol" },
+    { "path": "../server" }
+  ]
 }

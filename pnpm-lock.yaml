@@ -124,9 +124,15 @@ importers:
 
   apps/lsp:
     dependencies:
+      '@deepcode/app-server':
+        specifier: workspace:*
+        version: link:../server
       '@deepcode/core':
         specifier: workspace:*
         version: link:../../packages/core
+      '@deepcode/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

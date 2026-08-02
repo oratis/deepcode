@@ -1,30 +1,40 @@
 # @deepcode/lsp — LSP bridge (v1.1)
 
-Exposes DeepCode's agent loop as Language-Server-Protocol commands, so
+Exposes DeepCode's app-server protocol as Language-Server-Protocol commands, so
 any LSP-capable editor (Neovim, Emacs lsp-mode, Sublime, JetBrains via
 LSP plugin) can drive DeepCode via `workspace/executeCommand`.
 
 ## Custom commands
 
-| Command               | Args                 | Returns                               |
-| --------------------- | -------------------- | ------------------------------------- |
-| `deepcode.runAgent`   | `{ prompt: string }` | `{ turnId: string }` + streams events |
-| `deepcode.abort`      | `{ turnId: string }` | `{ aborted: boolean }`                |
-| `deepcode.listSkills` | none                 | `{ skills: SkillRow[] }`              |
+| Command                     | Args                                            | Returns                   |
+| --------------------------- | ----------------------------------------------- | ------------------------- |
+| `deepcode.runAgent`         | `{ prompt, threadId?, model?, effort?, mode? }` | `{ threadId, turnId }`    |
+| `deepcode.abort`            | `{ turnId }`                                    | `{ aborted }`             |
+| `deepcode.readThread`       | `{ threadId }`                                  | protocol thread snapshot  |
+| `deepcode.resumeThread`     | `{ threadId }`                                  | resumed protocol snapshot |
+| `deepcode.respondApproval`  | `{ turnId, requestId, decision }`               | `{ accepted }`            |
+| `deepcode.respondUserInput` | `{ turnId, requestId, answer }`                 | `{ accepted }`            |
+| `deepcode.listSkills`       | none                                            | `{ skills: SkillRow[] }`  |
 
-Streamed events are sent as `deepcode/agentEvent` notifications:
+Lifecycle, structured tool, usage, approval, and user-input events are sent unchanged as
+`deepcode/protocolEvent` notifications:
 
 ```json
 {
   "jsonrpc": "2.0",
-  "method": "deepcode/agentEvent",
-  "params": { "turnId": "lsp-...", "kind": "text_delta", "text": "..." }
+  "method": "deepcode/protocolEvent",
+  "params": {
+    "type": "item.delta",
+    "threadId": "thread-...",
+    "turnId": "turn-...",
+    "itemId": "item-...",
+    "delta": "hello"
+  }
 }
 ```
 
-The `kind` field mirrors the AgentStreamEvent union from
-`@deepcode/core/src/ipc/protocol.ts` (started / text_delta / tool_use /
-tool_result / usage / turn_complete / turn_done / error).
+The schema is the same provider-neutral `@deepcode/protocol` contract used by desktop and the
+app-server. A `turn.completed`, `turn.interrupted`, or `turn.failed` event is the terminal signal.
 
 ## Install & run
 
@@ -98,12 +108,13 @@ In `Preferences → Package Settings → LSP → Settings`:
 - Pure stdio LSP server. Framing: `Content-Length: N\r\n\r\n<body>`.
 - Notifications (no `id`) silently dropped if unknown.
 - Requests (with `id`) errored with `-32603` if unknown method.
-- Agent loop runs in-process; long turns spawn a child to keep the LSP
-  loop responsive (TODO in v1.1-rest).
+- One app-server child owns runtime, credentials, tools, canonical sessions, and active turns.
+- LSP uses the shared protocol client for initialize, correlation, disconnects, and event fan-out;
+  it never constructs a provider or reads credential secrets.
+- Events that beat the `turn/start` response are buffered by turn id, so fast turns remain ordered.
 
-## Skeleton vs ready-to-ship
+## Current scope
 
-This release ships the protocol skeleton (3 commands, 4 LSP boilerplate
-handlers, stream events). The actual `runAgent` invocation emits a
-placeholder event to confirm the channel — wiring to the real
-`@deepcode/core` agent loop lands with the v1.1 release.
+The bridge covers thread start/read/resume, turn start/interrupt, structured events, approvals, and
+AskUserQuestion. Multi-client attachment and shared-daemon authentication remain intentionally out
+of scope for protocol v1.
