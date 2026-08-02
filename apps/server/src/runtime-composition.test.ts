@@ -28,6 +28,25 @@ describe('composeRuntime', () => {
     expect(resolveComposedMode('auto', true, settings)).toBe('auto');
   });
 
+  it('registers the internal restore tool only for canonical revert turns', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dc-composition-revert-'));
+    roots.push(cwd);
+    const normal = await composeRuntime({
+      cwd,
+      settings: { plugins: { globalEnabled: false } },
+    });
+    expect(normal.tools.get('RestoreReviewAction')).toBeUndefined();
+    await normal.close();
+
+    const revert = await composeRuntime({
+      cwd,
+      settings: { plugins: { globalEnabled: false } },
+      includeReviewRestore: true,
+    });
+    expect(revert.tools.get('RestoreReviewAction')).toBeDefined();
+    await revert.close();
+  });
+
   it('assembles memory, AGENTS, skills, style, hooks, and model defaults', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'dc-composition-home-'));
     const cwd = await mkdtemp(join(tmpdir(), 'dc-composition-cwd-'));

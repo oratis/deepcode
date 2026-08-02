@@ -71,6 +71,7 @@ const COMMANDS = [
   'deepcode.workspaceDiff',
   'deepcode.applyReviewFinding',
   'deepcode.applyReviewFindings',
+  'deepcode.revertReviewAction',
 ];
 
 export async function handleMessage(msg: LspMessage, send: SendFn): Promise<void> {
@@ -187,6 +188,11 @@ async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn):
         ((params.arguments?.[0] ?? {}) as { findingIds?: string[] }).findingIds ?? [],
         send,
       );
+    case 'deepcode.revertReviewAction':
+      return handleReviewRevert(
+        ((params.arguments?.[0] ?? {}) as { actionId?: string }).actionId,
+        send,
+      );
     default:
       throw new Error(`Unknown command: ${params.command}`);
   }
@@ -236,6 +242,27 @@ async function handleReviewApply(
   const turn = await client.request<TurnSnapshot>('review/apply', {
     threadId: thread.id,
     findingIds: findingIds as string[],
+  });
+  state.activeTurns.set(turn.id, thread.id);
+  state.turnSinks.set(turn.id, send);
+  flushEvents(turn.id);
+  return { threadId: thread.id, turnId: turn.id };
+}
+
+async function handleReviewRevert(
+  actionId: string | undefined,
+  send: SendFn,
+): Promise<{ threadId: string; turnId: string }> {
+  if (!actionId) throw new Error('actionId is required');
+  const client = await getClient();
+  const initialized = await client.connect();
+  if (!initialized.capabilities.reviewActions) {
+    throw new Error('The app-server does not support review actions');
+  }
+  const thread = await ensureThread(client);
+  const turn = await client.request<TurnSnapshot>('review/revert', {
+    threadId: thread.id,
+    actionId,
   });
   state.activeTurns.set(turn.id, thread.id);
   state.turnSinks.set(turn.id, send);

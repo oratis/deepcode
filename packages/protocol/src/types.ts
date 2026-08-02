@@ -215,11 +215,11 @@ export interface ReviewFindingPayload {
   replacement?: string;
 }
 
-export interface ReviewActionPayload {
-  actionId: string;
-  kind: 'apply';
-  findingIds: string[];
-}
+export type ReviewActionRequest =
+  | { kind: 'apply'; findingIds: string[] }
+  | { kind: 'revert'; sourceActionId: string; findingIds: string[] };
+
+export type ReviewActionPayload = ReviewActionRequest & { actionId: string };
 
 export type ProtocolMethod =
   | 'initialize'
@@ -227,6 +227,7 @@ export type ProtocolMethod =
   | 'diagnostics/export'
   | 'workspace/diff'
   | 'review/apply'
+  | 'review/revert'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'

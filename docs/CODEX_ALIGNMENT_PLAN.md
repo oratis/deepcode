@@ -338,9 +338,14 @@ model tool call
   解析原始 payload、生成单项或批量 prompt，并把 finding/action/turn 关联持久化为
   `review_action`。Apply 不暴露直写接口，因此继续经过 Edit/Write permission、approval、hook、
   sandbox 与 snapshot，客户端不能篡改 path/replacement 或伪造 finding。
+- 每个 app-server turn 的文件快照已带 canonical turn id；`review/revert` 只解析已完成的 Apply
+  action，并把 revert turn 的工具上限锁定为 `RestoreReviewAction`。该工具在任何写入前校验
+  所有 current file 仍逐字节等于 Apply post-image、snapshot blob 完整且路径未逃逸；有冲突、
+  Bash checkpoint 或 legacy 不完整快照时整体拒绝。恢复仍经过 permission/approval/hooks，且
+  自身产生 pre/post 快照；新建文件可按 `existed=false` 安全删除。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
-- 客户端内联评论/上下文 action 与冲突安全的单项 revert；VS Code review all 已由同一
-  canonical action path 提供。
+- 客户端内联评论/上下文 action；VS Code review all 与 latest-action revert 已由同一
+  canonical action path 提供，Desktop/LSP 暴露对应协议能力。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。
 - release candidate、迁移演练、性能预算和回滚说明。
 

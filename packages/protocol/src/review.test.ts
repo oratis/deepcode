@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { reviewApplyManyPrompt, reviewApplyPrompt } from './review.js';
+import { reviewApplyManyPrompt, reviewApplyPrompt, reviewRevertPrompt } from './review.js';
 
 describe('reviewApplyPrompt', () => {
   it('creates a verification-first turn prompt with the exact finding identity', () => {
@@ -60,5 +60,12 @@ describe('reviewApplyPrompt', () => {
     expect(() => reviewApplyManyPrompt([{ ...finding, endLine: 205 }])).toThrow(
       'valid review finding',
     );
+  });
+
+  it('builds a tool-constrained conflict-safe revert prompt', () => {
+    const prompt = reviewRevertPrompt('turn-apply', ['finding-1']);
+    expect(prompt).toContain('RestoreReviewAction exactly once');
+    expect(prompt).toContain('Do not use Edit, Write, Bash');
+    expect(() => reviewRevertPrompt('../unsafe', ['finding-1'])).toThrow('valid review action');
   });
 });

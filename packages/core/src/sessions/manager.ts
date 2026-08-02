@@ -70,6 +70,7 @@ export class SessionManager {
     filePath: string;
     reason: string;
     seq: number;
+    turnId?: string;
   }): Promise<Snapshot | null> {
     return captureSnapshot({ ...args, sessionsRoot: this.root });
   }
@@ -80,6 +81,7 @@ export class SessionManager {
     cwd: string;
     reason: string;
     seq: number;
+    turnId?: string;
   }): Promise<Snapshot | null> {
     return captureGitCheckpoint({ ...args, sessionsRoot: this.root });
   }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import {
   RuntimeHost,
+  RestoreReviewActionTool,
   SessionManager,
   ToolRegistry,
   type AgentEvent,
@@ -106,6 +107,37 @@ class ToolProvider implements Provider {
 }
 
 describe('RuntimeHostExecutor', () => {
+  it('exposes only the restore tool to a canonical revert turn', async () => {
+    const provider = new StreamingProvider();
+    const tools = new ToolRegistry();
+    tools.register(RestoreReviewActionTool);
+    const host = new RuntimeHost({
+      provider,
+      tools,
+      cwd: '/workspace',
+    });
+    const executor = new RuntimeHostExecutor({ createHost: () => host });
+    await executor.execute({
+      thread,
+      turn: {
+        id: 'turn-revert',
+        threadId: thread.id,
+        status: 'in_progress',
+        startedAt: '2026-08-01T00:00:02.000Z',
+        items: [],
+      },
+      input: {
+        text: 'revert',
+        reviewAction: { kind: 'revert', sourceActionId: 'turn-apply', findingIds: ['finding-1'] },
+      },
+      signal: new AbortController().signal,
+      publishDelta: () => undefined,
+      ...protocolCallbacks(),
+    });
+
+    expect(provider.seenOptions?.tools.map((tool) => tool.name)).toEqual(['RestoreReviewAction']);
+  });
+
   it('projects validated review tool results into durable finding items', () => {
     const events: AgentEvent[] = [
       {
@@ -452,7 +484,9 @@ describe('RuntimeHostExecutor', () => {
       });
 
       await expect(sessions.load('thread-snapshots')).resolves.toBeNull();
-      await expect(sessions.snapshots('thread-snapshots')).resolves.toHaveLength(2);
+      const snapshots = await sessions.snapshots('thread-snapshots');
+      expect(snapshots).toHaveLength(2);
+      expect(snapshots.every((snapshot) => snapshot.turnId === 'turn-snapshots')).toBe(true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

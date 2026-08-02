@@ -59,7 +59,7 @@ class FakeClient {
     if (method === 'thread/start' || method === 'thread/read' || method === 'thread/resume') {
       return this.thread as T;
     }
-    if (method === 'turn/start' || method === 'review/apply') {
+    if (method === 'turn/start' || method === 'review/apply' || method === 'review/revert') {
       this.emit({ type: 'turn.started', threadId: this.thread.id, turn: this.turn });
       this.emit({
         type: 'item.delta',
@@ -134,6 +134,18 @@ describe('EditorProtocolRuntime', () => {
       threadId: 'thread-1',
       findingIds: ['finding-1'],
     });
+  });
+
+  it('reverts a review action through the canonical conflict-safe turn', async () => {
+    const client = new FakeClient();
+    const runtime = new EditorProtocolRuntime(client, () => '/workspace');
+    await runtime.revertAction('turn-apply', () => undefined);
+    expect(client.requests.at(-1)).toEqual(
+      expect.objectContaining({
+        method: 'review/revert',
+        params: { threadId: 'thread-1', actionId: 'turn-apply' },
+      }),
+    );
   });
 
   it('reads configuration diagnostics from the app-server for the editor workspace', async () => {

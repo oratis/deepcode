@@ -116,6 +116,23 @@ export class EditorProtocolRuntime {
     return { threadId: thread.id, turnId: turn.id };
   }
 
+  async revertAction(
+    actionId: string,
+    onEvent: EventHandler,
+  ): Promise<{ threadId: string; turnId: string }> {
+    const initialized = await this.client.connect();
+    if (!initialized.capabilities.reviewActions) {
+      throw new Error('The app-server does not support review actions');
+    }
+    const thread = await this.ensureThread();
+    const turn = await this.client.request<TurnSnapshot>('review/revert', {
+      threadId: thread.id,
+      actionId,
+    });
+    this.trackTurn(turn, thread.id, onEvent);
+    return { threadId: thread.id, turnId: turn.id };
+  }
+
   async interrupt(turnId: string): Promise<boolean> {
     const threadId = this.turnThreads.get(turnId);
     if (!threadId) return false;

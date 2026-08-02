@@ -58,11 +58,13 @@ export interface RunAgentOptions {
   signal?: AbortSignal;
   onEvent?: (event: AgentEvent) => void;
   /** Optional: persist each turn to a session. */
-  session?: { manager: SessionManager; id: string };
+  session?: { manager: SessionManager; id: string; turnId?: string };
   /** Keep session-backed snapshots while another owner materializes messages. */
   persistSessionMessages?: boolean;
   /** Optional: snapshot files before/after Edit/Write tool calls. */
   enableSnapshots?: boolean;
+  /** Optional host-owned per-turn tool ceiling; omitted means the full registry. */
+  allowedTools?: string[];
   /** Required dispatch mode. Every tool call goes through the central gate. */
   mode: Mode;
   permissions?: PermissionRules;
@@ -194,6 +196,7 @@ const READ_ONLY_TOOLS = new Set([
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const runtimePolicy = resolveRuntimePolicy(opts);
+  const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
   let history: StoredMessage[] = [...(opts.history ?? [])];
   let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
 
@@ -261,6 +264,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
     sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
+    turnId: opts.session?.turnId,
     askUser: opts.askUser,
     modeSignal,
   };
@@ -308,15 +312,27 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         definitions: () =>
           opts.tools
             .definitions()
-            .filter((d) => !SUBAGENT_TOOL_DENYLIST.has(d.name) && (!allow || allow.has(d.name))),
+            .filter(
+              (d) =>
+                !SUBAGENT_TOOL_DENYLIST.has(d.name) &&
+                (!allow || allow.has(d.name)) &&
+                (!allowedToolNames || allowedToolNames.has(d.name)),
+            ),
         get: (name: string) =>
-          SUBAGENT_TOOL_DENYLIST.has(name) || (allow && !allow.has(name))
+          SUBAGENT_TOOL_DENYLIST.has(name) ||
+          (allow && !allow.has(name)) ||
+          (allowedToolNames && !allowedToolNames.has(name))
             ? undefined
             : opts.tools.get(name),
         list: () =>
           opts.tools
             .list()
-            .filter((t) => !SUBAGENT_TOOL_DENYLIST.has(t.name) && (!allow || allow.has(t.name))),
+            .filter(
+              (t) =>
+                !SUBAGENT_TOOL_DENYLIST.has(t.name) &&
+                (!allow || allow.has(t.name)) &&
+                (!allowedToolNames || allowedToolNames.has(t.name)),
+            ),
       } as typeof opts.tools;
 
       const sub = await runAgent({
@@ -479,7 +495,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       result = await opts.provider.runTurn({
         model: opts.model,
         systemPrompt: opts.systemPrompt,
-        tools: opts.tools.definitions(),
+        tools: opts.tools
+          .definitions()
+          .filter((definition) => !allowedToolNames || allowedToolNames.has(definition.name)),
         // Snapshot the history slice — providers must not see mutations from
         // subsequent turns (and tests rely on the snapshot being stable).
         messages: [...history],
@@ -557,12 +575,17 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // Phase 1 — sequential gate + approval.
     for (const toolUse of toolBlocks) {
-      const handler = opts.tools.get(toolUse.name);
+      const handler =
+        !allowedToolNames || allowedToolNames.has(toolUse.name)
+          ? opts.tools.get(toolUse.name)
+          : undefined;
       if (!handler) {
         resultsById.set(toolUse.id, {
           type: 'tool_result',
           tool_use_id: toolUse.id,
-          content: `Error: tool not found: ${toolUse.name}`,
+          content: allowedToolNames
+            ? `Error: tool not allowed in this turn: ${toolUse.name}`
+            : `Error: tool not found: ${toolUse.name}`,
           is_error: true,
         });
         continue;
@@ -631,6 +654,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             filePath,
             reason: `pre-${toolUse.name}`,
             seq: ++snapshotSeq,
+            turnId: opts.session.turnId,
           });
         }
       }
@@ -644,6 +668,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
           cwd: opts.cwd,
           reason: 'pre-Bash',
           seq: ++snapshotSeq,
+          turnId: opts.session.turnId,
         });
       }
 
@@ -678,6 +703,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             filePath,
             reason: `post-${toolUse.name}`,
             seq: ++snapshotSeq,
+            turnId: opts.session.turnId,
           });
         }
       }

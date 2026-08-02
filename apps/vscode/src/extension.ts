@@ -5,6 +5,7 @@ import {
   isReviewFindingPayload,
   ProtocolClient,
   type ProtocolEvent,
+  type ReviewActionPayload,
   type ReviewFindingPayload,
 } from '@deepcode/protocol';
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
@@ -18,6 +19,7 @@ type V = typeof import('vscode');
 
 let activeRuntime: EditorProtocolRuntime | undefined;
 const latestReviewFindings = new Map<string, ReviewFindingPayload>();
+let latestAppliedActionId: string | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeMod = await loadVscode();
@@ -96,6 +98,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       await runFindingsInOutput(findings, vscodeMod, runtime);
     }),
+    commands.registerCommand(
+      'deepcode.revertReviewAction',
+      async (action: Pick<ReviewActionPayload, 'actionId'> | undefined) => {
+        const actionId = action?.actionId ?? latestAppliedActionId;
+        if (!actionId) {
+          void window.showInformationMessage('DeepCode: no applied review action to revert.');
+          return;
+        }
+        await runRevertInOutput(actionId, vscodeMod, runtime);
+      },
+    ),
     commands.registerCommand('deepcode.showDiagnostics', async () => {
       const out = window.createOutputChannel('DeepCode Diagnostics');
       out.show(true);
@@ -124,6 +137,24 @@ async function runFindingsInOutput(
   );
   try {
     await runtime.applyFindings(findings, (event) => {
+      projectOutputEvent(event, out);
+      void respondToInteraction(event, vscodeMod, runtime);
+    });
+  } catch (error) {
+    out.appendLine(`\n✕ ${(error as Error).message ?? String(error)}`);
+  }
+}
+
+async function runRevertInOutput(
+  actionId: string,
+  vscodeMod: V,
+  runtime: EditorProtocolRuntime,
+): Promise<void> {
+  const out = vscodeMod.window.createOutputChannel('DeepCode');
+  out.show(true);
+  out.appendLine(`Reverting review action: ${actionId}`);
+  try {
+    await runtime.revertAction(actionId, (event) => {
       projectOutputEvent(event, out);
       void respondToInteraction(event, vscodeMod, runtime);
     });
@@ -208,6 +239,12 @@ function projectOutputEvent(event: ProtocolEvent, out: vscode.OutputChannel): vo
         );
         out.appendLine(`  ${String(finding.body)}`);
       } else if (event.item.type === 'review_action') {
+        if (
+          event.item.payload.kind === 'apply' &&
+          typeof event.item.payload.actionId === 'string'
+        ) {
+          latestAppliedActionId = event.item.payload.actionId;
+        }
         out.appendLine(
           `\n[review action] ${String(event.item.payload.kind)} ${String(
             (event.item.payload.findingIds as unknown[] | undefined)?.length ?? 0,

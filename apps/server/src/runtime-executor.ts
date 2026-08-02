@@ -27,6 +27,7 @@ export interface RuntimeHostCreationContext {
   modeExplicit: boolean;
   signal: AbortSignal;
   requestApproval: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
+  reviewAction: { kind: 'apply' | 'revert' } | null;
 }
 
 export interface RuntimeHostLease {
@@ -62,6 +63,7 @@ export class RuntimeHostExecutor implements TurnExecutor {
     const requestedMode = args.input.mode;
     const modeExplicit = isMode(requestedMode);
     const mode: Mode = modeExplicit ? requestedMode : 'default';
+    const reviewAction = readReviewAction(args.input.reviewAction);
     const interactionItems: TurnExecutionItem[] = [];
     const requestApproval = async (toolName: string, reason: string) => {
       const decision = await args.requestApproval(toolName, reason);
@@ -75,6 +77,7 @@ export class RuntimeHostExecutor implements TurnExecutor {
       modeExplicit,
       signal: args.signal,
       requestApproval,
+      reviewAction,
     });
     const lease: RuntimeHostLease = 'host' in created ? created : { host: created };
     try {
@@ -106,9 +109,10 @@ export class RuntimeHostExecutor implements TurnExecutor {
             : (lease.model ?? this.options.model ?? 'deepseek-chat'),
         maxTokens: effortParams.maxTokens,
         temperature: effortParams.temperature,
+        ...(reviewAction?.kind === 'revert' ? { allowedTools: ['RestoreReviewAction'] } : {}),
         signal: args.signal,
         session: this.options.sessionManager
-          ? { manager: this.options.sessionManager, id: args.thread.id }
+          ? { manager: this.options.sessionManager, id: args.thread.id, turnId: args.turn.id }
           : undefined,
         persistSessionMessages: false,
         systemReminders: false,
@@ -168,6 +172,12 @@ export class RuntimeHostExecutor implements TurnExecutor {
       await lease.close?.();
     }
   }
+}
+
+function readReviewAction(value: unknown): { kind: 'apply' | 'revert' } | null {
+  if (!value || typeof value !== 'object') return null;
+  const kind = (value as { kind?: unknown }).kind;
+  return kind === 'apply' || kind === 'revert' ? { kind } : null;
 }
 
 export function reviewFindingsFromEvents(events: AgentEvent[]): TurnExecutionItem[] {

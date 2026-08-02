@@ -54,6 +54,7 @@ export function createDefaultTurnExecutor(
         provider,
         requestApproval: context.requestApproval,
         signal: context.signal,
+        includeReviewRestore: context.reviewAction?.kind === 'revert',
       });
       return {
         host: new RuntimeHost({

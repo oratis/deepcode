@@ -19,6 +19,7 @@ LSP plugin) can drive DeepCode via `workspace/executeCommand`.
 | `deepcode.workspaceDiff`       | none                                            | canonical structured workspace diff                |
 | `deepcode.applyReviewFinding`  | `{ findingId }`                                 | `{ threadId, turnId }`                             |
 | `deepcode.applyReviewFindings` | `{ findingIds }`                                | `{ threadId, turnId }`                             |
+| `deepcode.revertReviewAction`  | `{ actionId }`                                  | `{ threadId, turnId }`                             |
 
 Lifecycle, structured tool, usage, approval, and user-input events are sent unchanged as
 `deepcode/protocolEvent` notifications:

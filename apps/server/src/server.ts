@@ -4,6 +4,7 @@ import {
   ProtocolInvariantError,
   ProtocolRuntime,
   reviewApplyManyPrompt,
+  reviewRevertPrompt,
   type CompletedItemType,
   type ConfigDiagnosticsResult,
   type DiagnosticExportResult,
@@ -11,6 +12,7 @@ import {
   type ProtocolRequest,
   type ProtocolResponse,
   type ReviewActionPayload,
+  type ReviewActionRequest,
   type ReviewFindingPayload,
   type ThreadSnapshot,
   type ThreadStore,
@@ -213,6 +215,8 @@ export class AppServer {
       }
       case 'review/apply':
         return this.applyReviewFindings(request.params, traceId);
+      case 'review/revert':
+        return this.revertReviewAction(request.params, traceId);
       case 'thread/start':
         return this.lifecycle.startThread(requiredString(request.params, 'cwd'), traceId);
       case 'thread/read':
@@ -262,7 +266,7 @@ export class AppServer {
       if (!finding) throw new RequestValidationError(`Review finding not found: ${findingId}`);
       return finding;
     });
-    const action: Omit<ReviewActionPayload, 'actionId'> = { kind: 'apply', findingIds };
+    const action: ReviewActionRequest = { kind: 'apply', findingIds };
     return this.startTurn(
       {
         threadId,
@@ -273,10 +277,46 @@ export class AppServer {
     );
   }
 
+  private async revertReviewAction(
+    params: Record<string, unknown>,
+    traceId: string,
+  ): Promise<TurnSnapshot> {
+    const threadId = requiredId(params, 'threadId');
+    const sourceActionId = requiredId(params, 'actionId');
+    const thread = await this.lifecycle.resumeThread(threadId);
+    const sourceTurn = thread.turns.find((turn) => turn.id === sourceActionId);
+    if (!sourceTurn || sourceTurn.status !== 'completed') {
+      throw new RequestValidationError(`Completed review action not found: ${sourceActionId}`);
+    }
+    const sourceAction = sourceTurn.items
+      .filter((item) => item.type === 'review_action')
+      .map((item) => item.payload)
+      .find(isApplyReviewAction);
+    if (!sourceAction || sourceAction.actionId !== sourceActionId) {
+      throw new RequestValidationError(`Applied review action not found: ${sourceActionId}`);
+    }
+    const action: ReviewActionRequest = {
+      kind: 'revert',
+      sourceActionId,
+      findingIds: sourceAction.findingIds,
+    };
+    return this.startTurn(
+      {
+        threadId,
+        input: {
+          text: reviewRevertPrompt(sourceActionId, sourceAction.findingIds),
+          reviewAction: action,
+        },
+      },
+      traceId,
+      action,
+    );
+  }
+
   private async startTurn(
     params: Record<string, unknown>,
     traceId: string,
-    reviewAction?: Omit<ReviewActionPayload, 'actionId'>,
+    reviewAction?: ReviewActionRequest,
   ): Promise<TurnSnapshot> {
     const threadId = requiredId(params, 'threadId');
     const input = requiredRecord(params, 'input');
@@ -589,7 +629,7 @@ function requiredString(params: Record<string, unknown>, key: string): string {
 
 function requiredId(params: Record<string, unknown>, key: string): string {
   const value = requiredString(params, key);
-  if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
+  if (value.length > 200 || !/^[a-zA-Z0-9._-]+$/.test(value)) {
     throw new RequestValidationError(`${key} is invalid`);
   }
   return value;
@@ -618,4 +658,20 @@ function requiredIds(params: Record<string, unknown>, key: string, maximum: numb
     throw new RequestValidationError(`${key} must not contain duplicate ids`);
   }
   return ids;
+}
+
+function isApplyReviewAction(value: Record<string, unknown>): value is ReviewActionPayload & {
+  kind: 'apply';
+} {
+  return (
+    value.kind === 'apply' &&
+    typeof value.actionId === 'string' &&
+    Array.isArray(value.findingIds) &&
+    value.findingIds.length > 0 &&
+    value.findingIds.length <= 20 &&
+    new Set(value.findingIds).size === value.findingIds.length &&
+    value.findingIds.every(
+      (findingId) => typeof findingId === 'string' && /^[a-zA-Z0-9._-]{1,200}$/.test(findingId),
+    )
+  );
 }

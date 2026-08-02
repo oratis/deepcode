@@ -54,3 +54,9 @@ with a workspace-relative path, tight line range, priority, and optional exact r
 canonical thread, builds the verification-first prompt in the host, and records a `review_action`
 item tied to the new turn. It is not a filesystem endpoint: every edit still uses the existing
 Edit/Write permission, approval, hook, sandbox, and snapshot path.
+
+Every app-server snapshot is tagged with its canonical turn id. `review/revert` resolves a completed
+Apply action and starts a tool-restricted turn; only `RestoreReviewAction` is exposed. That tool
+performs an all-files compare-and-swap against the action's post-images before restoring pre-images,
+then snapshots the restore itself. It refuses conflicts and never falls back to `git checkout` or an
+unscoped write.

@@ -49,6 +49,10 @@
         "title": "DeepCode: Apply All Review Findings"
       },
       {
+        "command": "deepcode.revertReviewAction",
+        "title": "DeepCode: Revert Latest Review Action"
+      },
+      {
         "command": "deepcode.showDiagnostics",
         "title": "DeepCode: Show Configuration Diagnostics"
       }
