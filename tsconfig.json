@@ -8,6 +8,7 @@
     { "path": "./apps/cli" },
     { "path": "./apps/desktop" },
     { "path": "./apps/lsp" },
+    { "path": "./apps/server" },
     { "path": "./apps/vscode" }
   ]
 }

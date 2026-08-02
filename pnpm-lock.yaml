@@ -35,6 +35,9 @@ importers:
 
   apps/cli:
     dependencies:
+      '@deepcode/app-server':
+        specifier: workspace:*
+        version: link:../server
       '@deepcode/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -118,6 +121,25 @@ importers:
       '@deepcode/core':
         specifier: workspace:*
         version: link:../../packages/core
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.19.19
+      typescript:
+        specifier: ^5.7.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@22.19.19)
+
+  apps/server:
+    dependencies:
+      '@deepcode/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@deepcode/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

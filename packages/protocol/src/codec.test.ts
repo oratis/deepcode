@@ -16,6 +16,23 @@ describe('protocol codec', () => {
     expect(decodeProtocolRequest(encodeProtocolMessage(request))).toEqual(request);
   });
 
+  it('encodes event notifications without a request id', () => {
+    expect(
+      encodeProtocolMessage({
+        method: 'event',
+        params: {
+          type: 'item.delta',
+          threadId: 'thread-1',
+          turnId: 'turn-1',
+          itemId: 'item-1',
+          delta: 'hello',
+        },
+      }),
+    ).toBe(
+      '{"method":"event","params":{"type":"item.delta","threadId":"thread-1","turnId":"turn-1","itemId":"item-1","delta":"hello"}}',
+    );
+  });
+
   it.each(['{}', '{"id":1,"method":"unknown"}', '{"id":1,"method":"initialize","params":[]}'])(
     'rejects an invalid request: %s',
     (raw) => {

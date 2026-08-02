@@ -77,7 +77,12 @@ export interface ProtocolRequest {
 }
 
 export interface ProtocolResponse {
-  id: string | number;
+  id: string | number | null;
   result?: unknown;
   error?: { code: string; message: string };
+}
+
+export interface ProtocolNotification {
+  method: 'event';
+  params: ProtocolEvent;
 }

@@ -1,4 +1,9 @@
-import type { ProtocolMethod, ProtocolRequest, ProtocolResponse } from './types.js';
+import type {
+  ProtocolMethod,
+  ProtocolNotification,
+  ProtocolRequest,
+  ProtocolResponse,
+} from './types.js';
 
 const protocolMethods = new Set<ProtocolMethod>([
   'initialize',
@@ -9,7 +14,9 @@ const protocolMethods = new Set<ProtocolMethod>([
   'turn/interrupt',
 ]);
 
-export function encodeProtocolMessage(message: ProtocolRequest | ProtocolResponse): string {
+export function encodeProtocolMessage(
+  message: ProtocolRequest | ProtocolResponse | ProtocolNotification,
+): string {
   return JSON.stringify(message);
 }
 

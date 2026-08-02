@@ -1,0 +1,38 @@
+{
+  "name": "@deepcode/app-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Experimental DeepCode runtime protocol server",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "deepcode-app-server": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "lint": "echo 'lint: configured at workspace root' && exit 0",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@deepcode/core": "workspace:*",
+    "@deepcode/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
