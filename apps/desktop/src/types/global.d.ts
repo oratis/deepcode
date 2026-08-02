@@ -1,6 +1,8 @@
 // Canonical renderer types. Window.deepcode is installed at runtime by
 // src/lib/window-shim.ts (which uses Tauri's invoke() under the hood).
 
+import type { ConfigDiagnosticsResult } from '@deepcode/protocol';
+
 export interface UpdateInfo {
   version: string;
   releaseNotes?: string;
@@ -45,6 +47,7 @@ export interface DeepCodeAPI {
   };
   settings: {
     load: () => Promise<Record<string, unknown>>;
+    diagnostics: (args: { cwd: string }) => Promise<ConfigDiagnosticsResult>;
   };
   sessions: {
     list: (args?: { limit?: number }) => Promise<SessionListEntry[]>;

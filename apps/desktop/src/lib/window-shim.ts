@@ -8,6 +8,7 @@ import {
   abortProtocolTurn,
   answerProtocolRequest,
   approveProtocolRequest,
+  getConfigDiagnostics,
   installProtocolAgentEmitter,
   resumeProtocolThread,
   startProtocolTurn,
@@ -58,6 +59,9 @@ export function installTauriShim(): void {
     settings: {
       load() {
         return loadSettingsFile();
+      },
+      diagnostics({ cwd }) {
+        return getConfigDiagnostics(cwd);
       },
     },
     sessions: {

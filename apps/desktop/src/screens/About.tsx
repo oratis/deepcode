@@ -2,6 +2,7 @@
 // Brand mark + version + diagnostics + docs links.
 
 import { useEffect, useState } from 'react';
+import type { ConfigDiagnosticsResult } from '@deepcode/protocol';
 import { BrandMark } from '../components/BrandMark.js';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
 import { loadProjectPath } from '../lib/project.js';
@@ -12,6 +13,8 @@ interface Diag {
   hasCreds: boolean;
   baseURL?: string;
   projectPath?: string;
+  config?: ConfigDiagnosticsResult;
+  configError?: string;
 }
 
 export function AboutScreen(): JSX.Element {
@@ -24,11 +27,22 @@ export function AboutScreen(): JSX.Element {
         window.deepcode.creds.load(),
         loadProjectPath(),
       ]);
+      let config: ConfigDiagnosticsResult | undefined;
+      let configError: string | undefined;
+      if (projectPath) {
+        try {
+          config = await window.deepcode.settings.diagnostics({ cwd: projectPath });
+        } catch (error) {
+          configError = (error as Error).message ?? String(error);
+        }
+      }
       setDiag({
         version,
         hasCreds: creds.hasKey,
         baseURL: creds.baseURL,
         projectPath,
+        config,
+        configError,
       });
     })();
   }, []);
@@ -97,6 +111,39 @@ export function AboutScreen(): JSX.Element {
               {diag.baseURL ?? 'https://api.deepseek.com/v1'}
             </code>
           </Row>
+          <Row label="Project trust">
+            {diag.config ? (
+              <span
+                style={{
+                  color: diag.config.trustStatus === 'trusted' ? 'var(--accent)' : 'var(--warn)',
+                }}
+              >
+                {diag.config.trustStatus}
+              </span>
+            ) : (
+              <span style={{ color: diag.configError ? 'var(--error)' : 'var(--text-3)' }}>
+                {diag.configError ?? 'choose a project to inspect'}
+              </span>
+            )}
+          </Row>
+          {diag.config && (
+            <>
+              <Row label="Configuration layers">
+                {diag.config.layers.filter((layer) => layer.present).length} loaded ·{' '}
+                {Object.keys(diag.config.provenance).length} effective keys
+              </Row>
+              <Row label="Trust-gated fields">
+                {diag.config.gated.length ? diag.config.gated.join(', ') : 'none'}
+              </Row>
+              <Row label="Configuration issues">
+                <span
+                  style={{ color: diag.config.issues.length ? 'var(--warn)' : 'var(--accent)' }}
+                >
+                  {diag.config.issues.length}
+                </span>
+              </Row>
+            </>
+          )}
 
           <SectionTitle>Paths</SectionTitle>
           <Row label="Credentials" hint="0600 perms — never readable by other users">

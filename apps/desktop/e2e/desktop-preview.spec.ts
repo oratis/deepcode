@@ -79,3 +79,14 @@ test('opens source, diff, and history from the file activity rail', async ({ pag
   await panel.getByRole('button', { name: 'History', exact: true }).click();
   await expect(panel.locator('.fp-hist-row')).toHaveCount(3);
 });
+
+test('shows the shared trust-aware configuration diagnostics in About', async ({ page }) => {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByRole('button', { name: 'ⓘ About', exact: true }).click();
+
+  const main = page.getByRole('main');
+  await expect(main.getByText('Diagnostics', { exact: true })).toBeVisible();
+  await expect(main.getByText('untrusted', { exact: true })).toBeVisible();
+  await expect(main.getByText('permissions', { exact: true })).toBeVisible();
+  await expect(main.getByText('1', { exact: true })).toBeVisible();
+});

@@ -1,4 +1,5 @@
 import type {
+  ConfigDiagnosticsResult,
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
@@ -81,6 +82,14 @@ export class DesktopProtocolAgent {
     const thread = await this.transport.request<ThreadSnapshot>('thread/resume', { threadId });
     this.adoptThread(thread.id);
     return thread;
+  }
+
+  async diagnostics(cwd: string): Promise<ConfigDiagnosticsResult> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.configDiagnostics) {
+      throw new Error('The app-server does not support configuration diagnostics');
+    }
+    return this.transport.request('config/diagnostics', { cwd });
   }
 
   clear(): void {
@@ -291,6 +300,10 @@ export function resumeProtocolThread(threadId: string) {
 
 export function clearProtocolThread(): void {
   defaultAgent.clear();
+}
+
+export function getConfigDiagnostics(cwd: string) {
+  return defaultAgent.diagnostics(cwd);
 }
 
 export function abortProtocolTurn(turnId: string) {

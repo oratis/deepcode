@@ -6,15 +6,16 @@ LSP plugin) can drive DeepCode via `workspace/executeCommand`.
 
 ## Custom commands
 
-| Command                     | Args                                            | Returns                   |
-| --------------------------- | ----------------------------------------------- | ------------------------- |
-| `deepcode.runAgent`         | `{ prompt, threadId?, model?, effort?, mode? }` | `{ threadId, turnId }`    |
-| `deepcode.abort`            | `{ turnId }`                                    | `{ aborted }`             |
-| `deepcode.readThread`       | `{ threadId }`                                  | protocol thread snapshot  |
-| `deepcode.resumeThread`     | `{ threadId }`                                  | resumed protocol snapshot |
-| `deepcode.respondApproval`  | `{ turnId, requestId, decision }`               | `{ accepted }`            |
-| `deepcode.respondUserInput` | `{ turnId, requestId, answer }`                 | `{ accepted }`            |
-| `deepcode.listSkills`       | none                                            | `{ skills: SkillRow[] }`  |
+| Command                      | Args                                            | Returns                                            |
+| ---------------------------- | ----------------------------------------------- | -------------------------------------------------- |
+| `deepcode.runAgent`          | `{ prompt, threadId?, model?, effort?, mode? }` | `{ threadId, turnId }`                             |
+| `deepcode.abort`             | `{ turnId }`                                    | `{ aborted }`                                      |
+| `deepcode.readThread`        | `{ threadId }`                                  | protocol thread snapshot                           |
+| `deepcode.resumeThread`      | `{ threadId }`                                  | resumed protocol snapshot                          |
+| `deepcode.respondApproval`   | `{ turnId, requestId, decision }`               | `{ accepted }`                                     |
+| `deepcode.respondUserInput`  | `{ turnId, requestId, answer }`                 | `{ accepted }`                                     |
+| `deepcode.listSkills`        | none                                            | `{ skills: SkillRow[] }`                           |
+| `deepcode.configDiagnostics` | none                                            | value-free config sources, trust gates, and issues |
 
 Lifecycle, structured tool, usage, approval, and user-input events are sent unchanged as
 `deepcode/protocolEvent` notifications:
@@ -115,6 +116,6 @@ In `Preferences → Package Settings → LSP → Settings`:
 
 ## Current scope
 
-The bridge covers thread start/read/resume, turn start/interrupt, structured events, approvals, and
-AskUserQuestion. Multi-client attachment and shared-daemon authentication remain intentionally out
-of scope for protocol v1.
+The bridge covers thread start/read/resume, turn start/interrupt, structured events, approvals,
+AskUserQuestion, and configuration diagnostics. Multi-client attachment and shared-daemon
+authentication remain intentionally out of scope for protocol v1.

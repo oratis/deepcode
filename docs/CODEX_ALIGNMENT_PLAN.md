@@ -316,6 +316,8 @@ model tool call
 
 - JSON config 已增加逐叶 JSON Pointer provenance 与不含值的 diagnostics；CLI/desktop/editor
   app-server 现在共享 core trust store，未信任项目不能通过 permissions/sandbox/env 等字段扩大权限。
+- CLI doctor、Desktop About、VS Code command 与 LSP command 均消费同一个 diagnostics DTO，
+  客户端不再自行解释配置来源或 trust gate。
 - 下一步统一 `AGENTS.md`、`DEEPCODE.md`、MCP、skills、plugins、hooks。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
 - diff review、可定位反馈、trace id、结构化日志与脱敏导出。

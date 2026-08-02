@@ -15,13 +15,13 @@ deepcode upgrade                        # CLI self-update
 
 ## Action triggers
 
-| Flag                     | Effect                                    | Milestone |
-| ------------------------ | ----------------------------------------- | --------- |
-| `-h`, `--help`           | Print usage                               | M2 ✅     |
-| `-v`, `--version`        | Print version                             | M2 ✅     |
-| `doctor`                 | Health check (node / paths / API key)     | M2 ✅     |
-| `upgrade`                | Print `npm i -g deepcode-cli@latest` hint | M2 ✅     |
-| `-p`, `--print <prompt>` | Headless one-shot                         | M8        |
+| Flag                     | Effect                                                              | Milestone |
+| ------------------------ | ------------------------------------------------------------------- | --------- |
+| `-h`, `--help`           | Print usage                                                         | M2 ✅     |
+| `-v`, `--version`        | Print version                                                       | M2 ✅     |
+| `doctor`                 | Health check (runtime, credentials, config provenance/trust/issues) | M2 ✅     |
+| `upgrade`                | Print `npm i -g deepcode-cli@latest` hint                           | M2 ✅     |
+| `-p`, `--print <prompt>` | Headless one-shot                                                   | M8        |
 
 ## Session shaping
 
