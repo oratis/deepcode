@@ -28,6 +28,9 @@ The gate fails unless all of the following hold:
    and resume the same canonical thread.
 5. Desktop, VS Code, and LSP production sources do not import the provider, credentials, agent loop,
    or `RuntimeHost`, and do not contain renderer credential escape hatches.
+6. The Tauri renderer has no filesystem default capability, process-exit capability, file-reveal
+   capability, or provider API CSP access; required dialog, URL-open, and restart features use
+   narrow allow permissions.
 
 The current budgets deliberately leave cross-platform CI headroom over the measured baseline. A
 budget increase requires a PR description with before/after measurements and an explanation of the

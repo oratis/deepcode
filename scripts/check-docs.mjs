@@ -28,6 +28,7 @@ const currentDocs = [
   'CONTRIBUTING.md',
   'packages/core/README.md',
   'docs/quickstart.md',
+  'docs/security-model.md',
   'docs/RELEASING.md',
   'docs/design/release-gates-v1.md',
 ];

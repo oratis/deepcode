@@ -1,6 +1,6 @@
 # DeepCode Security Model
 
-> Last updated: 2026-08-01 (shared app-server trust and config provenance)
+> Last updated: 2026-08-01 (shared app-server trust, provenance, and thin-client capabilities)
 
 This document is the **single source of truth** for what DeepCode protects
 against, what it doesn't, and how each layer composes. If you're reviewing a
@@ -17,12 +17,22 @@ decreasing order of operator severity:
 | 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call  | High             | M3.5 sandbox + M5.1 env strip                                           |
 | 2   | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)    | High             | M3.5 sandbox + permissions                                              |
 | 3   | Plugin (third-party code) does either #1 or #2                           | High             | M5.1 subprocess + (M5.1-ext) OS sandbox                                 |
-| 4   | Hook script (third-party shell snippet) does either #1 or #2             | Medium           | M3.5 sandbox wraps Bash; hooks bypass when invoked via /bin/sh directly |
+| 4   | Hook script (third-party shell snippet) does either #1 or #2             | Medium           | Exact-definition review + source trust; hook commands remain host code  |
 | 5   | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule | Medium           | escapeSbpl()                                                            |
 | 6   | Untrusted project's AGENTS.md drives the agent into harmful action       | Low              | Trust store (`/trust`)                                                  |
 | 7   | DNS exfiltration of secrets from sandboxed Bash                          | Partly mitigated | M3.5-ext DNS allowlist (netns.ts) — names only; raw-IP dials still pass |
 
 ## Defence layers
+
+### Runtime placement — thin clients
+
+The Tauri WebView, VS Code extension, and LSP process are protocol clients, not trusted runtimes.
+Provider credentials, model calls, tools, permissions, hooks, MCP, and plugins stay in the CLI host
+or app-server. The Tauri capability set is least-privilege: file/folder selection, default
+HTTP(S)/mailto/tel URL opening, updater operations, and application restart. It has no Tauri
+filesystem plugin, shell permission, generic process-exit permission, file-reveal permission, or CSP
+route to the provider API. Read-only file preview and session history use explicit Rust commands
+that reject the backend credential path; all workspace mutations use the versioned protocol.
 
 ### Layer 0 — Trust store
 
@@ -124,15 +134,16 @@ not an oversight. (M5.2 will add per-clause analysis.)
 
 Plugins run in their own `node` subprocess with:
 
-- **No host fs/net access** in plugin code — all capabilities (`fs_read`,
-  `fs_write`, `bash`, `fetch`) flow via JSON-RPC over stdio back to the host,
-  which applies its own mode/permission/sandbox stack.
+- **Gated host capabilities** — declared `fs_read`, `fs_write`, `bash`, and `fetch` requests flow via
+  JSON-RPC over stdio back to the host, which applies mode, permission, hook, approval, and sandbox
+  policy. This controls the supported plugin API; it is not yet an OS boundary against a malicious
+  plugin using Node APIs directly.
 - **Token-protected RPC** — host generates an unguessable token per plugin
   spawn; every RPC from the plugin must include it.
 - **Env scrub** — `DEEPSEEK_API_KEY` and `DEEPSEEK_AUTH_TOKEN` are stripped
   from the child env. Plugins cannot read DeepSeek credentials.
-- **Hash pin** — plugin code is SHA-256 hashed at install time; mismatch on
-  load fails open (drift detection).
+- **Whole-install hash pin** — every installed plugin file contributes to the SHA-256 trust hash;
+  missing trust or any drift disables the plugin and reports a diagnostic.
 
 **Acknowledged gaps**:
 
@@ -166,25 +177,25 @@ etc.) as **untrusted**. We:
 
 ## Attack-vector test suite
 
-`packages/core/src/sandbox/attacks.test.ts` contains 17 tests:
+`packages/core/src/sandbox/attacks.test.ts` and the platform integration suites cover:
 
-- **6 unit-level** "hostile input → safe output" tests:
+- **Unit-level** "hostile input → safe output" cases:
   - SBPL paren/quote escaping
   - SBPL backslash escaping
   - deny-after-allow ordering
   - no implicit network when allowedDomains is empty
   - no implicit file-write to /usr, /System, /Library
-- **3 bwrap-arg safety** tests:
+- **bwrap-argument safety** cases:
   - no --share-net even with a non-empty allowedDomains (connectivity comes from
     slirp4netns externally, never by sharing the host netns)
   - only cwd is bare --bind
   - always --unshare-{pid,ipc,uts}
-- **4 excluded-command spoofing** tests:
+- **Excluded-command spoofing** cases:
   - prefix-only match (`gitleaks`) does NOT bypass
   - exact match bypasses
   - leading-token match bypasses
   - pipeline-after-excluded bypasses (documented behavior; M5.2 hardens)
-- **2 sandbox-exec e2e** (macOS, runIf the binary exists):
+- **sandbox-exec e2e** (macOS, runIf the binary exists):
   - block write to `/usr/local/bin/*`
   - profile is syntactically valid (smoke)
 - **bwrap e2e** (Linux CI, runIf `bwrap` exists — `bwrap-integration.test.ts`):
