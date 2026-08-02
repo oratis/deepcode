@@ -1,5 +1,4 @@
-// Session storage — jsonl persistence at ~/.deepcode/sessions/<sessionId>.jsonl
-// Each line is one StoredMessage envelope.
+// Session storage — canonical v1 JSONL plus read-only legacy compatibility.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.5
 
 import { promises as fs } from 'node:fs';
@@ -7,7 +6,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { StoredMessage } from '../types.js';
 
-export type SessionFormat = 'core-v0' | 'desktop-v0' | 'empty';
+export type SessionFormat = 'canonical-v1' | 'core-v0' | 'desktop-v0' | 'empty';
 
 export interface SessionDiagnostic {
   line: number;
@@ -38,6 +37,13 @@ export class SessionCorruptionError extends Error {
   }
 }
 
+export class SessionWriterConflictError extends Error {
+  constructor(readonly sessionId: string) {
+    super(`Session ${sessionId} already has an active writer`);
+    this.name = 'SessionWriterConflictError';
+  }
+}
+
 export interface SessionMeta {
   id: string;
   cwd: string;
@@ -52,33 +58,52 @@ export function defaultSessionsDir(): string {
 }
 
 export interface SessionFiles {
+  /** Read-only core v0 metadata sidecar. */
   metaPath: string;
+  /** Canonical v1 stream used for all new writes. */
   jsonlPath: string;
+  /** Read-only core/desktop v0 stream. */
+  legacyJsonlPath: string;
+  writerLockPath: string;
   snapshotsDir: string;
 }
 
 export function sessionFiles(root: string, sessionId: string): SessionFiles {
   return {
     metaPath: join(root, `${sessionId}.meta.json`),
-    jsonlPath: join(root, `${sessionId}.jsonl`),
+    jsonlPath: join(root, `${sessionId}.v1.jsonl`),
+    legacyJsonlPath: join(root, `${sessionId}.jsonl`),
+    writerLockPath: join(root, `${sessionId}.writer.lock`),
     snapshotsDir: join(root, sessionId, 'snapshots'),
   };
 }
 
 export async function writeMeta(root: string, meta: SessionMeta): Promise<void> {
   const files = sessionFiles(root, meta.id);
-  await fs.mkdir(dirname(files.metaPath), { recursive: true });
-  await fs.writeFile(files.metaPath, JSON.stringify(meta, null, 2), 'utf8');
+  await withWriterLock(files, meta.id, async () => {
+    let messages: StoredMessage[] = [];
+    try {
+      const parsed = await readRecordsFromPath(files.jsonlPath);
+      const fatal = parsed.diagnostics.filter((diagnostic) => diagnostic.fatal);
+      if (fatal.length > 0) throw new SessionCorruptionError(meta.id, fatal);
+      messages = parsed.messages;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    await writeCanonical(files.jsonlPath, meta, messages);
+  });
 }
 
 export async function readMeta(root: string, sessionId: string): Promise<SessionMeta | null> {
   const files = sessionFiles(root, sessionId);
+  const records = await readSessionRecords(root, sessionId);
+  if (records.format === 'canonical-v1' && records.meta) return records.meta;
   try {
     const raw = await fs.readFile(files.metaPath, 'utf8');
     return JSON.parse(raw) as SessionMeta;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-      return (await readSessionRecords(root, sessionId)).meta;
+      return records.meta;
     }
     throw err;
   }
@@ -90,8 +115,10 @@ export async function appendMessage(
   message: StoredMessage,
 ): Promise<void> {
   const files = sessionFiles(root, sessionId);
-  await fs.mkdir(dirname(files.jsonlPath), { recursive: true });
-  await fs.appendFile(files.jsonlPath, JSON.stringify(message) + '\n', 'utf8');
+  await withWriterLock(files, sessionId, async () => {
+    await ensureCanonical(sessionId, files);
+    await fs.appendFile(files.jsonlPath, JSON.stringify(messageRecord(message)) + '\n', 'utf8');
+  });
 }
 
 export async function readMessages(root: string, sessionId: string): Promise<StoredMessage[]> {
@@ -115,14 +142,108 @@ function desktopMeta(value: Record<string, unknown>, updatedAt: string): Session
       : typeof value.created_at === 'string'
         ? value.created_at
         : updatedAt;
+  const normalizedUpdatedAt =
+    value.schema_version === 1 && typeof value.updated_at === 'string'
+      ? value.updated_at
+      : updatedAt;
   return {
     id: value.id,
     cwd: typeof value.cwd === 'string' ? value.cwd : '',
     createdAt,
-    updatedAt,
+    updatedAt: normalizedUpdatedAt,
     model: typeof value.model === 'string' ? value.model : undefined,
     title: typeof value.title === 'string' ? value.title : undefined,
   };
+}
+
+function metaRecord(meta: SessionMeta): Record<string, unknown> {
+  return {
+    type: 'session_meta',
+    schema_version: 1,
+    id: meta.id,
+    cwd: meta.cwd,
+    created_at: meta.createdAt,
+    updated_at: meta.updatedAt,
+    ...(meta.model ? { model: meta.model } : {}),
+    ...(meta.title ? { title: meta.title } : {}),
+  };
+}
+
+function messageRecord(message: StoredMessage): Record<string, unknown> {
+  return { type: 'message', schema_version: 1, ...message };
+}
+
+async function writeCanonical(
+  path: string,
+  meta: SessionMeta,
+  messages: StoredMessage[],
+): Promise<void> {
+  const tempPath = `${path}.${process.pid}.${Date.now()}.tmp`;
+  const body = [metaRecord(meta), ...messages.map(messageRecord)]
+    .map((record) => JSON.stringify(record))
+    .join('\n');
+  await fs.writeFile(tempPath, body + '\n', { encoding: 'utf8', flag: 'wx' });
+  await fs.rename(tempPath, path);
+}
+
+async function withWriterLock<T>(
+  files: SessionFiles,
+  sessionId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  await fs.mkdir(dirname(files.writerLockPath), { recursive: true });
+  let lock: Awaited<ReturnType<typeof fs.open>>;
+  try {
+    lock = await fs.open(files.writerLockPath, 'wx');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
+      throw new SessionWriterConflictError(sessionId);
+    }
+    throw error;
+  }
+  try {
+    await lock.writeFile(JSON.stringify({ pid: process.pid, createdAt: new Date().toISOString() }));
+    return await operation();
+  } finally {
+    await lock.close();
+    await fs.unlink(files.writerLockPath).catch(() => undefined);
+  }
+}
+
+async function ensureCanonical(sessionId: string, files: SessionFiles): Promise<void> {
+  try {
+    await fs.access(files.jsonlPath);
+    return;
+  } catch {
+    // Normalize below while holding the writer lock.
+  }
+
+  const legacy = await readRecordsFromPath(files.legacyJsonlPath).catch(
+    (error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') {
+        return { format: 'empty', meta: null, messages: [], diagnostics: [] } as SessionReadResult;
+      }
+      throw error;
+    },
+  );
+  const fatal = legacy.diagnostics.filter((diagnostic) => diagnostic.fatal);
+  if (fatal.length > 0) throw new SessionCorruptionError(sessionId, fatal);
+
+  let sidecar: SessionMeta | null = null;
+  try {
+    sidecar = JSON.parse(await fs.readFile(files.metaPath, 'utf8')) as SessionMeta;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  const now = new Date().toISOString();
+  const meta = legacy.meta ??
+    sidecar ?? {
+      id: sessionId,
+      cwd: '',
+      createdAt: now,
+      updatedAt: now,
+    };
+  await writeCanonical(files.jsonlPath, meta, legacy.messages);
 }
 
 /** Parse both historical JSONL layouts without modifying either one. */
@@ -131,21 +252,24 @@ export async function readSessionRecords(
   sessionId: string,
 ): Promise<SessionReadResult> {
   const files = sessionFiles(root, sessionId);
-  let raw: string;
-  let updatedAt: string;
   try {
-    const [text, stat] = await Promise.all([
-      fs.readFile(files.jsonlPath, 'utf8'),
-      fs.stat(files.jsonlPath),
-    ]);
-    raw = text;
-    updatedAt = stat.mtime.toISOString();
+    return await readRecordsFromPath(files.jsonlPath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+  }
+  try {
+    return await readRecordsFromPath(files.legacyJsonlPath);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       return { format: 'empty', meta: null, messages: [], diagnostics: [] };
     }
     throw error;
   }
+}
+
+async function readRecordsFromPath(path: string): Promise<SessionReadResult> {
+  const [raw, stat] = await Promise.all([fs.readFile(path, 'utf8'), fs.stat(path)]);
+  const updatedAt = stat.mtime.toISOString();
 
   const lines = raw.split('\n');
   let lastContentIndex = -1;
@@ -190,12 +314,14 @@ export async function readSessionRecords(
 
     const record = value as Record<string, unknown>;
     if (record.type === 'session_meta') {
-      format = 'desktop-v0';
+      format = record.schema_version === 1 ? 'canonical-v1' : 'desktop-v0';
       meta ??= desktopMeta(record, updatedAt);
       continue;
     }
     if (record.type === 'message') {
-      format = 'desktop-v0';
+      if (format !== 'canonical-v1') {
+        format = record.schema_version === 1 ? 'canonical-v1' : 'desktop-v0';
+      }
       if (isStoredMessage(record)) {
         messages.push({
           role: record.role,
@@ -242,6 +368,7 @@ export async function listSessions(root: string): Promise<SessionMeta[]> {
   const ids = new Set<string>();
   for (const entry of entries) {
     if (entry.endsWith('.meta.json')) ids.add(entry.slice(0, -'.meta.json'.length));
+    else if (entry.endsWith('.v1.jsonl')) ids.add(entry.slice(0, -'.v1.jsonl'.length));
     else if (entry.endsWith('.jsonl')) ids.add(entry.slice(0, -'.jsonl'.length));
   }
   const metas = await Promise.all(
@@ -256,13 +383,6 @@ export async function listSessions(root: string): Promise<SessionMeta[]> {
   return metas
     .filter((m): m is SessionMeta => m !== null)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
-export async function touchSession(root: string, sessionId: string): Promise<void> {
-  const meta = await readMeta(root, sessionId);
-  if (!meta) return;
-  meta.updatedAt = new Date().toISOString();
-  await writeMeta(root, meta);
 }
 
 export function newSessionId(): string {

@@ -10,6 +10,7 @@ import {
   readMeta,
   readSessionRecords,
   SessionCorruptionError,
+  SessionWriterConflictError,
   sessionFiles,
   writeMeta,
 } from './storage.js';
@@ -63,6 +64,15 @@ describe('session storage', () => {
     expect(got[0]?.role).toBe('user');
     expect(got[1]?.role).toBe('assistant');
     if (got[0]?.content[0]?.type === 'text') expect(got[0].content[0].text).toBe('hello');
+    const records = (await readFile(sessionFiles(root, id).jsonlPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(records[0]).toMatchObject({ type: 'session_meta', schema_version: 1, id });
+    expect(records.slice(1)).toEqual([
+      expect.objectContaining({ type: 'message', schema_version: 1, role: 'user' }),
+      expect.objectContaining({ type: 'message', schema_version: 1, role: 'assistant' }),
+    ]);
   });
 
   it('readMessages returns [] when jsonl missing', async () => {
@@ -71,7 +81,7 @@ describe('session storage', () => {
 
   it('reads desktop header + typed message JSONL without changing its bytes', async () => {
     const id = 'desktop-old';
-    const path = sessionFiles(root, id).jsonlPath;
+    const path = sessionFiles(root, id).legacyJsonlPath;
     const original = [
       JSON.stringify({
         type: 'session_meta',
@@ -101,7 +111,7 @@ describe('session storage', () => {
   it('tolerates only an incomplete final JSONL record', async () => {
     const id = 'truncated-tail';
     await writeFile(
-      sessionFiles(root, id).jsonlPath,
+      sessionFiles(root, id).legacyJsonlPath,
       `${JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'complete' }] })}\n{"role":"assistant"`,
       'utf8',
     );
@@ -117,7 +127,7 @@ describe('session storage', () => {
   it('reports middle corruption instead of silently dropping history', async () => {
     const id = 'middle-corrupt';
     await writeFile(
-      sessionFiles(root, id).jsonlPath,
+      sessionFiles(root, id).legacyJsonlPath,
       [
         JSON.stringify({ role: 'user', content: [{ type: 'text', text: 'before' }] }),
         '{not-json}',
@@ -154,7 +164,7 @@ describe('session storage', () => {
 
   it('listSessions includes desktop-only JSONL sessions', async () => {
     await writeFile(
-      sessionFiles(root, 'desktop-list').jsonlPath,
+      sessionFiles(root, 'desktop-list').legacyJsonlPath,
       `${JSON.stringify({
         type: 'session_meta',
         id: 'desktop-list',
@@ -171,7 +181,53 @@ describe('session storage', () => {
   it('sessionFiles returns sensible paths', () => {
     const f = sessionFiles('/root', 'abc');
     expect(f.metaPath).toBe('/root/abc.meta.json');
-    expect(f.jsonlPath).toBe('/root/abc.jsonl');
+    expect(f.jsonlPath).toBe('/root/abc.v1.jsonl');
+    expect(f.legacyJsonlPath).toBe('/root/abc.jsonl');
+    expect(f.writerLockPath).toBe('/root/abc.writer.lock');
     expect(f.snapshotsDir).toBe('/root/abc/snapshots');
+  });
+
+  it('normalizes a legacy core session without changing legacy bytes', async () => {
+    const id = 'legacy-normalize';
+    const files = sessionFiles(root, id);
+    const legacyMeta = JSON.stringify(
+      {
+        id,
+        cwd: '/legacy',
+        createdAt: '2025-01-01T00:00:00.000Z',
+        updatedAt: '2025-01-01T00:00:00.000Z',
+      },
+      null,
+      2,
+    );
+    const legacyJsonl = `${JSON.stringify({
+      role: 'user',
+      content: [{ type: 'text', text: 'old' }],
+    })}\n`;
+    await writeFile(files.metaPath, legacyMeta, 'utf8');
+    await writeFile(files.legacyJsonlPath, legacyJsonl, 'utf8');
+
+    await appendMessage(root, id, {
+      role: 'assistant',
+      content: [{ type: 'text', text: 'new' }],
+    });
+
+    expect(await readFile(files.metaPath, 'utf8')).toBe(legacyMeta);
+    expect(await readFile(files.legacyJsonlPath, 'utf8')).toBe(legacyJsonl);
+    const parsed = await readSessionRecords(root, id);
+    expect(parsed.format).toBe('canonical-v1');
+    expect(parsed.meta).toMatchObject({ id, cwd: '/legacy' });
+    expect(parsed.messages).toHaveLength(2);
+  });
+
+  it('rejects a second writer instead of interleaving records', async () => {
+    const id = 'writer-owned';
+    const files = sessionFiles(root, id);
+    await writeFile(files.writerLockPath, '{"pid":1}', 'utf8');
+
+    await expect(
+      appendMessage(root, id, { role: 'user', content: [{ type: 'text', text: 'x' }] }),
+    ).rejects.toBeInstanceOf(SessionWriterConflictError);
+    await expect(readFile(files.jsonlPath, 'utf8')).rejects.toThrow();
   });
 });

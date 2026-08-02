@@ -4,6 +4,8 @@
 use crate::credentials::{self, Credentials};
 use crate::settings;
 use serde::Serialize;
+use std::collections::HashMap;
+use std::io::Write;
 use std::path::PathBuf;
 
 #[derive(Serialize)]
@@ -137,9 +139,10 @@ pub fn session_create(cwd: String) -> Result<String, String> {
     let id = format!("{}-{}", date, rand_id);
     let dir = home.join(".deepcode").join("sessions");
     std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
-    let path = dir.join(format!("{}.jsonl", id));
+    let path = dir.join(format!("{}.v1.jsonl", id));
     let header = serde_json::json!({
         "type": "session_meta",
+        "schema_version": 1,
         "id": id,
         "cwd": cwd,
         "created_at": secs,
@@ -153,15 +156,18 @@ pub fn session_create(cwd: String) -> Result<String, String> {
 /// Append a single JSON line to a session's JSONL file.
 #[tauri::command]
 pub fn session_append(id: String, message: serde_json::Value) -> Result<(), String> {
+    safe_session_id(&id)?;
     let Some(home) = dirs::home_dir() else {
         return Err("no home directory".into());
     };
-    let path = home
-        .join(".deepcode")
-        .join("sessions")
-        .join(format!("{}.jsonl", id));
-    let line = format!("{}\n", message);
-    use std::io::Write;
+    let dir = home.join(".deepcode").join("sessions");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir {}: {}", dir.display(), e))?;
+    let _lock = SessionWriterLock::acquire(&dir, &id)?;
+    let path = ensure_canonical_session(&dir, &id)?;
+    let mut normalized = message;
+    normalized["type"] = serde_json::Value::String("message".to_string());
+    normalized["schema_version"] = serde_json::Value::Number(1.into());
+    let line = format!("{}\n", normalized);
     let mut f = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -177,19 +183,101 @@ pub fn session_append(id: String, message: serde_json::Value) -> Result<(), Stri
 /// timestamp }`. Returns an empty vec if the file doesn't exist.
 #[tauri::command]
 pub fn session_read(id: String) -> Result<Vec<serde_json::Value>, String> {
+    safe_session_id(&id)?;
     let Some(home) = dirs::home_dir() else {
         return Err("no home directory".into());
     };
-    let path = home
-        .join(".deepcode")
-        .join("sessions")
-        .join(format!("{}.jsonl", id));
+    let dir = home.join(".deepcode").join("sessions");
+    let path = readable_session_path(&dir, &id);
     let text = match std::fs::read_to_string(&path) {
         Ok(t) => t,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(format!("read {}: {}", path.display(), e)),
     };
     parse_session_messages(&text)
+}
+
+struct SessionWriterLock {
+    path: PathBuf,
+}
+
+impl SessionWriterLock {
+    fn acquire(dir: &std::path::Path, id: &str) -> Result<Self, String> {
+        let path = dir.join(format!("{id}.writer.lock"));
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|e| {
+                if e.kind() == std::io::ErrorKind::AlreadyExists {
+                    format!("session {id} already has an active writer")
+                } else {
+                    format!("open {}: {}", path.display(), e)
+                }
+            })?;
+        writeln!(file, "pid={}", std::process::id()).map_err(|e| e.to_string())?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for SessionWriterLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn readable_session_path(dir: &std::path::Path, id: &str) -> PathBuf {
+    let canonical = dir.join(format!("{id}.v1.jsonl"));
+    if canonical.exists() {
+        canonical
+    } else {
+        dir.join(format!("{id}.jsonl"))
+    }
+}
+
+fn ensure_canonical_session(dir: &std::path::Path, id: &str) -> Result<PathBuf, String> {
+    let canonical = dir.join(format!("{id}.v1.jsonl"));
+    if canonical.exists() {
+        return Ok(canonical);
+    }
+    let legacy = dir.join(format!("{id}.jsonl"));
+    let text = match std::fs::read_to_string(&legacy) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("read {}: {}", legacy.display(), error)),
+    };
+    let messages = parse_session_messages(&text)?;
+    let sidecar = dir.join(format!("{id}.meta.json"));
+    let legacy_meta = std::fs::read_to_string(sidecar)
+        .ok()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok());
+    let mut header = text
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .find(|value| value.get("type").and_then(|v| v.as_str()) == Some("session_meta"))
+        .or(legacy_meta)
+        .unwrap_or_else(|| serde_json::json!({ "type": "session_meta", "id": id, "cwd": "" }));
+    header["type"] = serde_json::Value::String("session_meta".to_string());
+    header["schema_version"] = serde_json::Value::Number(1.into());
+    header["id"] = serde_json::Value::String(id.to_string());
+    if let Some(created_at) = header.get("createdAt").cloned() {
+        header["created_at"] = created_at;
+    }
+    if let Some(updated_at) = header.get("updatedAt").cloned() {
+        header["updated_at"] = updated_at;
+    }
+    let mut lines = vec![header.to_string()];
+    for mut message in messages {
+        message["type"] = serde_json::Value::String("message".to_string());
+        message["schema_version"] = serde_json::Value::Number(1.into());
+        lines.push(message.to_string());
+    }
+    let temp = dir.join(format!("{id}.v1.{}.tmp", std::process::id()));
+    std::fs::write(&temp, lines.join("\n") + "\n")
+        .map_err(|e| format!("write {}: {}", temp.display(), e))?;
+    std::fs::rename(&temp, &canonical)
+        .map_err(|e| format!("rename {}: {}", temp.display(), e))?;
+    Ok(canonical)
 }
 
 fn parse_session_messages(text: &str) -> Result<Vec<serde_json::Value>, String> {
@@ -314,13 +402,13 @@ fn derive_session_title(path: &std::path::Path) -> Option<String> {
 /// Set (or clear, with "") a session's manual title on its session_meta header.
 #[tauri::command]
 pub fn session_set_title(id: String, title: String) -> Result<(), String> {
+    safe_session_id(&id)?;
     let Some(home) = dirs::home_dir() else {
         return Err("no home directory".into());
     };
-    let path = home
-        .join(".deepcode")
-        .join("sessions")
-        .join(format!("{id}.jsonl"));
+    let dir = home.join(".deepcode").join("sessions");
+    let _lock = SessionWriterLock::acquire(&dir, &id)?;
+    let path = ensure_canonical_session(&dir, &id)?;
     let text = std::fs::read_to_string(&path).map_err(|e| format!("read {}: {}", path.display(), e))?;
     let trimmed = title.trim();
     let mut lines: Vec<String> = text.lines().map(|l| l.to_string()).collect();
@@ -338,7 +426,9 @@ pub fn session_set_title(id: String, title: String) -> Result<(), String> {
     }
     if !updated {
         // No meta header (older session) — prepend one carrying the title.
-        let meta = serde_json::json!({ "type": "session_meta", "id": id, "title": trimmed });
+        let meta = serde_json::json!({
+            "type": "session_meta", "schema_version": 1, "id": id, "title": trimmed
+        });
         lines.insert(0, meta.to_string());
     }
     std::fs::write(&path, lines.join("\n") + "\n")
@@ -377,7 +467,7 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(vec![]),
         Err(e) => return Err(format!("read_dir {}: {}", dir.display(), e)),
     };
-    let mut out = Vec::new();
+    let mut selected: HashMap<String, PathBuf> = HashMap::new();
     for entry in read.flatten() {
         let path = entry.path();
         if !path.is_file() {
@@ -386,11 +476,20 @@ pub fn list_sessions() -> Result<Vec<SessionMeta>, String> {
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
         };
-        if !name.ends_with(".jsonl") {
+        let (id, canonical) = if let Some(id) = name.strip_suffix(".v1.jsonl") {
+            (id.to_string(), true)
+        } else if let Some(id) = name.strip_suffix(".jsonl") {
+            (id.to_string(), false)
+        } else {
             continue;
+        };
+        if canonical || !selected.contains_key(&id) {
+            selected.insert(id, path);
         }
-        let id = name.trim_end_matches(".jsonl").to_string();
-        let meta = entry.metadata().map_err(|e| e.to_string())?;
+    }
+    let mut out = Vec::new();
+    for (id, path) in selected {
+        let meta = std::fs::metadata(&path).map_err(|e| e.to_string())?;
         let updated_at_secs = meta
             .modified()
             .ok()
@@ -425,11 +524,17 @@ pub fn session_delete(id: String) -> Result<(), String> {
     let Some(home) = dirs::home_dir() else {
         return Err("no home directory".into());
     };
-    let path = home
-        .join(".deepcode")
-        .join("sessions")
-        .join(format!("{id}.jsonl"));
-    std::fs::remove_file(&path).map_err(|e| format!("delete {}: {}", path.display(), e))
+    let dir = home.join(".deepcode").join("sessions");
+    let mut removed = false;
+    for name in [format!("{id}.v1.jsonl"), format!("{id}.jsonl"), format!("{id}.meta.json")] {
+        let path = dir.join(name);
+        match std::fs::remove_file(&path) {
+            Ok(()) => removed = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("delete {}: {}", path.display(), error)),
+        }
+    }
+    if removed { Ok(()) } else { Err(format!("session not found: {id}")) }
 }
 
 /// Archive a session by moving its JSONL into sessions/archived/ — excluded from
@@ -444,9 +549,17 @@ pub fn session_archive(id: String) -> Result<(), String> {
     let archived = dir.join("archived");
     std::fs::create_dir_all(&archived)
         .map_err(|e| format!("mkdir {}: {}", archived.display(), e))?;
-    let from = dir.join(format!("{id}.jsonl"));
-    let to = archived.join(format!("{id}.jsonl"));
-    std::fs::rename(&from, &to).map_err(|e| format!("archive {}: {}", from.display(), e))
+    let mut moved = false;
+    for name in [format!("{id}.v1.jsonl"), format!("{id}.jsonl"), format!("{id}.meta.json")] {
+        let from = dir.join(&name);
+        let to = archived.join(&name);
+        match std::fs::rename(&from, &to) {
+            Ok(()) => moved = true,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("archive {}: {}", from.display(), error)),
+        }
+    }
+    if moved { Ok(()) } else { Err(format!("session not found: {id}")) }
 }
 
 /// Path to the `deepcode` CLI so the GUI can drop users into it for advanced
@@ -812,6 +925,45 @@ mod contract_tests {
         );
         let error = parse_session_messages(text).unwrap_err();
         assert!(error.contains("line 2"), "got {error}");
+    }
+
+    #[test]
+    fn canonical_session_normalizes_without_touching_legacy() {
+        let root = std::env::temp_dir().join(format!(
+            "dc-session-v1-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let legacy = root.join("legacy.jsonl");
+        let original = "{\"role\":\"user\",\"content\":[]}\n";
+        std::fs::write(&legacy, original).unwrap();
+        std::fs::write(
+            root.join("legacy.meta.json"),
+            "{\"id\":\"legacy\",\"cwd\":\"/core\",\"createdAt\":\"2025-01-01T00:00:00Z\",\"updatedAt\":\"2025-01-02T00:00:00Z\"}",
+        )
+        .unwrap();
+
+        let _lock = SessionWriterLock::acquire(&root, "legacy").unwrap();
+        let canonical = ensure_canonical_session(&root, "legacy").unwrap();
+        assert_eq!(std::fs::read_to_string(&legacy).unwrap(), original);
+        let normalized = std::fs::read_to_string(canonical).unwrap();
+        let records: Vec<serde_json::Value> = normalized
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0]["schema_version"], 1);
+        assert_eq!(records[0]["cwd"], "/core");
+        assert_eq!(records[0]["created_at"], "2025-01-01T00:00:00Z");
+        assert_eq!(records[1]["type"], "message");
+        assert_eq!(records[1]["schema_version"], 1);
+        assert!(SessionWriterLock::acquire(&root, "legacy").is_err());
+        drop(_lock);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

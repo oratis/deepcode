@@ -60,6 +60,7 @@ export {
   newSessionId,
   readSessionRecords,
   SessionCorruptionError,
+  SessionWriterConflictError,
   captureSnapshot,
   captureGitCheckpoint,
   listSnapshots,

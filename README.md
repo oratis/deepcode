@@ -63,6 +63,7 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 | [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)                         | 整体开发方案 v0.5（1500+ 行 / §3 模块 / §6 里程碑） |
 | [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html)                           | 视觉设计 v0.4（11 屏 mockup）                       |
 | [docs/security-model.md](docs/security-model.md)                             | 威胁模型 + 防御层 + 攻击向量测试 + 已知缺口         |
+| [docs/design/session-format-v1.md](docs/design/session-format-v1.md)         | 统一 session JSONL、旧格式迁移与 writer ownership   |
 | [docs/design/sandbox-plan-worktree.md](docs/design/sandbox-plan-worktree.md) | sandbox × plan mode × worktree 关系矩阵             |
 | [docs/design/plugin-security.md](docs/design/plugin-security.md)             | plugin 信任 ladder + sandbox 子进程                 |
 | [docs/design/effort-levels.md](docs/design/effort-levels.md)                 | 5 档 effort 到 DeepSeek API 参数映射                |
