@@ -65,7 +65,11 @@ export function createDefaultTurnExecutor(
           permissions: settings.permissions ?? { allow: [...SAFE_READONLY_TOOLS] },
           hooks: composition.hooks,
           autoMode: settings.autoMode,
-          sandboxConfig: settings.sandbox,
+          sandboxConfig: withAdditionalWritableDirs(
+            settings.sandbox,
+            settings.permissions?.additionalDirectories,
+            cwd,
+          ),
           pluginDirs: composition.pluginDirs,
         }),
         systemPrompt: composition.systemPrompt,
@@ -79,3 +83,4 @@ export function createDefaultTurnExecutor(
     sessionManager,
   });
 }
+import { withAdditionalWritableDirs } from '@deepcode/core';

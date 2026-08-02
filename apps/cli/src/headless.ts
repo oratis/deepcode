@@ -38,6 +38,7 @@ import {
   loadMemory,
   loadOutputStyles,
   loadSettings,
+  withAdditionalWritableDirs,
   loadSkills,
   makeSkillTool,
   resolveCredentials,
@@ -234,7 +235,11 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       disabled: settings.disabledPlugins,
       hooks,
       capabilities: buildPluginCapabilitiesHeadless(cwd),
-      sandbox: settings.sandbox,
+      sandbox: withAdditionalWritableDirs(
+        settings.sandbox,
+        settings.permissions?.additionalDirectories,
+        cwd,
+      ),
       log: (s) => errOutput.write(s + '\n'),
     });
   } catch (err) {
@@ -295,7 +300,11 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       hooks,
       pluginDirs: pluginContrib.dirs,
       autoMode: settings.autoMode,
-      sandboxConfig: settings.sandbox,
+      sandboxConfig: withAdditionalWritableDirs(
+        settings.sandbox,
+        settings.permissions?.additionalDirectories,
+        cwd,
+      ),
     });
     const result = await runtime.run({
       systemPrompt,
