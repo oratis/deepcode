@@ -307,18 +307,6 @@ function renderScreen(
   onOpenFile?: (path: string) => void,
 ): JSX.Element {
   switch (screen) {
-    case 'chat':
-      // 'chat' folded into 'repl' — the new shell has only the REPL surface.
-      return (
-        <ReplScreen
-          projectPath={projectPath}
-          onTurnComplete={onTurnComplete}
-          onSessionStarted={onSessionStarted}
-          initialMessages={initialMessages}
-          onInspector={onInspector}
-          onOpenFile={onOpenFile}
-        />
-      );
     case 'sessions':
       return <SessionsScreen onPick={() => setScreen('repl')} onNew={() => setScreen('repl')} />;
     // Settings-family screens share the Settings shell's left nav so they're

@@ -22,7 +22,8 @@ src-tauri/           Rust 主进程
   src/commands.rs    #[tauri::command] —— renderer 通过 invoke() 调用
   src/credentials.rs 凭据保存与无密钥状态查询
   src/settings.rs    设置持久化
-  src/tools.rs       legacy native helpers（renderer 仅暴露只读 file read）
+  src/file_preview.rs 只读文件预览（不包含工作区变更能力）
+  src/snapshots.rs   app-server snapshot 的只读 Diff/History 投影
   src/lib.rs         Tauri builder / 插件注册
   tauri.conf.json    窗口 + 构建 + 打包配置
   capabilities/      权限能力声明

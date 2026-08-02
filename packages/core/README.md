@@ -6,11 +6,12 @@ DeepCode 的 TypeScript 内核包：agent loop、DeepSeek provider、tools、con
 
 ## 当前状态
 
-主要模块均已有实现与测试。CLI、headless、LSP 与 VS Code 已通过 `RuntimeHost` 固定 provider、tools、permissions、hooks 与 sandbox 等安全服务；`runAgent` 保留为 core 内部循环和 desktop 迁移期兼容入口。当前剩余的主要 host 差异是 desktop renderer 仍直接运行 provider/loop，后续按 packaging ADR 迁出 WebView。
+主要模块均已有实现与测试。CLI/headless 通过 `RuntimeHost` 运行；desktop、VS Code 与 LSP 则作为版本化 app-server 协议的薄客户端。provider、凭据、agent loop、tools、permissions、hooks、sandbox、MCP 与 plugins 都由受信任的 Node host 统一组装，renderer 不运行模型或工作区变更逻辑。
 
 关键入口：
 
-- `src/agent.ts`：现有 agent loop 与兼容 facade。
+- `src/runtime/`：`RuntimeHost`、默认 runtime 组装与执行器。
+- `src/agent.ts`：host 内部使用的 agent loop 与兼容 facade。
 - `src/providers/`：DeepSeek provider 与 capability/pricing。
 - `src/tools/`：内置工具和 registry。
 - `src/harness/tool-dispatcher.ts`：mode、permissions 与 hook gate。
@@ -20,8 +21,4 @@ DeepCode 的 TypeScript 内核包：agent loop、DeepSeek provider、tools、con
 
 ## API 入口
 
-```ts
-import { runAgent, ToolRegistry, BUILTIN_TOOLS } from '@deepcode/core';
-```
-
-公共 API 见 [`docs/core-api.md`](../../docs/core-api.md)。新 host 不应直接复制 CLI 的组装代码；在 `RuntimeHost` 落地前，新增入口必须显式传入 mode、permissions、trust 与 sandbox policy。
+公共 API 见 [`docs/core-api.md`](../../docs/core-api.md)。新增交互界面应实现 `@deepcode/protocol` 客户端；仅 headless/嵌入式 Node host 应直接使用 `RuntimeHost`。不要在 renderer、编辑器 extension host 或 LSP 进程中复制 provider/tool 组装。

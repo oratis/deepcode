@@ -3,7 +3,7 @@
 // These lock the command names and the snake_case↔camelCase mapping that the
 // Rust #[tauri::command] handlers expect. HANDOFF §8a: casing mismatches across
 // this boundary shipped real bugs twice. The Rust side is guarded by
-// src-tauri/src/tools.rs casing_tests; this guards the TS side.
+// src-tauri/src/file_preview.rs tests; this guards the TS side.
 //
 // `invoke` is mocked so no Tauri runtime is needed.
 

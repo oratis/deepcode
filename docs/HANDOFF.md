@@ -1,6 +1,6 @@
 # DeepCode — Session Handoff
 
-> **历史快照（2026-05）**：本文件用于追溯早期实现，包含已过期的 commit、测试数和待办。当前架构与推进顺序见 [`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md)，仓库操作规范见 [`../AGENTS.md`](../AGENTS.md)。
+> **历史快照（2026-05，请勿作为当前操作手册）**：本文件用于追溯早期 renderer runtime 实现，下面的 commit、测试数、文件路径、发布步骤和待办均可能已过期。当前架构与推进顺序见 [`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md)，app-server 边界见 [`design/app-server-packaging-v1.md`](design/app-server-packaging-v1.md)，仓库操作规范见 [`../AGENTS.md`](../AGENTS.md)。
 
 A new Claude Code session can pick up DeepCode from this document alone. It's
 intentionally dense — read once top-to-bottom, then keep open as a map.

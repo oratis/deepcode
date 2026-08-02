@@ -4,7 +4,6 @@
 
 export type ScreenName =
   | 'repl'
-  | 'chat' // alias for 'repl' — kept for IPC-shim backwards compat
   | 'sessions'
   | 'plugins'
   | 'skills'

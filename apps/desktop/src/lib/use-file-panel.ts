@@ -4,8 +4,9 @@
 // split/inline toggle is owned by App (it shares the chord with the inspector
 // toggle and resolves contextually).
 //
-// Diff/History come from session snapshots captured on the Rust side for every
-// Edit/Write (see src-tauri/src/snapshots.rs). On open() we fetch a file's
+// Diff/History come from session snapshots captured by the app-server for every
+// Edit/Write. Rust exposes only a read-only projection (src-tauri/src/snapshots.rs).
+// On open() we fetch a file's
 // snapshots and derive: the History timeline, and a Diff of the current file
 // vs the session baseline (its oldest snapshot). Selecting a History entry
 // recomputes the Diff against that revision.

@@ -58,6 +58,8 @@ describe('snapshots', () => {
     expect(snap?.existed).toBe(true);
     expect(snap?.reason).toBe('pre-Edit');
     expect(snap?.filePath).toBe(path);
+    expect(snap?.capturedAtMs).toBeTypeOf('number');
+    expect(new Date(snap!.capturedAtMs!).toISOString()).toBe(snap?.capturedAt);
     expect(await fs.readFile(snap!.blobPath, 'utf8')).toBe('original content');
   });
 
