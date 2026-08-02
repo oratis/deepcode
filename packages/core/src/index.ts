@@ -172,6 +172,14 @@ export {
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback, ApprovalDecision } from './agent.js';
 
+// Runtime safety policy shared by non-interactive hosts.
+export {
+  SAFE_DEFAULT_PERMISSIONS,
+  SAFE_READONLY_TOOLS,
+  resolveRuntimePolicy,
+  type RuntimePolicyInput,
+} from './runtime/index.js';
+
 // Skills (M4 — SKILL.md frontmatter loading + system-prompt builder; M5 — Skill tool)
 export {
   loadSkills,

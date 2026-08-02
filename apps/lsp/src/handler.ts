@@ -16,13 +16,13 @@ interface ServerState {
   initialized: boolean;
   /** Workspace root URI from initialize. */
   rootUri?: string;
-  /** In-flight turn IDs so /abort can cancel them. */
-  activeTurns: Set<string>;
+  /** In-flight turn controllers so /abort cancels provider and tools. */
+  activeTurns: Map<string, AbortController>;
 }
 
 const state: ServerState = {
   initialized: false,
-  activeTurns: new Set(),
+  activeTurns: new Map(),
 };
 
 const SERVER_INFO = {
@@ -116,7 +116,8 @@ async function handleRunAgent(
 ): Promise<{ turnId: string }> {
   if (!args.prompt) throw new Error('prompt is required');
   const turnId = `lsp-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
-  state.activeTurns.add(turnId);
+  const abortController = new AbortController();
+  state.activeTurns.set(turnId, abortController);
 
   // Stream events back via JSON-RPC notifications.
   // Wired to the real agent loop — same code that drives the CLI / Mac client.
@@ -133,7 +134,7 @@ async function handleRunAgent(
       const [
         { runAgent },
         { DeepSeekProvider },
-        { ToolRegistry, BUILTIN_TOOLS },
+        { ToolRegistry, BUILTIN_TOOLS, SAFE_READONLY_TOOLS },
         { resolveCredentials, CredentialsStore },
       ] = await Promise.all([
         import('@deepcode/core').then((m) => ({ runAgent: m.runAgent })),
@@ -141,6 +142,7 @@ async function handleRunAgent(
         import('@deepcode/core').then((m) => ({
           ToolRegistry: m.ToolRegistry,
           BUILTIN_TOOLS: m.BUILTIN_TOOLS,
+          SAFE_READONLY_TOOLS: m.SAFE_READONLY_TOOLS,
         })),
         import('@deepcode/core').then((m) => ({
           resolveCredentials: m.resolveCredentials,
@@ -168,6 +170,9 @@ async function handleRunAgent(
         userMessage: args.prompt!,
         model: args.model ?? 'deepseek-chat',
         cwd: state.rootUri ? new URL(state.rootUri).pathname : process.cwd(),
+        signal: abortController.signal,
+        mode: 'default',
+        permissions: { allow: [...SAFE_READONLY_TOOLS] },
         onEvent: (e) => {
           send({
             jsonrpc: '2.0',
@@ -207,8 +212,10 @@ async function handleRunAgent(
 
 function handleAbort(args: { turnId?: string }): { aborted: boolean } {
   if (!args.turnId) throw new Error('turnId is required');
-  const had = state.activeTurns.delete(args.turnId);
-  return { aborted: had };
+  const controller = state.activeTurns.get(args.turnId);
+  if (!controller) return { aborted: false };
+  controller.abort();
+  return { aborted: true };
 }
 
 async function handleListSkills(): Promise<{ skills: unknown[] }> {

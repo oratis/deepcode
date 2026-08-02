@@ -24,7 +24,9 @@ use commands::{
 };
 use snapshots::session_snapshots;
 use tauri::Manager;
-use tools::{tool_bash, tool_edit, tool_glob, tool_grep, tool_read, tool_write};
+use tools::{
+    tool_bash, tool_bash_cancel, tool_edit, tool_glob, tool_grep, tool_read, tool_write, BashState,
+};
 use voice::{voice_cancel, voice_start, voice_status, voice_stop, VoiceState};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -37,6 +39,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .manage(VoiceState::default())
+        .manage(BashState::default())
         .invoke_handler(tauri::generate_handler![
             get_app_info,
             read_credentials,
@@ -62,6 +65,7 @@ pub fn run() {
             tool_write,
             tool_edit,
             tool_bash,
+            tool_bash_cancel,
             tool_glob,
             tool_grep,
             session_snapshots,

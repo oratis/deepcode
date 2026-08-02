@@ -13,6 +13,8 @@ import { invoke } from '@tauri-apps/api/core';
 import type { ToolHandler, ToolResult } from '@deepcode/core/dist/types.js';
 import { getActiveSessionId } from './mac-session.js';
 
+let bashCommandSeq = 0;
+
 /**
  * Tolerant key pick — accepts either snake_case or camelCase. DeepSeek
  * occasionally normalizes JSON Schema keys to camelCase regardless of
@@ -218,24 +220,44 @@ export const MacBashTool: ToolHandler = {
       required: ['command'],
     },
   },
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, ctx): Promise<ToolResult> {
     try {
       const command = pickStr(input, 'command', 'cmd');
       if (!command) {
         return { content: 'Error: missing command', isError: true };
       }
-      const r = (await invoke('tool_bash', {
-        input: {
-          command,
-          cwd: pickStr(input, 'cwd', 'working_dir'),
-          timeout_ms: pickNum(input, 'timeout_ms', 'timeoutMs', 'timeout'),
-        },
-      })) as { stdout: string; stderr: string; exitCode: number; timedOut: boolean };
+      if (ctx.signal?.aborted) {
+        return { content: 'aborted by user', isError: true };
+      }
+      const commandId = `bash-${Date.now().toString(36)}-${bashCommandSeq++}`;
+      const onAbort = (): void => {
+        void invoke('tool_bash_cancel', { commandId });
+      };
+      ctx.signal?.addEventListener('abort', onAbort, { once: true });
+      let r: {
+        stdout: string;
+        stderr: string;
+        exitCode: number;
+        timedOut: boolean;
+        cancelled: boolean;
+      };
+      try {
+        r = (await invoke('tool_bash', {
+          commandId,
+          input: {
+            command,
+            cwd: pickStr(input, 'cwd', 'working_dir'),
+            timeout_ms: pickNum(input, 'timeout_ms', 'timeoutMs', 'timeout'),
+          },
+        })) as typeof r;
+      } finally {
+        ctx.signal?.removeEventListener('abort', onAbort);
+      }
       const combined = (r.stdout || '') + (r.stderr ? `\n[stderr]\n${r.stderr}` : '');
       return {
         content: combined || `(no output, exit ${r.exitCode})`,
-        data: { exitCode: r.exitCode, timedOut: r.timedOut },
-        isError: r.exitCode !== 0,
+        data: { exitCode: r.exitCode, timedOut: r.timedOut, cancelled: r.cancelled },
+        isError: r.exitCode !== 0 || r.cancelled,
       };
     } catch (err) {
       return { content: `Error: ${(err as Error).message ?? String(err)}`, isError: true };

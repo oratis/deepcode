@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { handleMessage, type LspMessage } from './handler.js';
+import { __test, handleMessage, type LspMessage } from './handler.js';
 
 describe('handleMessage — initialize', () => {
   it('returns capabilities + serverInfo + supported commands', async () => {
@@ -100,6 +100,26 @@ describe('handleMessage — executeCommand', () => {
       (m) => out.push(m),
     );
     expect((out[0]!.result as { aborted: boolean }).aborted).toBe(false);
+  });
+
+  it('deepcode.abort aborts the active turn controller', async () => {
+    const controller = new AbortController();
+    __test.state.activeTurns.set('active-turn', controller);
+    const out: LspMessage[] = [];
+
+    await handleMessage(
+      {
+        jsonrpc: '2.0',
+        id: 41,
+        method: 'workspace/executeCommand',
+        params: { command: 'deepcode.abort', arguments: [{ turnId: 'active-turn' }] },
+      },
+      (m) => out.push(m),
+    );
+
+    expect((out[0]!.result as { aborted: boolean }).aborted).toBe(true);
+    expect(controller.signal.aborted).toBe(true);
+    __test.state.activeTurns.delete('active-turn');
   });
 
   it('errors on unknown command', async () => {

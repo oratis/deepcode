@@ -8,6 +8,7 @@ import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
+import { resolveRuntimePolicy } from './runtime/index.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
 // module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
@@ -60,9 +61,8 @@ export interface RunAgentOptions {
   session?: { manager: SessionManager; id: string };
   /** Optional: snapshot files before/after Edit/Write tool calls. */
   enableSnapshots?: boolean;
-  /** M3: dispatch gates (mode + permissions + hooks). When set, every tool call
-   *  goes through the gate. When unset, all tool calls are allowed (M1 behavior). */
-  mode?: Mode;
+  /** Required dispatch mode. Every tool call goes through the central gate. */
+  mode: Mode;
   permissions?: PermissionRules;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
@@ -141,6 +141,35 @@ export interface RunAgentResult {
 
 const DEFAULT_MAX_TURNS = 16;
 
+async function waitForApproval(
+  approval: ApprovalCallback,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+  verdict: DispatchVerdict,
+  signal?: AbortSignal,
+): Promise<ApprovalDecision> {
+  if (!signal) return approval(toolName, toolInput, verdict);
+  if (signal.aborted) return false;
+
+  return new Promise<ApprovalDecision>((resolve, reject) => {
+    let settled = false;
+    const finish = (decision: ApprovalDecision): void => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      resolve(decision);
+    };
+    const onAbort = (): void => finish(false);
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(approval(toolName, toolInput, verdict)).then(finish, (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener('abort', onAbort);
+      reject(error);
+    });
+  });
+}
+
 /**
  * Tools with no side effects whose results don't depend on each other — safe to
  * execute concurrently within a single turn. Everything else (Edit/Write/Bash/
@@ -155,6 +184,7 @@ const READ_ONLY_TOOLS = new Set(['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch'
  */
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
+  const runtimePolicy = resolveRuntimePolicy(opts);
   let history: StoredMessage[] = [...(opts.history ?? [])];
   let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
 
@@ -291,8 +321,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         // A background task passes its own signal so TaskStop can cancel just
         // that task; foreground sub-agents inherit the main run's signal.
         signal: signal ?? opts.signal,
-        mode: opts.mode,
-        permissions: opts.permissions,
+        mode: runtimePolicy.mode,
+        permissions: runtimePolicy.permissions,
         hooks: opts.hooks,
         sandboxConfig: opts.sandboxConfig,
         autoMode: opts.autoMode,
@@ -450,6 +480,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         },
       });
     } catch (err) {
+      if (opts.signal?.aborted || (err as { name?: string }).name === 'AbortError') {
+        return { history, turnsUsed, usage: totalUsage, stopReason: 'aborted', modeSignal };
+      }
       const message = (err as Error).message ?? 'unknown';
       opts.onEvent?.({ type: 'error', error: message });
       return { history, turnsUsed, usage: totalUsage, stopReason: 'error', modeSignal };
@@ -522,42 +555,49 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         continue;
       }
 
-      // M3: dispatch gate (mode + permissions + PreToolUse hook)
-      if (opts.mode) {
-        const verdict = await dispatchToolCall({
-          tool: toolUse.name,
-          input: toolUse.input,
-          mode: opts.mode,
-          rules: opts.permissions,
-          hooks: opts.hooks,
-          cwd: opts.cwd,
-          autoMode: opts.autoMode,
-          autoModeProvider: opts.provider,
+      // Every call goes through the central mode + permissions + hook gate.
+      const verdict = await dispatchToolCall({
+        tool: toolUse.name,
+        input: toolUse.input,
+        mode: runtimePolicy.mode,
+        rules: runtimePolicy.permissions,
+        hooks: opts.hooks,
+        cwd: opts.cwd,
+        autoMode: opts.autoMode,
+        autoModeProvider: opts.provider,
+      });
+      let allowed = verdict.decision === 'allow';
+      if (verdict.decision === 'ask' && opts.approval) {
+        const decision = await waitForApproval(
+          opts.approval,
+          toolUse.name,
+          toolUse.input,
+          verdict,
+          opts.signal,
+        );
+        if (opts.signal?.aborted) {
+          return { history, turnsUsed, usage: totalUsage, stopReason: 'aborted', modeSignal };
+        }
+        // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
+        allowed = decision === true || decision === 'always';
+      }
+      if (!allowed) {
+        resultsById.set(toolUse.id, {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          content: `Tool call blocked: ${verdict.reason}`,
+          is_error: true,
         });
-        let allowed = verdict.decision === 'allow';
-        if (verdict.decision === 'ask' && opts.approval) {
-          const decision = await opts.approval(toolUse.name, toolUse.input, verdict);
-          // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
-          allowed = decision === true || decision === 'always';
-        }
-        if (!allowed) {
-          resultsById.set(toolUse.id, {
-            type: 'tool_result',
-            tool_use_id: toolUse.id,
-            content: `Tool call blocked: ${verdict.reason}`,
-            is_error: true,
-          });
-          opts.onEvent?.({
-            type: 'tool_result',
-            id: toolUse.id,
-            result: {
-              content: verdict.reason,
-              isError: true,
-              data: { dispatchSource: verdict.source, decision: verdict.decision },
-            },
-          });
-          continue;
-        }
+        opts.onEvent?.({
+          type: 'tool_result',
+          id: toolUse.id,
+          result: {
+            content: verdict.reason,
+            isError: true,
+            data: { dispatchSource: verdict.source, decision: verdict.decision },
+          },
+        });
+        continue;
       }
 
       ready.push({ toolUse, handler });

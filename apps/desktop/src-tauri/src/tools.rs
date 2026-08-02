@@ -5,10 +5,12 @@
 
 use crate::snapshots;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Stdio;
 use tokio::io::AsyncReadExt;
 use tokio::process::Command;
+use tokio::sync::{oneshot, Mutex};
 
 // ──────────────────────────────────────────────────────────────────────────
 // Snapshot capture
@@ -240,10 +242,42 @@ pub struct BashOk {
     pub stderr: String,
     pub exit_code: i32,
     pub timed_out: bool,
+    pub cancelled: bool,
 }
 
+#[derive(Default)]
+pub struct BashState {
+    // `Some(sender)` is running; `None` records an abort that raced ahead of
+    // command registration so the process never escapes cancellation.
+    active: Mutex<HashMap<String, Option<oneshot::Sender<()>>>>,
+}
+
+#[cfg(unix)]
+fn kill_process_group(pid: u32) {
+    // The shell is placed in its own process group below, so a negative PID
+    // terminates the shell and every descendant it spawned.
+    unsafe {
+        libc::kill(-(pid as i32), libc::SIGKILL);
+    }
+}
+
+#[cfg(not(unix))]
+fn kill_process_group(_pid: u32) {}
+
 #[tauri::command]
-pub async fn tool_bash(input: BashInput) -> Result<BashOk, String> {
+pub async fn tool_bash(
+    input: BashInput,
+    command_id: String,
+    state: tauri::State<'_, BashState>,
+) -> Result<BashOk, String> {
+    run_bash(input, command_id, &state).await
+}
+
+async fn run_bash(
+    input: BashInput,
+    command_id: String,
+    state: &BashState,
+) -> Result<BashOk, String> {
     let timeout = std::time::Duration::from_millis(input.timeout_ms.unwrap_or(120_000));
     let mut cmd = Command::new("/bin/sh");
     cmd.arg("-c").arg(&input.command);
@@ -251,8 +285,24 @@ pub async fn tool_bash(input: BashInput) -> Result<BashOk, String> {
         cmd.current_dir(cwd);
     }
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        cmd.as_std_mut().process_group(0);
+    }
 
     let mut child = cmd.spawn().map_err(|e| format!("spawn: {e}"))?;
+    let pid = child.id().ok_or("spawned process has no pid")?;
+    let (cancel_tx, mut cancel_rx) = oneshot::channel();
+    {
+        let mut active = state.active.lock().await;
+        if matches!(active.get(&command_id), Some(None)) {
+            active.remove(&command_id);
+            drop(cancel_tx);
+        } else {
+            active.insert(command_id.clone(), Some(cancel_tx));
+        }
+    }
     let mut stdout_pipe = child.stdout.take().ok_or("no stdout pipe")?;
     let mut stderr_pipe = child.stderr.take().ok_or("no stderr pipe")?;
 
@@ -268,29 +318,75 @@ pub async fn tool_bash(input: BashInput) -> Result<BashOk, String> {
         s
     });
 
-    let mut timed_out = false;
-    let exit_status = match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(s) => s.map_err(|e| format!("wait: {e}"))?,
-        Err(_) => {
-            timed_out = true;
+    enum Finish {
+        Exited(std::io::Result<std::process::ExitStatus>),
+        TimedOut,
+        Cancelled,
+    }
+    let finish = tokio::select! {
+        status = child.wait() => Finish::Exited(status),
+        _ = tokio::time::sleep(timeout) => Finish::TimedOut,
+        _ = &mut cancel_rx => Finish::Cancelled,
+    };
+    state.active.lock().await.remove(&command_id);
+
+    let (exit_code, timed_out, cancelled) = match finish {
+        Finish::Exited(status) => (
+            status
+                .map_err(|e| format!("wait: {e}"))?
+                .code()
+                .unwrap_or(-1),
+            false,
+            false,
+        ),
+        Finish::TimedOut => {
+            kill_process_group(pid);
             let _ = child.start_kill();
             let _ = child.wait().await;
-            return Ok(BashOk {
-                stdout: String::new(),
-                stderr: format!("timeout after {}ms", timeout.as_millis()),
-                exit_code: 124,
-                timed_out,
-            });
+            (124, true, false)
+        }
+        Finish::Cancelled => {
+            kill_process_group(pid);
+            let _ = child.start_kill();
+            let _ = child.wait().await;
+            (130, false, true)
         }
     };
     let stdout = stdout_task.await.unwrap_or_default();
-    let stderr = stderr_task.await.unwrap_or_default();
+    let mut stderr = stderr_task.await.unwrap_or_default();
+    if timed_out {
+        stderr.push_str(&format!("\ntimeout after {}ms", timeout.as_millis()));
+    }
+    if cancelled {
+        stderr.push_str("\naborted by user");
+    }
     Ok(BashOk {
         stdout,
         stderr,
-        exit_code: exit_status.code().unwrap_or(-1),
+        exit_code,
         timed_out,
+        cancelled,
     })
+}
+
+#[tauri::command]
+pub async fn tool_bash_cancel(
+    command_id: String,
+    state: tauri::State<'_, BashState>,
+) -> Result<bool, String> {
+    Ok(cancel_bash(command_id, &state).await)
+}
+
+async fn cancel_bash(command_id: String, state: &BashState) -> bool {
+    let mut active = state.active.lock().await;
+    match active.remove(&command_id) {
+        Some(Some(cancel)) => cancel.send(()).is_ok(),
+        Some(None) => true,
+        None => {
+            active.insert(command_id, None);
+            true
+        }
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -454,16 +550,58 @@ mod casing_tests {
             stderr: String::new(),
             exit_code: 0,
             timed_out: false,
+            cancelled: false,
         })
         .unwrap();
         let k = keys(&v);
         // The exit-code badge bug: renderer compares r.exitCode !== 0.
         assert!(k.contains(&"exitCode".to_string()), "got {k:?}");
         assert!(k.contains(&"timedOut".to_string()), "got {k:?}");
+        assert!(k.contains(&"cancelled".to_string()), "got {k:?}");
         assert!(
             !k.contains(&"exit_code".to_string()),
             "snake_case leaked: {k:?}"
         );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn bash_cancel_kills_descendants() {
+        use std::sync::Arc;
+
+        let root = std::env::temp_dir().join(format!(
+            "dc-rust-bash-cancel-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&root).unwrap();
+        let marker = root.join("orphan-marker.txt");
+        let command = format!("(sleep 0.4; echo orphan > '{}') & wait", marker.display());
+        let state = Arc::new(BashState::default());
+        let run_state = state.clone();
+        let task = tokio::spawn(async move {
+            run_bash(
+                BashInput {
+                    command,
+                    cwd: Some(root.to_string_lossy().to_string()),
+                    timeout_ms: Some(5_000),
+                },
+                "cancel-test".to_string(),
+                &run_state,
+            )
+            .await
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert!(cancel_bash("cancel-test".to_string(), &state).await);
+        let result = task.await.unwrap().unwrap();
+        assert!(result.cancelled);
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        assert!(!marker.exists(), "descendant survived cancellation");
+        let _ = std::fs::remove_dir_all(marker.parent().unwrap());
     }
 }
 

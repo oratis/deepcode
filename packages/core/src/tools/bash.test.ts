@@ -1,5 +1,5 @@
 import type { ChildProcess } from 'node:child_process';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -46,6 +46,23 @@ describe('BashTool', () => {
     const r = await BashTool.execute({ command: 'sleep 5', timeout: 200 }, { cwd: tmp });
     expect(r.isError).toBe(true);
     expect(r.content).toMatch(/killed by timeout/i);
+  }, 5000);
+
+  it('aborts the foreground process tree', async () => {
+    if (process.platform === 'win32') return;
+    const marker = join(tmp, 'orphan-marker.txt');
+    const ac = new AbortController();
+    const pending = BashTool.execute(
+      { command: `(sleep 0.4; echo orphan > "${marker}") & wait`, timeout: 5_000 },
+      { cwd: tmp, signal: ac.signal },
+    );
+    setTimeout(() => ac.abort(), 50);
+
+    const result = await pending;
+    expect(result.isError).toBe(true);
+    expect(result.content).toMatch(/aborted by user/i);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await expect(access(marker)).rejects.toThrow();
   }, 5000);
 
   it('run_in_background returns immediately with a log path that fills in', async () => {

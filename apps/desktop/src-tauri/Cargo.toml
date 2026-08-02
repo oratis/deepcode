@@ -27,6 +27,7 @@ sha2 = "0.10"
 thiserror = "1"
 tokio = { version = "1", features = ["fs", "rt-multi-thread", "macros", "sync", "time", "process"] }
 dirs = "5"
+libc = "0.2"
 
 [profile.release]
 panic = "abort"

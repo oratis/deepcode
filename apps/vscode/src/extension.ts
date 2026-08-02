@@ -96,6 +96,8 @@ async function runAgent(
       userMessage,
       model: 'deepseek-chat',
       cwd,
+      mode: 'default',
+      permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
       onEvent: (e) => {
         if (e.type === 'text_delta') out.append(e.text);
         else if (e.type === 'tool_use') out.appendLine(`\n[${e.name}] ${formatInput(e.input)}`);
@@ -162,6 +164,8 @@ class ChatViewProvider implements vscode.WebviewViewProvider {
         userMessage: msg.text,
         model: 'deepseek-chat',
         cwd: this.vscodeMod.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+        mode: 'default',
+        permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
         onEvent: (e) => {
           if (e.type === 'text_delta') {
             buffer += e.text;

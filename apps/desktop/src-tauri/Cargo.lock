@@ -675,6 +675,7 @@ name = "deepcode_desktop"
 version = "0.1.6"
 dependencies = [
  "dirs 5.0.1",
+ "libc",
  "serde",
  "serde_json",
  "sha2",

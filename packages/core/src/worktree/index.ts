@@ -20,6 +20,8 @@ export interface WorktreeHandle {
   branch: string;
   /** Source repo path. */
   source: string;
+  /** Untracked symlinks created by DeepCode and safe to unlink on removal. */
+  managedSymlinks?: string[];
 }
 
 export interface CreateWorktreeOpts {
@@ -57,6 +59,7 @@ export async function createWorktree(opts: CreateWorktreeOpts): Promise<Worktree
   }
 
   // Symlinks: e.g. node_modules → source/node_modules
+  const managedSymlinks: string[] = [];
   for (const dir of opts.config?.symlinkDirectories ?? []) {
     const src = join(source, dir);
     const dst = join(path, dir);
@@ -71,14 +74,16 @@ export async function createWorktree(opts: CreateWorktreeOpts): Promise<Worktree
       /* ignore */
     }
     await fs.symlink(src, dst, 'dir');
+    managedSymlinks.push(dst);
   }
 
-  return { path, branch, source };
+  return { path, branch, source, managedSymlinks };
 }
 
 /**
- * Remove a worktree (git worktree remove + delete the branch).
+ * Remove a clean worktree while retaining its branch for recovery or review.
  * Idempotent: silently no-ops if path is already gone.
+ * Dirty or untracked worktrees are rejected by Git and left intact.
  */
 export async function removeWorktree(handle: WorktreeHandle): Promise<void> {
   try {
@@ -86,12 +91,17 @@ export async function removeWorktree(handle: WorktreeHandle): Promise<void> {
   } catch {
     return;
   }
-  runGit(handle.source, ['worktree', 'remove', '--force', handle.path]);
-  // Delete the branch (best-effort)
-  spawnSync('git', ['-C', handle.source, 'branch', '-D', handle.branch], {
-    stdio: 'pipe',
-    env: gitSpawnEnv(),
-  });
+  // These are the only untracked paths DeepCode itself creates. Remove them
+  // only if they are still symlinks; a user-replaced directory/file is data and
+  // must make the subsequent clean-worktree check fail.
+  for (const path of handle.managedSymlinks ?? []) {
+    try {
+      if ((await fs.lstat(path)).isSymbolicLink()) await fs.unlink(path);
+    } catch {
+      // Missing or unreadable managed link: let Git perform the final check.
+    }
+  }
+  runGit(handle.source, ['worktree', 'remove', handle.path]);
 }
 
 function runGit(cwd: string, args: string[]): void {
