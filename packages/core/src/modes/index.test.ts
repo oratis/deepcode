@@ -18,8 +18,8 @@ describe('evaluateMode', () => {
       expect(evaluateMode(mode, req('Edit', 'allow'))).toBe('plan-blocked');
       expect(evaluateMode(mode, req('Bash', 'allow'))).toBe('plan-blocked');
     });
-    it('allows read-only tools (Read, Grep, Glob, WebFetch, WebSearch)', () => {
-      for (const t of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch']) {
+    it('allows read-only tools, including structured review presentation', () => {
+      for (const t of ['Read', 'Grep', 'Glob', 'WebFetch', 'WebSearch', 'SubmitReviewFinding']) {
         expect(evaluateMode(mode, req(t, 'no-match'))).toBe('allow');
       }
     });

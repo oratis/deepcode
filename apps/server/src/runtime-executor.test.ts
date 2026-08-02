@@ -6,6 +6,7 @@ import {
   RuntimeHost,
   SessionManager,
   ToolRegistry,
+  type AgentEvent,
   type Provider,
   type ProviderResult,
   type ProviderRunOpts,
@@ -13,7 +14,11 @@ import {
 import type { ThreadSnapshot, TurnSnapshot } from '@deepcode/protocol';
 import { describe, expect, it, vi } from 'vitest';
 
-import { RuntimeHostExecutor, historyFromThread } from './runtime-executor.js';
+import {
+  RuntimeHostExecutor,
+  historyFromThread,
+  reviewFindingsFromEvents,
+} from './runtime-executor.js';
 
 function protocolCallbacks() {
   return {
@@ -101,6 +106,40 @@ class ToolProvider implements Provider {
 }
 
 describe('RuntimeHostExecutor', () => {
+  it('projects validated review tool results into durable finding items', () => {
+    const events: AgentEvent[] = [
+      {
+        type: 'tool_use',
+        id: 'finding-1',
+        name: 'SubmitReviewFinding',
+        input: {},
+      },
+      {
+        type: 'tool_result',
+        id: 'finding-1',
+        result: {
+          content: 'recorded',
+          data: {
+            finding: {
+              title: 'Null crash',
+              body: 'This branch dereferences null.',
+              path: 'src/a.ts',
+              startLine: 4,
+              endLine: 4,
+              priority: 1,
+            },
+          },
+        },
+      },
+    ];
+    expect(reviewFindingsFromEvents(events)).toEqual([
+      {
+        type: 'review_finding',
+        payload: expect.objectContaining({ findingId: 'finding-1', path: 'src/a.ts' }),
+      },
+    ]);
+  });
+
   it('reconstructs history and returns only messages created by the new turn', async () => {
     const provider = new StreamingProvider();
     const host = new RuntimeHost({

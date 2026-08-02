@@ -1,11 +1,13 @@
-import type {
-  ConfigDiagnosticsResult,
-  InitializeResult,
-  ProtocolEvent,
-  ProtocolMethod,
-  ThreadSnapshot,
-  TurnSnapshot,
-  WorkspaceDiffResult,
+import {
+  reviewApplyPrompt,
+  type ConfigDiagnosticsResult,
+  type InitializeResult,
+  type ProtocolEvent,
+  type ProtocolMethod,
+  type ReviewFindingPayload,
+  type ThreadSnapshot,
+  type TurnSnapshot,
+  type WorkspaceDiffResult,
 } from '@deepcode/protocol';
 
 export interface EditorProtocolClient {
@@ -89,6 +91,13 @@ export class EditorProtocolRuntime {
     }
     const thread = await this.ensureThread();
     return this.client.request('workspace/diff', { threadId: thread.id });
+  }
+
+  applyFinding(
+    finding: ReviewFindingPayload,
+    onEvent: EventHandler,
+  ): Promise<{ threadId: string; turnId: string }> {
+    return this.start({ text: reviewApplyPrompt(finding) }, onEvent);
   }
 
   async interrupt(turnId: string): Promise<boolean> {

@@ -31,6 +31,7 @@ const PLAN_READONLY_TOOLS = new Set([
   'WebFetch',
   'WebSearch',
   'AskUserQuestion',
+  'SubmitReviewFinding',
   'ExitPlanMode',
   'ToolSearch',
 ]);

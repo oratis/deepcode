@@ -37,6 +37,7 @@ export {
   WebFetchTool,
   WebSearchTool,
   AskUserQuestionTool,
+  SubmitReviewFindingTool,
   ExitPlanModeTool,
   makeToolSearchTool,
   installToolSearch,
@@ -51,6 +52,7 @@ export {
   type TodoItem,
   type TodoStatus,
   type SearchHit,
+  type ReviewFinding,
 } from './tools/index.js';
 
 // Sessions

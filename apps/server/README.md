@@ -47,3 +47,8 @@ rollback for this optional observability layer.
 The server invokes Git without a shell and returns a bounded file/hunk/line DTO for tracked and
 untracked changes. Untracked symlinks and binary contents are never read into the response. Desktop,
 VS Code, and LSP consume this same capability; clients do not parse Git output independently.
+
+The read-only `SubmitReviewFinding` tool turns model findings into durable `review_finding` items
+with a workspace-relative path, tight line range, priority, and optional exact replacement. Applying
+one is deliberately another canonical turn, not a direct filesystem endpoint: clients use the shared
+prompt builder and the existing Edit/Write permission, approval, hook, sandbox, and snapshot path.

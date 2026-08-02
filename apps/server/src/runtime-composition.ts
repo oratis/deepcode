@@ -37,7 +37,8 @@ import {
 export const DEFAULT_APP_SERVER_SYSTEM_PROMPT =
   'You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their ' +
   'codebase using the available tools. Be concise and accurate. When you modify files, briefly ' +
-  'explain what you changed and why.';
+  'explain what you changed and why. For code review, call SubmitReviewFinding once for each ' +
+  'actionable issue, using a precise workspace-relative path and line range.';
 
 export interface RuntimeCompositionDiagnostic {
   source: 'mcp' | 'plugin';

@@ -158,6 +158,7 @@ describe('handleMessage — initialize', () => {
         'deepcode.respondUserInput',
         'deepcode.configDiagnostics',
         'deepcode.workspaceDiff',
+        'deepcode.applyReviewFinding',
       ]),
     );
   });
@@ -192,6 +193,33 @@ describe('handleMessage — protocol commands', () => {
       'thread/start',
       'workspace/diff',
     ]);
+  });
+
+  it('applies a finding through the normal runAgent turn path', async () => {
+    const client = new FakeClient();
+    __test.setClientFactory(() => client);
+    const out: LspMessage[] = [];
+    await execute(
+      21,
+      'deepcode.applyReviewFinding',
+      {
+        findingId: 'finding-1',
+        title: 'Null crash',
+        body: 'The branch dereferences null.',
+        path: 'src/a.ts',
+        startLine: 4,
+        endLine: 4,
+        priority: 1,
+      },
+      (message) => out.push(message),
+    );
+    expect(out.find((message) => message.id === 21)?.result).toEqual({
+      threadId: 'thread-1',
+      turnId: 'turn-1',
+    });
+    expect(client.requests.at(-1)?.params.input).toEqual(
+      expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
+    );
   });
 
   it('starts a canonical thread and emits native protocol events in order', async () => {

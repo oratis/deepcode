@@ -4,6 +4,7 @@ import type {
   ProtocolEvent,
   ProtocolMethod,
   ProtocolRequest,
+  ReviewFindingPayload,
   ThreadSnapshot,
   TurnSnapshot,
   WorkspaceDiffResult,
@@ -97,6 +98,16 @@ const workspaceDiff: WorkspaceDiffResult = {
   truncated: false,
 };
 
+const finding: ReviewFindingPayload = {
+  findingId: 'finding-1',
+  title: 'Null crash',
+  body: 'The branch dereferences null.',
+  path: 'src/a.ts',
+  startLine: 4,
+  endLine: 4,
+  priority: 1,
+};
+
 describe('EditorProtocolRuntime', () => {
   it('reads the canonical workspace diff through the active thread', async () => {
     const client = new FakeClient();
@@ -108,6 +119,19 @@ describe('EditorProtocolRuntime', () => {
       'workspace/diff',
     ]);
     expect(client.requests.at(-1)?.params).toEqual({ threadId: 'thread-1' });
+  });
+
+  it('applies a finding through a normal permission-gated turn', async () => {
+    const client = new FakeClient();
+    const runtime = new EditorProtocolRuntime(client, () => '/workspace');
+    await runtime.applyFinding(finding, () => undefined);
+    expect(client.requests.map((request) => request.method)).toEqual([
+      'thread/start',
+      'turn/start',
+    ]);
+    expect(client.requests.at(-1)?.params.input).toEqual(
+      expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
+    );
   });
 
   it('reads configuration diagnostics from the app-server for the editor workspace', async () => {

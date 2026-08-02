@@ -3,6 +3,7 @@ import type {
   InitializeResult,
   ProtocolEvent,
   ProtocolMethod,
+  ReviewFindingPayload,
   ThreadSnapshot,
   TurnSnapshot,
   WorkspaceDiffResult,
@@ -67,6 +68,16 @@ const workspaceDiff: WorkspaceDiffResult = {
   truncated: false,
 };
 
+const finding: ReviewFindingPayload = {
+  findingId: 'finding-1',
+  title: 'Null crash',
+  body: 'The branch dereferences null.',
+  path: 'src/a.ts',
+  startLine: 4,
+  endLine: 4,
+  priority: 1,
+};
+
 const thread: ThreadSnapshot = {
   id: 'thread-1',
   cwd: '/workspace',
@@ -93,6 +104,19 @@ describe('DesktopProtocolAgent', () => {
     expect(transport.requests.at(-1)).toEqual({
       method: 'workspace/diff',
       params: { threadId: thread.id },
+    });
+  });
+
+  it('applies a finding as a normal agent turn', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    await agent.resume(thread.id);
+    await agent.applyFinding(finding);
+    expect(transport.requests.at(-1)).toEqual({
+      method: 'turn/start',
+      params: expect.objectContaining({
+        input: expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
+      }),
     });
   });
 
@@ -199,6 +223,36 @@ describe('DesktopProtocolAgent', () => {
       method: 'turn/interrupt',
       params: { threadId: thread.id, turnId: turn.id },
     });
+  });
+
+  it('projects durable review findings for line-addressable UI rendering', async () => {
+    const transport = new FakeTransport();
+    const events: unknown[] = [];
+    const agent = new DesktopProtocolAgent(transport, (event) => events.push(event));
+    await agent.resume(thread.id);
+    await agent.start({ userMessage: 'review' });
+    transport.handler?.({
+      type: 'item.completed',
+      threadId: thread.id,
+      turnId: turn.id,
+      item: {
+        id: 'item-1',
+        type: 'review_finding',
+        completedAt: '2026-08-01T00:00:02.000Z',
+        payload: {
+          findingId: 'finding-1',
+          title: 'Null crash',
+          body: 'This branch dereferences null.',
+          path: 'src/a.ts',
+          startLine: 4,
+          endLine: 4,
+          priority: 1,
+        },
+      },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'review_finding', path: 'src/a.ts', startLine: 4 }),
+    );
   });
 
   it('drops late events after clearing an active thread', async () => {

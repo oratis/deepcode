@@ -13,6 +13,7 @@ import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 import { NotebookEditTool } from './notebook.js';
 import { ReadTool } from './read.js';
+import { SubmitReviewFindingTool } from './review-finding.js';
 import { TaskTool } from './task.js';
 import { TodoWriteTool } from './todo.js';
 import { WebFetchTool } from './web-fetch.js';
@@ -40,6 +41,7 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   WebFetchTool,
   WebSearchTool,
   AskUserQuestionTool,
+  SubmitReviewFindingTool,
   EnterPlanModeTool,
   ExitPlanModeTool,
   EnterWorktreeTool,
