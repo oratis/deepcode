@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { reviewApplyPrompt } from './review.js';
+import { reviewApplyManyPrompt, reviewApplyPrompt } from './review.js';
 
 describe('reviewApplyPrompt', () => {
   it('creates a verification-first turn prompt with the exact finding identity', () => {
@@ -32,5 +32,33 @@ describe('reviewApplyPrompt', () => {
         priority: 1,
       }),
     ).toThrow('valid review finding');
+  });
+
+  it('builds bounded batch prompts and rejects duplicate finding ids', () => {
+    const finding = {
+      findingId: 'finding-1',
+      title: 'Null crash',
+      body: 'The branch dereferences null.',
+      path: 'src/a.ts',
+      startLine: 4,
+      endLine: 4,
+      priority: 1 as const,
+    };
+    const prompt = reviewApplyManyPrompt([
+      finding,
+      { ...finding, findingId: 'finding-2', path: 'src/b.ts' },
+    ]);
+    expect(prompt).toContain('Apply these 2 review findings');
+    expect(prompt).toContain('Review finding finding-2');
+    expect(() => reviewApplyManyPrompt([finding, finding])).toThrow('unique');
+    expect(() => reviewApplyManyPrompt([{ ...finding, findingId: 'unsafe\nid' }])).toThrow(
+      'valid review finding',
+    );
+    expect(() => reviewApplyManyPrompt([{ ...finding, title: 'unsafe\ntitle' }])).toThrow(
+      'valid review finding',
+    );
+    expect(() => reviewApplyManyPrompt([{ ...finding, endLine: 205 }])).toThrow(
+      'valid review finding',
+    );
   });
 });

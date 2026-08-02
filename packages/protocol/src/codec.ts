@@ -10,6 +10,7 @@ const protocolMethods = new Set<ProtocolMethod>([
   'config/diagnostics',
   'diagnostics/export',
   'workspace/diff',
+  'review/apply',
   'thread/start',
   'thread/read',
   'thread/resume',

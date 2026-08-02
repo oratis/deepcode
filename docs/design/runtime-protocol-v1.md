@@ -54,7 +54,8 @@ the referenced thread immediately after receiving an event.
 Clients call `initialize` before other methods and inspect both `protocolVersion` and advertised
 capabilities. Version 1 advertises thread resume, turn interruption, completed-item persistence,
 transient deltas, structured tool events, interactive requests, and the optional availability of
-value-free configuration diagnostics.
+value-free configuration diagnostics, diagnostic export, canonical workspace diff, and review
+actions.
 
 Unknown methods and non-object request parameters are rejected by the line-oriented JSON codec.
 Future incompatible lifecycle changes require a new protocol version; optional behavior should be
@@ -62,6 +63,7 @@ introduced through capabilities.
 
 ## Current scope
 
-The in-memory store and codec are reference implementations used by contract tests. Production
-transport, authorization, persistent storage, backpressure, and wiring to `RuntimeHost` belong to
-the app-server phase of the alignment roadmap.
+The in-memory store and codec remain reference implementations used by contract tests. The
+production app-server now owns persistent thread storage, `RuntimeHost` execution, interactive
+requests, canonical workspace diff, structured review actions, and redacted tracing. Shared-daemon
+multi-client attachment remains outside protocol v1.

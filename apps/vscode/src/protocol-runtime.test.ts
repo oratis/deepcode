@@ -41,6 +41,7 @@ class FakeClient {
         transientDeltas: true,
         structuredToolEvents: true,
         interactiveRequests: true,
+        reviewActions: true,
         configDiagnostics: true,
         diagnosticExport: true,
         workspaceDiff: true,
@@ -58,7 +59,7 @@ class FakeClient {
     if (method === 'thread/start' || method === 'thread/read' || method === 'thread/resume') {
       return this.thread as T;
     }
-    if (method === 'turn/start') {
+    if (method === 'turn/start' || method === 'review/apply') {
       this.emit({ type: 'turn.started', threadId: this.thread.id, turn: this.turn });
       this.emit({
         type: 'item.delta',
@@ -127,11 +128,12 @@ describe('EditorProtocolRuntime', () => {
     await runtime.applyFinding(finding, () => undefined);
     expect(client.requests.map((request) => request.method)).toEqual([
       'thread/start',
-      'turn/start',
+      'review/apply',
     ]);
-    expect(client.requests.at(-1)?.params.input).toEqual(
-      expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
-    );
+    expect(client.requests.at(-1)?.params).toEqual({
+      threadId: 'thread-1',
+      findingIds: ['finding-1'],
+    });
   });
 
   it('reads configuration diagnostics from the app-server for the editor workspace', async () => {

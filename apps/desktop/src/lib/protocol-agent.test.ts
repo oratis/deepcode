@@ -26,6 +26,7 @@ class FakeTransport implements ProtocolTransport {
         transientDeltas: true,
         structuredToolEvents: true,
         interactiveRequests: true,
+        reviewActions: true,
         configDiagnostics: true,
         diagnosticExport: true,
         workspaceDiff: true,
@@ -45,6 +46,7 @@ class FakeTransport implements ProtocolTransport {
     if (method === 'thread/start') return thread as T;
     if (method === 'thread/resume') return thread as T;
     if (method === 'turn/start') return turn as T;
+    if (method === 'review/apply') return turn as T;
     if (method === 'turn/interrupt') return { interrupted: true } as T;
     if (method === 'config/diagnostics') return diagnostics as T;
     if (method === 'workspace/diff') return workspaceDiff as T;
@@ -113,10 +115,8 @@ describe('DesktopProtocolAgent', () => {
     await agent.resume(thread.id);
     await agent.applyFinding(finding);
     expect(transport.requests.at(-1)).toEqual({
-      method: 'turn/start',
-      params: expect.objectContaining({
-        input: expect.objectContaining({ text: expect.stringContaining('normal editing tools') }),
-      }),
+      method: 'review/apply',
+      params: { threadId: thread.id, findingIds: ['finding-1'] },
     });
   });
 
@@ -252,6 +252,20 @@ describe('DesktopProtocolAgent', () => {
     });
     expect(events).toContainEqual(
       expect.objectContaining({ type: 'review_finding', path: 'src/a.ts', startLine: 4 }),
+    );
+    transport.handler?.({
+      type: 'item.completed',
+      threadId: thread.id,
+      turnId: turn.id,
+      item: {
+        id: 'item-2',
+        type: 'review_action',
+        completedAt: '2026-08-01T00:00:03.000Z',
+        payload: { actionId: turn.id, kind: 'apply', findingIds: ['finding-1'] },
+      },
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'review_action', findingIds: ['finding-1'] }),
     );
   });
 

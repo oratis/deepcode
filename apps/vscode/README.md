@@ -5,7 +5,7 @@ protocol and canonical threads as the desktop client.
 
 ## Current state
 
-- Four commands, an activity-bar chat view, model/effort settings, and a default
+- Six commands, an activity-bar chat view, model/effort settings, and a default
   `Cmd/Ctrl+Shift+D` keybinding.
 - Canonical thread reuse, structured text/tool events, real interrupt plumbing, approval via
   warning actions, and AskUserQuestion via QuickPick/InputBox.
@@ -38,13 +38,14 @@ Then:
 
 ## Commands
 
-| ID                            | Default keybinding | What it does                                             |
-| ----------------------------- | ------------------ | -------------------------------------------------------- |
-| `deepcode.openPanel`          | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view                            |
-| `deepcode.run`                | (palette)          | Run agent on the selected text                           |
-| `deepcode.review`             | (palette)          | Run `code-review` skill on current diff                  |
-| `deepcode.applyReviewFinding` | (API/context)      | Apply one structured finding through a normal agent turn |
-| `deepcode.showDiagnostics`    | (palette)          | Show value-free config sources, trust gates, and issues  |
+| ID                                | Default keybinding | What it does                                             |
+| --------------------------------- | ------------------ | -------------------------------------------------------- |
+| `deepcode.openPanel`              | `Cmd/Ctrl+Shift+D` | Reveal the DeepCode chat view                            |
+| `deepcode.run`                    | (palette)          | Run agent on the selected text                           |
+| `deepcode.review`                 | (palette)          | Run `code-review` skill on current diff                  |
+| `deepcode.applyReviewFinding`     | (API/context)      | Apply one canonical finding through a normal agent turn  |
+| `deepcode.applyAllReviewFindings` | (palette)          | Apply the latest review batch through one canonical turn |
+| `deepcode.showDiagnostics`        | (palette)          | Show value-free config sources, trust gates, and issues  |
 
 ## Settings
 

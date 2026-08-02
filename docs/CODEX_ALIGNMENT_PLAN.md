@@ -334,10 +334,13 @@ model tool call
   canonical `threadId` 绑定 cwd；Git 不经 shell，未跟踪 symlink/binary 不读取内容。VS Code
   review、Desktop protocol agent 与 LSP command 共享该能力，不再各自解析 diff。
 - 只读 `SubmitReviewFinding` tool 已把模型反馈持久化为含 path/line/priority/replacement 的
-  `review_finding` item；单项 Apply 由 shared prompt 派生成新的 canonical turn，而不是新增
-  直写接口，因此继续经过 Edit/Write permission、approval、hook、sandbox 与 snapshot。
+  `review_finding` item；`review/apply` 只接受 canonical thread 中已有 finding id，由 app-server
+  解析原始 payload、生成单项或批量 prompt，并把 finding/action/turn 关联持久化为
+  `review_action`。Apply 不暴露直写接口，因此继续经过 Edit/Write permission、approval、hook、
+  sandbox 与 snapshot，客户端不能篡改 path/replacement 或伪造 finding。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
-- 客户端内联评论/上下文 action、单项 revert 与 review all。
+- 客户端内联评论/上下文 action 与冲突安全的单项 revert；VS Code review all 已由同一
+  canonical action path 提供。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。
 - release candidate、迁移演练、性能预算和回滚说明。
 

@@ -44,6 +44,9 @@ by expecting partial deltas to replay.
 | `approval/respond`   | thread, turn, request, decision | whether the pending request accepted the response  |
 | `user-input/respond` | thread, turn, request, answer   | whether the pending request accepted the response  |
 | `config/diagnostics` | workspace cwd                   | value-free layers, provenance, trust gates, issues |
+| `diagnostics/export` | workspace cwd                   | redacted local diagnostic bundle metadata          |
+| `workspace/diff`     | `threadId`                      | bounded structured workspace diff                  |
+| `review/apply`       | `threadId`, `findingIds`        | permission-gated review action turn                |
 
 `turn/start` returns before model work finishes. The server emits transient deltas while the turn
 runs, then persists new provider-history messages as completed items before emitting exactly one
@@ -52,6 +55,11 @@ terminal turn event.
 If a process crashes after persisting an in-progress turn, the next `thread/resume` marks that
 orphaned turn interrupted. Version 1 does not attempt to resurrect an unknown provider request or
 tool process after a crash.
+
+`review/apply` resolves every id from durable `review_finding` items already stored in the target
+thread, then generates the bounded verification prompt inside the app-server. Its `review_action`
+item records the selected ids and action turn. Direct `turn/start` requests cannot inject this
+reserved metadata.
 
 ## Storage and security
 

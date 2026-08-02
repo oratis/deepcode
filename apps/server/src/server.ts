@@ -1,13 +1,17 @@
 import {
+  isReviewFindingPayload,
   MemoryThreadStore,
   ProtocolInvariantError,
   ProtocolRuntime,
+  reviewApplyManyPrompt,
   type CompletedItemType,
   type ConfigDiagnosticsResult,
   type DiagnosticExportResult,
   type ProtocolEvent,
   type ProtocolRequest,
   type ProtocolResponse,
+  type ReviewActionPayload,
+  type ReviewFindingPayload,
   type ThreadSnapshot,
   type ThreadStore,
   type TurnSnapshot,
@@ -120,6 +124,7 @@ export class AppServer {
       configDiagnostics: options.configDiagnostics !== undefined,
       diagnosticExport: options.diagnosticExport !== undefined,
       workspaceDiff: options.workspaceDiff !== undefined,
+      reviewActions: true,
     });
   }
 
@@ -206,6 +211,8 @@ export class AppServer {
         const thread = await this.lifecycle.resumeThread(requiredId(request.params, 'threadId'));
         return this.options.workspaceDiff(thread.cwd);
       }
+      case 'review/apply':
+        return this.applyReviewFindings(request.params, traceId);
       case 'thread/start':
         return this.lifecycle.startThread(requiredString(request.params, 'cwd'), traceId);
       case 'thread/read':
@@ -235,11 +242,55 @@ export class AppServer {
     return thread;
   }
 
-  private async startTurn(params: Record<string, unknown>, traceId: string): Promise<TurnSnapshot> {
+  private async applyReviewFindings(
+    params: Record<string, unknown>,
+    traceId: string,
+  ): Promise<TurnSnapshot> {
+    const threadId = requiredId(params, 'threadId');
+    const findingIds = requiredIds(params, 'findingIds', 20);
+    const thread = await this.lifecycle.resumeThread(threadId);
+    const findings = new Map<string, ReviewFindingPayload>();
+    for (const turn of thread.turns) {
+      for (const item of turn.items) {
+        if (item.type === 'review_finding' && isReviewFindingPayload(item.payload)) {
+          findings.set(item.payload.findingId, item.payload);
+        }
+      }
+    }
+    const selected = findingIds.map((findingId) => {
+      const finding = findings.get(findingId);
+      if (!finding) throw new RequestValidationError(`Review finding not found: ${findingId}`);
+      return finding;
+    });
+    const action: Omit<ReviewActionPayload, 'actionId'> = { kind: 'apply', findingIds };
+    return this.startTurn(
+      {
+        threadId,
+        input: { text: reviewApplyManyPrompt(selected), reviewAction: action },
+      },
+      traceId,
+      action,
+    );
+  }
+
+  private async startTurn(
+    params: Record<string, unknown>,
+    traceId: string,
+    reviewAction?: Omit<ReviewActionPayload, 'actionId'>,
+  ): Promise<TurnSnapshot> {
     const threadId = requiredId(params, 'threadId');
     const input = requiredRecord(params, 'input');
+    if (!reviewAction && Object.hasOwn(input, 'reviewAction')) {
+      throw new RequestValidationError('reviewAction is reserved for app-server review methods');
+    }
     const thread = await this.lifecycle.resumeThread(threadId);
     const turn = await this.lifecycle.startTurn(threadId, input, traceId);
+    if (reviewAction) {
+      await this.lifecycle.appendCompletedItem(threadId, turn.id, 'review_action', {
+        actionId: turn.id,
+        ...reviewAction,
+      });
+    }
     const controller = new AbortController();
     const task = this.executeTurn(thread, turn, input, controller);
     this.activeTurns.set(turn.id, { threadId, controller, task });
@@ -550,4 +601,21 @@ function requiredRecord(params: Record<string, unknown>, key: string): Record<st
     throw new RequestValidationError(`${key} must be an object`);
   }
   return value as Record<string, unknown>;
+}
+
+function requiredIds(params: Record<string, unknown>, key: string, maximum: number): string[] {
+  const value = params[key];
+  if (!Array.isArray(value) || value.length === 0 || value.length > maximum) {
+    throw new RequestValidationError(`${key} must contain between 1 and ${maximum} ids`);
+  }
+  const ids = value.map((entry) => {
+    if (typeof entry !== 'string' || !/^[a-zA-Z0-9._-]{1,200}$/.test(entry)) {
+      throw new RequestValidationError(`${key} contains an invalid id`);
+    }
+    return entry;
+  });
+  if (new Set(ids).size !== ids.length) {
+    throw new RequestValidationError(`${key} must not contain duplicate ids`);
+  }
+  return ids;
 }

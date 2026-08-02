@@ -14,6 +14,7 @@ lines.on('line', (line) => {
     ? { protocolVersion: 1, capabilities: {
         threadResume: true, turnInterrupt: true, completedItemPersistence: true,
         transientDeltas: true, structuredToolEvents: true, interactiveRequests: true,
+        reviewActions: true,
         configDiagnostics: true
       } }
     : { echoed: request.method };

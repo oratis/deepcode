@@ -9,6 +9,7 @@ export type CompletedItemType =
   | 'approval'
   | 'ask_user'
   | 'review_finding'
+  | 'review_action'
   | 'error';
 
 export interface CompletedItem {
@@ -135,6 +136,7 @@ export interface InitializeResult {
     configDiagnostics: boolean;
     diagnosticExport: boolean;
     workspaceDiff: boolean;
+    reviewActions: boolean;
   };
 }
 
@@ -213,11 +215,18 @@ export interface ReviewFindingPayload {
   replacement?: string;
 }
 
+export interface ReviewActionPayload {
+  actionId: string;
+  kind: 'apply';
+  findingIds: string[];
+}
+
 export type ProtocolMethod =
   | 'initialize'
   | 'config/diagnostics'
   | 'diagnostics/export'
   | 'workspace/diff'
+  | 'review/apply'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'

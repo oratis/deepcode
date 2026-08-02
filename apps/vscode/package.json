@@ -45,6 +45,10 @@
         "title": "DeepCode: Apply Review Finding"
       },
       {
+        "command": "deepcode.applyAllReviewFindings",
+        "title": "DeepCode: Apply All Review Findings"
+      },
+      {
         "command": "deepcode.showDiagnostics",
         "title": "DeepCode: Show Configuration Diagnostics"
       }

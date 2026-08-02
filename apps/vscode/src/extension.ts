@@ -1,7 +1,12 @@
 // VS Code extension entry — thin UI over the shared app-server protocol.
 
 import type * as vscode from 'vscode';
-import { ProtocolClient, type ProtocolEvent, type ReviewFindingPayload } from '@deepcode/protocol';
+import {
+  isReviewFindingPayload,
+  ProtocolClient,
+  type ProtocolEvent,
+  type ReviewFindingPayload,
+} from '@deepcode/protocol';
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
 import { EditorProtocolRuntime } from './protocol-runtime.js';
@@ -12,6 +17,7 @@ import { formatWorkspaceDiffForReview } from './workspace-diff.js';
 type V = typeof import('vscode');
 
 let activeRuntime: EditorProtocolRuntime | undefined;
+const latestReviewFindings = new Map<string, ReviewFindingPayload>();
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeMod = await loadVscode();
@@ -53,6 +59,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       try {
+        latestReviewFindings.clear();
         const diff = await runtime.diff();
         if (!diff.repository || diff.files.length === 0) {
           void window.showInformationMessage('DeepCode: no uncommitted changes to review.');
@@ -78,9 +85,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           void window.showErrorMessage('DeepCode: a review finding is required.');
           return;
         }
-        await runFindingInOutput(finding, vscodeMod, runtime);
+        await runFindingsInOutput([finding], vscodeMod, runtime);
       },
     ),
+    commands.registerCommand('deepcode.applyAllReviewFindings', async () => {
+      const findings = [...latestReviewFindings.values()];
+      if (findings.length === 0) {
+        void window.showInformationMessage('DeepCode: no review findings to apply.');
+        return;
+      }
+      await runFindingsInOutput(findings, vscodeMod, runtime);
+    }),
     commands.registerCommand('deepcode.showDiagnostics', async () => {
       const out = window.createOutputChannel('DeepCode Diagnostics');
       out.show(true);
@@ -95,16 +110,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 }
 
-async function runFindingInOutput(
-  finding: ReviewFindingPayload,
+async function runFindingsInOutput(
+  findings: ReviewFindingPayload[],
   vscodeMod: V,
   runtime: EditorProtocolRuntime,
 ): Promise<void> {
   const out = vscodeMod.window.createOutputChannel('DeepCode');
   out.show(true);
-  out.appendLine(`Applying review finding: ${finding.title}`);
+  out.appendLine(
+    findings.length === 1
+      ? `Applying review finding: ${findings[0]!.title}`
+      : `Applying ${findings.length} review findings`,
+  );
   try {
-    await runtime.applyFinding(finding, (event) => {
+    await runtime.applyFindings(findings, (event) => {
       projectOutputEvent(event, out);
       void respondToInteraction(event, vscodeMod, runtime);
     });
@@ -181,10 +200,19 @@ function projectOutputEvent(event: ProtocolEvent, out: vscode.OutputChannel): vo
     case 'item.completed':
       if (event.item.type === 'review_finding') {
         const finding = event.item.payload;
+        if (isReviewFindingPayload(finding)) {
+          latestReviewFindings.set(finding.findingId, finding);
+        }
         out.appendLine(
           `\n[P${String(finding.priority)}] ${String(finding.title)} — ${String(finding.path)}:${String(finding.startLine)}`,
         );
         out.appendLine(`  ${String(finding.body)}`);
+      } else if (event.item.type === 'review_action') {
+        out.appendLine(
+          `\n[review action] ${String(event.item.payload.kind)} ${String(
+            (event.item.payload.findingIds as unknown[] | undefined)?.length ?? 0,
+          )} finding(s)`,
+        );
       }
       break;
   }

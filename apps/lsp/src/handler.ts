@@ -9,7 +9,6 @@ import {
   type InitializeResult,
   type ProtocolEvent,
   type ProtocolMethod,
-  reviewApplyPrompt,
   type ReviewFindingPayload,
   type ThreadSnapshot,
   type TurnSnapshot,
@@ -71,6 +70,7 @@ const COMMANDS = [
   'deepcode.configDiagnostics',
   'deepcode.workspaceDiff',
   'deepcode.applyReviewFinding',
+  'deepcode.applyReviewFindings',
 ];
 
 export async function handleMessage(msg: LspMessage, send: SendFn): Promise<void> {
@@ -178,10 +178,13 @@ async function handleExecuteCommand(params: ExecuteCommandParams, send: SendFn):
     case 'deepcode.workspaceDiff':
       return handleWorkspaceDiff();
     case 'deepcode.applyReviewFinding':
-      return handleRunAgent(
-        {
-          prompt: reviewApplyPrompt((params.arguments?.[0] ?? {}) as ReviewFindingPayload),
-        },
+      return handleReviewApply(
+        [((params.arguments?.[0] ?? {}) as ReviewFindingPayload).findingId],
+        send,
+      );
+    case 'deepcode.applyReviewFindings':
+      return handleReviewApply(
+        ((params.arguments?.[0] ?? {}) as { findingIds?: string[] }).findingIds ?? [],
         send,
       );
     default:
@@ -210,6 +213,29 @@ async function handleRunAgent(
       ...(args.effort ? { effort: args.effort } : {}),
       ...(args.mode ? { mode: args.mode } : {}),
     },
+  });
+  state.activeTurns.set(turn.id, thread.id);
+  state.turnSinks.set(turn.id, send);
+  flushEvents(turn.id);
+  return { threadId: thread.id, turnId: turn.id };
+}
+
+async function handleReviewApply(
+  findingIds: Array<string | undefined>,
+  send: SendFn,
+): Promise<{ threadId: string; turnId: string }> {
+  if (findingIds.length === 0 || findingIds.some((findingId) => !findingId)) {
+    throw new Error('At least one findingId is required');
+  }
+  const client = await getClient();
+  const initialized = await client.connect();
+  if (!initialized.capabilities.reviewActions) {
+    throw new Error('The app-server does not support review actions');
+  }
+  const thread = await ensureThread(client);
+  const turn = await client.request<TurnSnapshot>('review/apply', {
+    threadId: thread.id,
+    findingIds: findingIds as string[],
   });
   state.activeTurns.set(turn.id, thread.id);
   state.turnSinks.set(turn.id, send);

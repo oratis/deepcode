@@ -21,5 +21,8 @@ time, and record count; the app-server owns path hashing and payload redaction.
 `workspace/diff` is also capability-negotiated and requires a canonical `threadId`. It returns
 bounded file, hunk, and line objects rather than a client-specific raw patch.
 
-Actionable review output is persisted as `review_finding` completed items. `reviewApplyPrompt`
-converts a selected finding into a verification-first follow-up turn; it never writes directly.
+Actionable review output is persisted as `review_finding` completed items. `review/apply` accepts
+only finding ids already present in the canonical thread, resolves their original payloads in the
+app-server, and starts one permission-gated turn for a selected finding or bounded batch. The
+`review_action` completed item correlates that action with its turn; clients never send a writable
+replacement payload or write directly.
