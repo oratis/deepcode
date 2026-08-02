@@ -26,6 +26,8 @@ export {
   appendAllowMatcher,
   type LoadedSettings,
   type LoadSettingsOpts,
+  type SettingsLayerName,
+  type SettingsValueSource,
 } from './loader.js';
 
 export {
@@ -35,6 +37,23 @@ export {
   type TrustGatedField,
   type GateResult,
 } from './trust-gate.js';
+
+export {
+  DirectoryTrustStore,
+  type DirectoryTrustState,
+  type DirectoryTrustStoreOptions,
+} from './trust-store.js';
+
+export {
+  diagnoseSettings,
+  type DiagnoseSettingsOptions,
+  type SettingsDiagnostics,
+  type SettingsDiagnosticIssue,
+  type SettingsDiagnosticSeverity,
+  type SettingsLayerDiagnostic,
+} from './diagnostics.js';
+
+export { validateSettingsShallow } from './validation.js';
 
 export {
   evaluatePermission,

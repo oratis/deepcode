@@ -9,8 +9,32 @@ import type { DeepCodeSettings } from './types.js';
 
 export type TrustStatus = 'trusted' | 'plan-only' | 'untrusted';
 
-/** Project/local settings fields that can execute arbitrary shell/processes. */
-export const TRUST_GATED_FIELDS = ['hooks', 'mcpServers', 'apiKeyHelper', 'statusLine'] as const;
+/** Project/local settings fields that can execute code or widen runtime authority. */
+export const TRUST_GATED_FIELDS = [
+  'model',
+  'baseURL',
+  'forceLoginMethod',
+  'effortLevel',
+  'effortBudgets',
+  'effortOverrides',
+  'alwaysThinkingEnabled',
+  'permissions',
+  'autoMode',
+  'sandbox',
+  'env',
+  'hooks',
+  'allowedHttpHookUrls',
+  'httpHookAllowedEnvVars',
+  'mcpServers',
+  'enableAllProjectMcpServers',
+  'enabledMcpjsonServers',
+  'apiKeyHelper',
+  'statusLine',
+  'voice',
+  'worktree',
+  'update',
+  'plugins',
+] as const;
 export type TrustGatedField = (typeof TRUST_GATED_FIELDS)[number];
 
 export interface GateResult {
@@ -30,7 +54,7 @@ function copyOrDelete(dst: DeepCodeSettings, src: DeepCodeSettings, key: TrustGa
  * Return the effective settings for a directory at the given trust `status`.
  *
  * - `trusted`     → merged settings unchanged.
- * - `untrusted` / `plan-only` → each exec-bearing field is reset to the
+ * - `untrusted` / `plan-only` → each authority-bearing field is reset to the
  *   user-global layer's value (or removed if the user layer doesn't set it),
  *   so a project's `.deepcode/settings.json` can't run code until the user
  *   trusts the directory. `gated` lists which fields were actually stripped

@@ -33,6 +33,54 @@ function deterministicOptions() {
 }
 
 describe('AppServer', () => {
+  it('advertises and returns value-free configuration diagnostics when provided', async () => {
+    const server = new AppServer({
+      executor: { execute: async () => ({}) },
+      configDiagnostics: async (cwd) => ({
+        cwd,
+        trustStatus: 'untrusted',
+        layers: [],
+        provenance: { '/model': { layer: 'user', path: '/home/.deepcode/settings.json' } },
+        gated: [],
+        issues: [],
+      }),
+    });
+
+    await expect(server.handle(request(1, 'initialize'))).resolves.toEqual({
+      id: 1,
+      result: expect.objectContaining({
+        capabilities: expect.objectContaining({ configDiagnostics: true }),
+      }),
+    });
+    await expect(
+      server.handle(request(2, 'config/diagnostics', { cwd: '/workspace' })),
+    ).resolves.toEqual({
+      id: 2,
+      result: expect.objectContaining({
+        cwd: '/workspace',
+        provenance: expect.objectContaining({
+          '/model': expect.objectContaining({ layer: 'user' }),
+        }),
+      }),
+    });
+  });
+
+  it('does not advertise unavailable configuration diagnostics', async () => {
+    const server = new AppServer({ executor: { execute: async () => ({}) } });
+    const initialized = await server.handle(request(1, 'initialize'));
+    expect(initialized.result).toEqual(
+      expect.objectContaining({
+        capabilities: expect.objectContaining({ configDiagnostics: false }),
+      }),
+    );
+    await expect(
+      server.handle(request(2, 'config/diagnostics', { cwd: '/workspace' })),
+    ).resolves.toEqual({
+      id: 2,
+      error: expect.objectContaining({ code: 'invalid_request' }),
+    });
+  });
+
   it('routes initialization and thread lifecycle requests', async () => {
     const server = new AppServer({
       executor: { execute: async () => ({}) },

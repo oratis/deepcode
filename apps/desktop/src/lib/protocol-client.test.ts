@@ -43,6 +43,7 @@ class FakeBridge implements ProtocolClientBridge {
                     transientDeltas: true,
                     structuredToolEvents: true,
                     interactiveRequests: true,
+                    configDiagnostics: true,
                   },
                 }
               : { ok: true },

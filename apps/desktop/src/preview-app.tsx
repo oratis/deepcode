@@ -189,6 +189,7 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
           transientDeltas: true,
           structuredToolEvents: true,
           interactiveRequests: true,
+          configDiagnostics: true,
         },
       });
       break;

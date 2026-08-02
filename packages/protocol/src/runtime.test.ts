@@ -35,6 +35,7 @@ describe('ProtocolRuntime', () => {
         transientDeltas: true,
         structuredToolEvents: true,
         interactiveRequests: true,
+        configDiagnostics: false,
       },
     });
   });

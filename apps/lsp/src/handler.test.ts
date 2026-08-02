@@ -19,6 +19,7 @@ const capabilities: InitializeResult = {
     transientDeltas: true,
     structuredToolEvents: true,
     interactiveRequests: true,
+    configDiagnostics: true,
   },
 };
 

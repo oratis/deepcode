@@ -314,7 +314,9 @@ model tool call
 
 ### PR 8 — 配置、扩展、多代理与 review 收尾
 
-- 现有 JSON config 增加 provenance/diagnostics；统一 `AGENTS.md`、`DEEPCODE.md`、MCP、skills、plugins、hooks。
+- JSON config 已增加逐叶 JSON Pointer provenance 与不含值的 diagnostics；CLI/desktop/editor
+  app-server 现在共享 core trust store，未信任项目不能通过 permissions/sandbox/env 等字段扩大权限。
+- 下一步统一 `AGENTS.md`、`DEEPCODE.md`、MCP、skills、plugins、hooks。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。
 - diff review、可定位反馈、trace id、结构化日志与脱敏导出。
 - 删除完成迁移的旧 IPC/facade；更新所有用户文档。

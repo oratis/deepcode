@@ -318,6 +318,15 @@ export {
   validateSettingsShallow,
 } from './config/schema.js';
 
+export {
+  DirectoryTrustStore,
+  diagnoseSettings,
+  type DirectoryTrustState,
+  type DirectoryTrustStoreOptions,
+  type DiagnoseSettingsOptions,
+  type SettingsDiagnostics,
+} from './config/index.js';
+
 // Vision (v1.1 — image input abstraction)
 export {
   StubVisionProvider,

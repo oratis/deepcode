@@ -23,6 +23,7 @@ class FakeTransport implements ProtocolTransport {
         transientDeltas: true,
         structuredToolEvents: true,
         interactiveRequests: true,
+        configDiagnostics: true,
       },
     };
   }

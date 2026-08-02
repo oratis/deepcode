@@ -33,7 +33,7 @@ describe('protocol codec', () => {
     );
   });
 
-  it.each(['approval/respond', 'user-input/respond'] as const)(
+  it.each(['approval/respond', 'user-input/respond', 'config/diagnostics'] as const)(
     'accepts the interactive response method %s',
     (method) => {
       expect(decodeProtocolRequest(JSON.stringify({ id: 2, method, params: {} }))).toEqual({

@@ -11,6 +11,13 @@ import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { DeepCodeSettings } from './types.js';
 
+export type SettingsLayerName = 'user' | 'project' | 'local' | 'override';
+
+export interface SettingsValueSource {
+  layer: SettingsLayerName;
+  path: string;
+}
+
 export interface LoadedSettings {
   merged: DeepCodeSettings;
   layers: {
@@ -26,6 +33,8 @@ export interface LoadedSettings {
     localPath: string;
     overridePath?: string;
   };
+  /** Winning source for each leaf setting, keyed by RFC 6901 JSON pointer. */
+  provenance: Record<string, SettingsValueSource>;
 }
 
 export interface LoadSettingsOpts {
@@ -50,7 +59,7 @@ export function settingsPaths(opts: LoadSettingsOpts): LoadedSettings['sources']
 async function readJson(path: string): Promise<DeepCodeSettings | undefined> {
   try {
     const raw = await fs.readFile(path, 'utf8');
-    return JSON.parse(raw) as DeepCodeSettings;
+    return parseSettings(raw, path);
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return undefined;
@@ -63,7 +72,7 @@ async function readJson(path: string): Promise<DeepCodeSettings | undefined> {
 async function readJsonRequired(path: string): Promise<DeepCodeSettings> {
   try {
     const raw = await fs.readFile(path, 'utf8');
-    return JSON.parse(raw) as DeepCodeSettings;
+    return parseSettings(raw, path);
   } catch (err) {
     throw new Error(`--settings: cannot load ${path}: ${(err as Error).message}`);
   }
@@ -88,11 +97,84 @@ export async function loadSettings(opts: LoadSettingsOpts): Promise<LoadedSettin
       override as Record<string, unknown>,
     ) as DeepCodeSettings;
   }
+  const resolvedSources = { ...sources, overridePath: opts.settingsPath };
   return {
     merged,
     layers: { user, project, local, override },
-    sources: { ...sources, overridePath: opts.settingsPath },
+    sources: resolvedSources,
+    provenance: settingsProvenance(
+      { user, project, local, override },
+      {
+        user: resolvedSources.userPath,
+        project: resolvedSources.projectPath,
+        local: resolvedSources.localPath,
+        override: resolvedSources.overridePath,
+      },
+    ),
   };
+}
+
+function parseSettings(raw: string, path: string): DeepCodeSettings {
+  const parsed = JSON.parse(raw) as unknown;
+  if (!isRecord(parsed)) throw new Error(`Settings in ${path} must be a JSON object`);
+  assertSafeValue(parsed, '', path);
+  return parsed as DeepCodeSettings;
+}
+
+const UNSAFE_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function assertSafeValue(value: unknown, pointer: string, path: string): void {
+  if (Array.isArray(value)) {
+    value.forEach((entry, index) => assertSafeValue(entry, `${pointer}/${index}`, path));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const [key, entry] of Object.entries(value)) {
+    if (UNSAFE_KEYS.has(key)) {
+      throw new Error(`Unsafe settings key ${pointer}/${escapePointer(key)} in ${path}`);
+    }
+    assertSafeValue(entry, `${pointer}/${escapePointer(key)}`, path);
+  }
+}
+
+function settingsProvenance(
+  layers: LoadedSettings['layers'],
+  paths: Record<SettingsLayerName, string | undefined>,
+): Record<string, SettingsValueSource> {
+  const provenance: Record<string, SettingsValueSource> = {};
+  for (const layer of ['user', 'project', 'local', 'override'] as const) {
+    const settings = layers[layer];
+    const path = paths[layer];
+    if (settings && path)
+      collectProvenance(settings as Record<string, unknown>, '', layer, path, provenance);
+  }
+  return provenance;
+}
+
+function collectProvenance(
+  value: Record<string, unknown>,
+  pointer: string,
+  layer: SettingsLayerName,
+  path: string,
+  output: Record<string, SettingsValueSource>,
+): void {
+  for (const [key, entry] of Object.entries(value)) {
+    if (entry === undefined) continue;
+    const child = `${pointer}/${escapePointer(key)}`;
+    if (isRecord(entry) && Object.keys(entry).length > 0) {
+      collectProvenance(entry, child, layer, path, output);
+    } else {
+      output[child] = { layer, path };
+    }
+  }
+}
+
+function escapePointer(value: string): string {
+  return value.replaceAll('~', '~0').replaceAll('/', '~1');
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
 /**
@@ -100,6 +182,8 @@ export async function loadSettings(opts: LoadSettingsOpts): Promise<LoadedSettin
  * (Arrays are NOT concatenated — settings semantics are "later replaces earlier".)
  */
 export function deepMerge<T extends Record<string, unknown>>(a: T, b: T): T {
+  assertSafeValue(a, '', 'settings merge input');
+  assertSafeValue(b, '', 'settings merge input');
   const out: Record<string, unknown> = { ...a };
   for (const key of Object.keys(b)) {
     const av = (a as Record<string, unknown>)[key];

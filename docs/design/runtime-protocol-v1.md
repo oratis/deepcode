@@ -53,7 +53,8 @@ the referenced thread immediately after receiving an event.
 
 Clients call `initialize` before other methods and inspect both `protocolVersion` and advertised
 capabilities. Version 1 advertises thread resume, turn interruption, completed-item persistence,
-transient deltas, structured tool events, and interactive requests.
+transient deltas, structured tool events, interactive requests, and the optional availability of
+value-free configuration diagnostics.
 
 Unknown methods and non-object request parameters are rejected by the line-oriented JSON codec.
 Future incompatible lifecycle changes require a new protocol version; optional behavior should be

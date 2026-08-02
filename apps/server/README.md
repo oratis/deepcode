@@ -18,3 +18,7 @@ After a workspace build, run `node apps/server/dist/cli.js` and send one JSON re
 ```
 
 The transport is experimental. Clients must negotiate `protocolVersion` before using it.
+
+`config/diagnostics` accepts a workspace `cwd` and returns a value-free report containing loaded
+layers, leaf provenance, trust-gated fields, and validation issues. Configuration values and
+credentials never cross this protocol boundary.
