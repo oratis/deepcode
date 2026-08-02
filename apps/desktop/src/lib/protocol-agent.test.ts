@@ -25,6 +25,7 @@ class FakeTransport implements ProtocolTransport {
         structuredToolEvents: true,
         interactiveRequests: true,
         configDiagnostics: true,
+        diagnosticExport: true,
       },
     };
   }

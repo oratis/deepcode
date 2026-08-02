@@ -40,6 +40,7 @@ class FakeClient {
         structuredToolEvents: true,
         interactiveRequests: true,
         configDiagnostics: true,
+        diagnosticExport: true,
       },
     };
   }

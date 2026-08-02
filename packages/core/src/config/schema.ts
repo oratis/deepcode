@@ -13,21 +13,27 @@ import { readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Schema file is at <pkgRoot>/schemas/settings.schema.json
-// From dist/config/schema.js the relative path is ../../schemas/...
-// From src/config/schema.ts the relative path is ../../schemas/... too.
-const SCHEMA_PATH = join(__dirname, '..', '..', 'schemas', 'settings.schema.json');
+// CJS sidecars cannot resolve package-relative assets through import.meta.url,
+// and packaged clients do not ship the core workspace tree. Their esbuild
+// entrypoints replace this constant with the schema contents. Normal ESM
+// package consumers take the file-backed fallback below.
+declare const __DEEPCODE_SETTINGS_SCHEMA__: string | undefined;
+const EMBEDDED_SCHEMA =
+  typeof __DEEPCODE_SETTINGS_SCHEMA__ === 'string' ? __DEEPCODE_SETTINGS_SCHEMA__ : undefined;
 
 let cached: string | undefined;
 
 export async function settingsSchemaJson(): Promise<string> {
   if (cached === undefined) {
-    cached = await readFile(SCHEMA_PATH, 'utf8');
+    cached = EMBEDDED_SCHEMA ?? (await readFile(schemaPath(), 'utf8'));
   }
   return cached;
+}
+
+function schemaPath(): string {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+  // From both src/config/schema.ts and dist/config/schema.js.
+  return join(moduleDirectory, '..', '..', 'schemas', 'settings.schema.json');
 }
 
 export async function settingsSchemaObject(): Promise<Record<string, unknown>> {

@@ -286,6 +286,7 @@ USAGE
   deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
   deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
   deepcode app-server                  Run the experimental lifecycle server (JSONL stdio)
+  deepcode diagnostics export           Write a redacted app-server support bundle
   deepcode trust [--plan-only]          Trust this directory's project config (hooks/MCP/...)
   deepcode hooks list|trust|revoke      Review exact project command-hook definitions
   deepcode plugins list [--json]        List installed plugins

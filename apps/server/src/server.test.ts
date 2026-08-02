@@ -33,6 +33,20 @@ function deterministicOptions() {
 }
 
 describe('AppServer', () => {
+  it('does not let a tracing sink change protocol behavior', async () => {
+    const server = new AppServer({
+      executor: { execute: async () => ({}) },
+      onTrace: () => {
+        throw new Error('trace sink failed');
+      },
+    });
+
+    await expect(server.handle(request(1, 'initialize'))).resolves.toEqual({
+      id: 1,
+      result: expect.objectContaining({ protocolVersion: 1 }),
+    });
+  });
+
   it('advertises and returns value-free configuration diagnostics when provided', async () => {
     const server = new AppServer({
       executor: { execute: async () => ({}) },
@@ -123,6 +137,8 @@ describe('AppServer', () => {
     const started = await server.handle(
       request(2, 'turn/start', { threadId: 'thread-1', input: { text: 'hello' } }),
     );
+    const traceId = (started.result as { traceId: string }).traceId;
+    expect(traceId).toMatch(/^trace-/);
     expect(started).toEqual({
       id: 2,
       result: expect.objectContaining({ id: 'turn-3', status: 'in_progress' }),
@@ -148,6 +164,15 @@ describe('AppServer', () => {
     expect(events.map((event) => event.type)).toEqual(
       expect.arrayContaining(['tool.started', 'tool.completed', 'usage.updated']),
     );
+    expect(
+      events
+        .filter(
+          (event) =>
+            ('turnId' in event && event.turnId === 'turn-3') ||
+            ('turn' in event && event.turn.id === 'turn-3'),
+        )
+        .every((event) => event.traceId === traceId),
+    ).toBe(true);
     expect((read.result as { turns: Array<{ items: unknown[] }> }).turns[0]?.items).toHaveLength(2);
   });
 

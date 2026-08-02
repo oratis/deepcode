@@ -8,4 +8,12 @@ activity, and interactive approval/user-input requests are transient and exclude
 record/replay snapshots; their final outcomes are persisted as completed items.
 
 This is an internal experimental boundary. Consumers must negotiate `protocolVersion` through
-`initialize` instead of assuming backwards compatibility.
+`initialize` instead of assuming backwards compatibility. The contract also covers configuration
+diagnostics and redacted diagnostic export.
+
+New turns carry a host-generated optional `traceId` (optional so pre-tracing snapshots remain
+readable). The same id is attached to every event for that turn. Consumers must treat it as an
+opaque correlation value, not as authorization or a persistence key.
+
+`diagnostics/export` is capability-negotiated. It returns only the local bundle path, generation
+time, and record count; the app-server owns path hashing and payload redaction.
