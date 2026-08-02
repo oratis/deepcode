@@ -4,7 +4,7 @@
 // folder + a small switch-folder button. Below: sessions bucketed by
 // Today/Yesterday/Earlier per the spec note ①.
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type JSX } from 'react';
 import { projectName } from '../lib/project.js';
 import {
   listSessions,

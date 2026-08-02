@@ -1,7 +1,7 @@
 // Onboarding screen — first-run flow capturing the DeepSeek API key.
 // Design spec: docs/VISUAL_DESIGN.html screen #2 (hero gradient + big mark).
 
-import { useState } from 'react';
+import { useState, type JSX } from 'react';
 import { BrandMark } from '../components/BrandMark.js';
 import { openUrl } from '../lib/tauri-api.js';
 

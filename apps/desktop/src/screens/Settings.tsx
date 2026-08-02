@@ -2,7 +2,7 @@
 // Top: JSON view (Monaco-lite). Bottom: flat key/value table. Both
 // reflect the live settings file. Save button writes back.
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
 import { loadProjectPath } from '../lib/project.js';
 import { getSettingsPath, loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';

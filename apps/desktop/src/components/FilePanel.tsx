@@ -4,6 +4,7 @@
 // fetching (file reads + session snapshots via Tauri). Every interaction is a
 // callback so the component is unit-testable + previewable without a backend.
 
+import type { JSX } from 'react';
 import type { DiffLine, DiffMode, FileTab, FileView } from '../types/file-panel.js';
 
 interface FilePanelProps {

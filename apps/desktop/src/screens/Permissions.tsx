@@ -2,7 +2,7 @@
 // View + edit settings.permissions rules. Save now actually persists
 // to ~/.deepcode/settings.json via saveSettingsFile.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
 import { loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';

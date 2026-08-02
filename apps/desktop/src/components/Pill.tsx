@@ -1,7 +1,7 @@
 // Pill — small rounded chip for the chat header (connected · model · approval).
 // Optional leading dot for status indication (e.g. live connection).
 
-import type { ReactNode } from 'react';
+import type { ReactNode, JSX } from 'react';
 
 interface PillProps {
   /** Show a leading mint dot. */

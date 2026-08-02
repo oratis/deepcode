@@ -1,7 +1,7 @@
 // MCP server manager — design-aligned per spec screen #15.
 // List / show status of MCP servers wired in settings.json#mcpServers.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type JSX } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Screen, SectionTitle } from '../components/Screen.js';
 

@@ -2,6 +2,8 @@
 // Wraps the SVG path in the gradient .mark / .mark-lg container so the
 // shell can drop it in anywhere without per-instance styling.
 
+import type { JSX } from 'react';
+
 interface BrandMarkProps {
   /** 'sm' = 26 px (default, sidebar / pill); 'lg' = 64 px (onboarding hero). */
   size?: 'sm' | 'lg';
