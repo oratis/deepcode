@@ -42,6 +42,54 @@ export type DurableProtocolEvent =
   | { type: 'turn.interrupted'; threadId: string; turn: TurnSnapshot }
   | { type: 'turn.failed'; threadId: string; turn: TurnSnapshot };
 
+export interface ToolStartedEvent {
+  type: 'tool.started';
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+export interface ToolCompletedEvent {
+  type: 'tool.completed';
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  result: { content: string; isError?: boolean };
+}
+
+export interface UsageUpdatedEvent {
+  type: 'usage.updated';
+  threadId: string;
+  turnId: string;
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+  };
+}
+
+export interface ApprovalRequestedEvent {
+  type: 'approval.requested';
+  threadId: string;
+  turnId: string;
+  requestId: string;
+  toolName: string;
+  reason: string;
+}
+
+export interface UserInputRequestedEvent {
+  type: 'user-input.requested';
+  threadId: string;
+  turnId: string;
+  requestId: string;
+  question: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect?: boolean;
+}
+
 export interface TransientDeltaEvent {
   type: 'item.delta';
   threadId: string;
@@ -50,7 +98,15 @@ export interface TransientDeltaEvent {
   delta: string;
 }
 
-export type ProtocolEvent = DurableProtocolEvent | TransientDeltaEvent;
+export type TransientProtocolEvent =
+  | TransientDeltaEvent
+  | ToolStartedEvent
+  | ToolCompletedEvent
+  | UsageUpdatedEvent
+  | ApprovalRequestedEvent
+  | UserInputRequestedEvent;
+
+export type ProtocolEvent = DurableProtocolEvent | TransientProtocolEvent;
 
 export interface InitializeResult {
   protocolVersion: typeof PROTOCOL_VERSION;
@@ -59,6 +115,8 @@ export interface InitializeResult {
     turnInterrupt: true;
     completedItemPersistence: true;
     transientDeltas: true;
+    structuredToolEvents: true;
+    interactiveRequests: true;
   };
 }
 
@@ -68,7 +126,9 @@ export type ProtocolMethod =
   | 'thread/read'
   | 'thread/resume'
   | 'turn/start'
-  | 'turn/interrupt';
+  | 'turn/interrupt'
+  | 'approval/respond'
+  | 'user-input/respond';
 
 export interface ProtocolRequest {
   id: string | number;

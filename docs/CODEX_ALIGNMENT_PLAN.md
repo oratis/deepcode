@@ -155,8 +155,8 @@ turn/interrupt
 turn/completed              notification
 item/started                notification
 item/completed              notification
-approval/request            server request
-user-input/request          server request
+approval/requested          notification + approval/respond
+user-input/requested        notification + user-input/respond
 ```
 
 delta 默认只流式传输、不落盘。fork/archive/search、agent graph 等在垂直切片稳定后再加入。实验字段必须显式 capability 协商；至少由两个客户端消费并经过兼容测试后才升为 stable。
@@ -288,6 +288,8 @@ model tool call
 - 按 ADR 把 runtime 移出 renderer，移除 WebView 中的 provider/API key。
 - 已建立可构建的 CJS app-server、target runtime、Rust supervisor 与 renderer protocol client；迁移期
   `mac-agent` 仅作 feature fallback。
+- app-server 已补齐按 active thread/turn 绑定的 approval、AskUserQuestion、tool 与 usage 事件；interrupt
+  会解除所有待响应请求，避免 sidecar 因 UI 离线而悬挂。
 - React 只消费协议事件；接入真实 interrupt、恢复与 structured items。
 - 把 `preview-app.html` 变成自动化 fixture harness；收敛现有 Changes/Files/Inspector。
 

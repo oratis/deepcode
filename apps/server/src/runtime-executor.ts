@@ -1,10 +1,17 @@
-import { type AgentEvent, type RuntimeHost, type StoredMessage } from '@deepcode/core';
+import {
+  type AgentEvent,
+  type Effort,
+  type Mode,
+  type RuntimeHost,
+  type StoredMessage,
+} from '@deepcode/core';
+import { EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
 import type { CompletedItem, ThreadSnapshot } from '@deepcode/protocol';
 
 import type { TurnExecutionArgs, TurnExecutionItem, TurnExecutor } from './server.js';
 
 export interface RuntimeHostExecutorOptions {
-  createHost: (cwd: string) => Promise<RuntimeHost> | RuntimeHost;
+  createHost: (cwd: string, mode: Mode) => Promise<RuntimeHost> | RuntimeHost;
   systemPrompt?: string;
   model?: string;
 }
@@ -16,29 +23,71 @@ export class RuntimeHostExecutor implements TurnExecutor {
   constructor(private readonly options: RuntimeHostExecutorOptions) {}
 
   async execute(args: TurnExecutionArgs) {
-    const host = await this.options.createHost(args.thread.cwd);
+    const mode = parseMode(args.input.mode);
+    const host = await this.options.createHost(args.thread.cwd, mode);
     const history = historyFromThread(args.thread);
     const baselineLength = history.length;
     const text = typeof args.input.text === 'string' ? args.input.text : JSON.stringify(args.input);
     const streamingItemId = `${args.turn.id}-assistant`;
     const events: AgentEvent[] = [];
+    const interactionItems: TurnExecutionItem[] = [];
+    const effort = parseEffort(args.input.effort);
+    const effortParams = EFFORT_PARAMS[effort];
     const result = await host.run({
       cwd: args.thread.cwd,
       systemPrompt: this.options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
       userMessage: text,
       history,
-      model: this.options.model ?? 'deepseek-chat',
+      model:
+        typeof args.input.model === 'string'
+          ? args.input.model
+          : (this.options.model ?? 'deepseek-chat'),
+      maxTokens: effortParams.maxTokens,
+      temperature: effortParams.temperature,
       signal: args.signal,
       systemReminders: false,
-      approval: async () => false,
+      approval: async (toolName, _input, verdict) => {
+        const decision = await args.requestApproval(
+          toolName,
+          verdict.reason ?? `Approve ${toolName}?`,
+        );
+        interactionItems.push({
+          type: 'approval',
+          payload: { toolName, decision, reason: verdict.reason },
+        });
+        return decision === 'always' ? 'always' : decision === 'allow';
+      },
+      askUser: async (request) => {
+        const answer = await args.requestUserInput(request);
+        interactionItems.push({ type: 'ask_user', payload: { ...request, answer } });
+        return answer;
+      },
       onEvent: (event) => {
         events.push(event);
-        if (event.type === 'text_delta') args.publishDelta(streamingItemId, event.text);
+        switch (event.type) {
+          case 'text_delta':
+            args.publishDelta(streamingItemId, event.text);
+            break;
+          case 'tool_use':
+            args.publishToolStarted(event.id, event.name, event.input);
+            break;
+          case 'tool_result':
+            args.publishToolCompleted(event.id, event.result);
+            break;
+          case 'usage':
+            args.publishUsage({
+              inputTokens: event.inputTokens,
+              outputTokens: event.outputTokens,
+              reasoningTokens: event.reasoningTokens,
+              cacheReadTokens: event.cacheReadTokens,
+            });
+            break;
+        }
       },
     });
 
     const newMessages = result.history.slice(baselineLength);
-    const items = completedItemsFromMessages(newMessages, text);
+    const items = [...interactionItems, ...completedItemsFromMessages(newMessages, text)];
     if (result.stopReason === 'error') {
       const error = [...events].reverse().find((event) => event.type === 'error');
       if (error?.type === 'error') items.push({ type: 'error', payload: { message: error.error } });
@@ -48,6 +97,24 @@ export class RuntimeHostExecutor implements TurnExecutor {
       status: result.stopReason === 'error' ? ('failed' as const) : ('completed' as const),
     };
   }
+}
+
+const MODES = new Set<Mode>([
+  'default',
+  'acceptEdits',
+  'plan',
+  'auto',
+  'dontAsk',
+  'bypassPermissions',
+]);
+const EFFORTS = new Set<Effort>(['low', 'medium', 'high', 'xhigh', 'max']);
+
+function parseMode(value: unknown): Mode {
+  return typeof value === 'string' && MODES.has(value as Mode) ? (value as Mode) : 'default';
+}
+
+function parseEffort(value: unknown): Effort {
+  return typeof value === 'string' && EFFORTS.has(value as Effort) ? (value as Effort) : 'high';
 }
 
 export function historyFromThread(thread: ThreadSnapshot): StoredMessage[] {

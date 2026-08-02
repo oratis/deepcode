@@ -12,6 +12,8 @@ const protocolMethods = new Set<ProtocolMethod>([
   'thread/resume',
   'turn/start',
   'turn/interrupt',
+  'approval/respond',
+  'user-input/respond',
 ]);
 
 export function encodeProtocolMessage(

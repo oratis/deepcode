@@ -3,7 +3,8 @@
 Experimental line-delimited JSON runtime server for DeepCode clients.
 
 The server owns lifecycle state and delegates model work to `RuntimeHost`. Completed items and
-terminal turn state are persisted; streaming deltas are notifications only. The initial transport
+terminal turn state are persisted; streaming and interactive requests are notifications only.
+Approval and user-input responses are bound to their active thread and turn. The initial transport
 is single-client stdio, matching the desktop packaging decision in
 `docs/adr/0001-desktop-runtime-sidecar.md`.
 
