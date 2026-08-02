@@ -1,10 +1,18 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { HookDispatcher } from '@deepcode/core/hooks';
+import type { McpClientHandle } from '@deepcode/core/mcp';
+import type { ToolHandler } from '@deepcode/core/tools';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { composeRuntime, resolveComposedMode } from './runtime-composition.js';
+import {
+  buildPluginCapabilityBridge,
+  composeRuntime,
+  resolveComposedMode,
+  type RuntimeCompositionServices,
+} from './runtime-composition.js';
 
 const roots: string[] = [];
 
@@ -69,5 +77,99 @@ describe('composeRuntime', () => {
     ).resolves.toEqual(
       expect.objectContaining({ stdout: expect.stringContaining('hook context') }),
     );
+    await composition.close();
+  });
+
+  it('registers eager and deferred MCP tools, expands resources, and closes every lease', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'dc-composition-mcp-home-'));
+    const cwd = await mkdtemp(join(tmpdir(), 'dc-composition-mcp-cwd-'));
+    roots.push(directory, cwd);
+    const tool = (name: string): ToolHandler => ({
+      name,
+      definition: { name, description: `${name} description`, inputSchema: { type: 'object' } },
+      execute: async () => ({ content: name }),
+    });
+    const eager = tool('mcp__eager__read');
+    const deferred = tool('mcp__deferred__search');
+    const handle = (serverName: string, tools: ToolHandler[]) =>
+      ({ serverName, tools, resources: [], resourceTemplates: [], prompts: [] }) as McpClientHandle;
+    const closeMcp = vi.fn(async () => undefined);
+    const shutdownPlugins = vi.fn(async () => undefined);
+    const services: Partial<RuntimeCompositionServices> = {
+      collectPluginContributions: async () => ({
+        dirs: [join(directory, 'plugins', 'demo')],
+        mcpServers: {},
+      }),
+      connectAllMcpServers: async () => ({
+        handles: [handle('eager', [eager]), handle('deferred', [deferred])],
+        errors: [{ serverName: 'broken', error: 'offline' }],
+      }),
+      closeAllMcpServers: closeMcp,
+      expandMcpResourceRefs: async () => ({
+        text: 'expanded resource',
+        resolved: [],
+        errors: [
+          {
+            ref: { raw: '@eager:file://x', server: 'eager', uri: 'file://x' },
+            error: 'missing',
+          },
+        ],
+      }),
+      wirePlugins: async () => ({
+        plugins: [],
+        hashMismatches: ['demo: hash drift'],
+        spawnFailures: ['demo'],
+        shutdown: shutdownPlugins,
+      }),
+    };
+
+    const composition = await composeRuntime({
+      cwd,
+      directory,
+      settings: {
+        mcpServers: {
+          eager: { command: 'eager' },
+          deferred: { command: 'deferred', alwaysLoad: false },
+        },
+      },
+      services,
+    });
+
+    expect(composition.tools.get(eager.name)).toBe(eager);
+    expect(composition.tools.get(deferred.name)).toBeUndefined();
+    expect(composition.tools.get('ToolSearch')).toBeDefined();
+    expect(composition.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      'mcp_connect_failed',
+      'plugin_hash_mismatch',
+      'plugin_start_failed',
+    ]);
+    await expect(composition.prepareUserMessage('read it')).resolves.toEqual({
+      text: 'expanded resource',
+      diagnostics: [expect.objectContaining({ code: 'mcp_resource_failed' })],
+    });
+    await composition.close();
+    await composition.close();
+    expect(closeMcp).toHaveBeenCalledOnce();
+    expect(shutdownPlugins).toHaveBeenCalledOnce();
+  });
+
+  it('gates plugin subprocess capabilities through mode and approval policy', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dc-plugin-bridge-cwd-'));
+    roots.push(cwd);
+    const target = join(cwd, 'plugin.txt');
+    const hooks = new HookDispatcher({});
+    const denied = buildPluginCapabilityBridge({ cwd, mode: 'plan', hooks });
+    await expect(denied.fs_write(target, 'blocked')).rejects.toThrow(/mode=plan/);
+
+    const requestApproval = vi.fn(async () => 'allow' as const);
+    const allowed = buildPluginCapabilityBridge({
+      cwd,
+      mode: 'default',
+      hooks,
+      requestApproval,
+    });
+    await allowed.fs_write(target, 'allowed');
+    expect(await readFile(target, 'utf8')).toBe('allowed');
+    expect(requestApproval).toHaveBeenCalledWith('Write', expect.any(String));
   });
 });

@@ -84,8 +84,12 @@ includes shallow schema issues.
 The default executor composes `DEEPCODE.md`, `AGENTS.md`, project rules, persistent memory,
 user/project skills, output styles, hooks, and model/effort/mode defaults inside the backend for
 every workspace turn. `RuntimeHostExecutor` accepts a turn-scoped lease containing the host and
-composed prompt, and releases it in `finally`; this is the lifecycle boundary used by later
-MCP/plugin connections. Explicit client model/effort/mode values still override trusted settings.
+composed prompt, and releases it in `finally`. Trusted plugin contributions and MCP servers now live
+inside that boundary: tools share the registry, deferred MCP tools sit behind `ToolSearch`, resource
+references expand before provider input, and connection/plugin failures are persisted as value-free
+diagnostics without aborting healthy peers. Plugin capability RPC goes through mode, permission,
+hook, approval, and sandbox gates. Explicit client model/effort/mode values still override trusted
+settings.
 
 ## Entrypoints
 
@@ -110,5 +114,4 @@ closes stdin first so the server can interrupt and persist active turns before a
 ## Deferred from this slice
 
 - thread listing, archive, fork, and search;
-- MCP/plugin subprocess composition (requires the host lease close path added above);
 - multi-client subscriptions or active-turn attachment;

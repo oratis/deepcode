@@ -29,8 +29,12 @@ function sanitizeName(name: string): string {
   return name.replace(/[^A-Za-z0-9_.-]/g, '_');
 }
 
-export function mcpAuthPath(serverName: string, home: string = homedir()): string {
-  return join(home, '.deepcode', 'mcp-auth', `${sanitizeName(serverName)}.json`);
+export function mcpAuthPath(
+  serverName: string,
+  home: string = homedir(),
+  directory?: string,
+): string {
+  return join(directory ?? join(home, '.deepcode'), 'mcp-auth', `${sanitizeName(serverName)}.json`);
 }
 
 /** File-backed persistence for one server's OAuth state. */
@@ -38,10 +42,11 @@ export class McpAuthStore {
   constructor(
     private readonly serverName: string,
     private readonly home: string = homedir(),
+    private readonly directory?: string,
   ) {}
 
   path(): string {
-    return mcpAuthPath(this.serverName, this.home);
+    return mcpAuthPath(this.serverName, this.home, this.directory);
   }
 
   async read(): Promise<AuthRecord> {
@@ -171,6 +176,8 @@ export interface OAuthProviderOpts {
   openBrowser?: (url: string) => void;
   /** Where redirect/instruction lines go. */
   log?: (msg: string) => void;
+  /** Direct DeepCode data directory for persisted OAuth state. */
+  directory?: string;
 }
 
 /**
@@ -253,7 +260,7 @@ export async function createMcpOAuthProvider(
   serverName: string,
   opts: OAuthProviderOpts & { home?: string } = {},
 ): Promise<DeepCodeOAuthProvider> {
-  const store = new McpAuthStore(serverName, opts.home);
+  const store = new McpAuthStore(serverName, opts.home, opts.directory);
   const receiver = await startLoopbackReceiver();
   return new DeepCodeOAuthProvider(store, receiver, opts);
 }

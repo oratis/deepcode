@@ -57,39 +57,43 @@ export interface TrustState {
   plugins: Record<string, PluginTrust>;
 }
 
-export function pluginsDir(home: string): string {
-  return join(home, '.deepcode', 'plugins');
+export function pluginsDir(home: string, directory?: string): string {
+  return join(directory ?? join(home, '.deepcode'), 'plugins');
 }
 
-export function trustFilePath(home: string): string {
-  return join(home, '.deepcode', 'plugins-trust.json');
+export function trustFilePath(home: string, directory?: string): string {
+  return join(directory ?? join(home, '.deepcode'), 'plugins-trust.json');
 }
 
-/**
- * Compute source hash of a plugin directory — currently hashes manifest.json
- * + all SKILL.md files. M5.1 will extend to all .js files when sandbox runs.
- */
+/** Compute a deterministic trust hash over every installed plugin file. */
 export async function computeSourceHash(pluginPath: string): Promise<string> {
   const hash = createHash('sha256');
-  const manifestPath = join(pluginPath, 'plugin.json');
-  hash.update(await fs.readFile(manifestPath));
-  // Hash skills (frontmatter-driven prompts are user-facing)
-  try {
-    const skillsDir = join(pluginPath, 'skills');
-    const entries = await fs.readdir(skillsDir);
-    for (const e of entries.sort()) {
-      const skillFile = join(skillsDir, e, 'SKILL.md');
-      try {
-        const content = await fs.readFile(skillFile);
-        hash.update(content);
-      } catch {
-        // skip missing
-      }
-    }
-  } catch {
-    // no skills/ dir
+  const files = await pluginFiles(pluginPath);
+  for (const relativePath of files) {
+    hash.update(relativePath);
+    hash.update('\0');
+    hash.update(await fs.readFile(join(pluginPath, relativePath)));
+    hash.update('\0');
   }
   return hash.digest('hex').slice(0, 16);
+}
+
+async function pluginFiles(root: string, current = root, prefix = ''): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await fs.readdir(current, { withFileTypes: true });
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (entry.name === '.git') continue;
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolutePath = join(current, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await pluginFiles(root, absolutePath, relativePath)));
+    } else if (entry.isFile()) {
+      files.push(relativePath);
+    } else if (entry.isSymbolicLink()) {
+      throw new Error(`Plugin contains unsupported symbolic link: ${relativePath}`);
+    }
+  }
+  return files;
 }
 
 export async function readManifest(pluginPath: string): Promise<PluginManifest> {
@@ -103,9 +107,9 @@ export async function readManifest(pluginPath: string): Promise<PluginManifest> 
   return parsed;
 }
 
-export async function loadTrustState(home: string): Promise<TrustState> {
+export async function loadTrustState(home: string, directory?: string): Promise<TrustState> {
   try {
-    const raw = await fs.readFile(trustFilePath(home), 'utf8');
+    const raw = await fs.readFile(trustFilePath(home, directory), 'utf8');
     return JSON.parse(raw) as TrustState;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { plugins: {} };
@@ -113,9 +117,13 @@ export async function loadTrustState(home: string): Promise<TrustState> {
   }
 }
 
-export async function saveTrustState(home: string, state: TrustState): Promise<void> {
-  const path = trustFilePath(home);
-  await fs.mkdir(join(home, '.deepcode'), { recursive: true });
+export async function saveTrustState(
+  home: string,
+  state: TrustState,
+  directory?: string,
+): Promise<void> {
+  const path = trustFilePath(home, directory);
+  await fs.mkdir(directory ?? join(home, '.deepcode'), { recursive: true });
   await fs.writeFile(path, JSON.stringify(state, null, 2) + '\n', 'utf8');
 }
 
@@ -150,6 +158,8 @@ export async function installLocal(opts: InstallOptions): Promise<InstalledPlugi
 
 export interface DiscoverOptions {
   home?: string;
+  /** Direct DeepCode data directory (contains plugins/ and plugins-trust.json). */
+  directory?: string;
   /** Plugins disabled in settings (settings.disabledPlugins). */
   disabled?: string[];
 }
@@ -163,7 +173,7 @@ export async function discoverPlugins(opts: DiscoverOptions = {}): Promise<{
   hashMismatches: string[];
 }> {
   const home = opts.home ?? homedir();
-  const root = pluginsDir(home);
+  const root = pluginsDir(home, opts.directory);
   let entries: string[];
   try {
     entries = await fs.readdir(root);
@@ -172,7 +182,7 @@ export async function discoverPlugins(opts: DiscoverOptions = {}): Promise<{
       return { plugins: [], hashMismatches: [] };
     throw err;
   }
-  const trust = await loadTrustState(home);
+  const trust = await loadTrustState(home, opts.directory);
   const out: InstalledPlugin[] = [];
   const hashMismatches: string[] = [];
   const disabled = new Set(opts.disabled ?? []);
@@ -186,7 +196,13 @@ export async function discoverPlugins(opts: DiscoverOptions = {}): Promise<{
     } catch {
       continue;
     }
-    const liveHash = await computeSourceHash(pluginPath);
+    let liveHash: string;
+    try {
+      liveHash = await computeSourceHash(pluginPath);
+    } catch (error) {
+      hashMismatches.push(`${manifest.name}: source hash failed (${(error as Error).message})`);
+      continue;
+    }
     const trusted = trust.plugins[manifest.name];
     if (!trusted) {
       // Plugin in dir but never trusted — skip + flag
@@ -216,9 +232,13 @@ export async function discoverPlugins(opts: DiscoverOptions = {}): Promise<{
  * Hooks are merged separately by wirePlugins (it needs the live dispatcher).
  */
 export async function collectPluginContributions(
-  opts: { home?: string; disabled?: string[] } = {},
+  opts: { home?: string; directory?: string; disabled?: string[] } = {},
 ): Promise<{ dirs: string[]; mcpServers: Record<string, McpServerConfig> }> {
-  const { plugins } = await discoverPlugins({ home: opts.home, disabled: opts.disabled });
+  const { plugins } = await discoverPlugins({
+    home: opts.home,
+    directory: opts.directory,
+    disabled: opts.disabled,
+  });
   const enabled = plugins.filter((p) => p.enabled);
   const dirs = enabled.map((p) => p.path);
   const mcpServers: Record<string, McpServerConfig> = {};

@@ -319,9 +319,10 @@ model tool call
 - CLI doctor、Desktop About、VS Code command 与 LSP command 均消费同一个 diagnostics DTO，
   客户端不再自行解释配置来源或 trust gate。
 - app-server 已在 host 内统一 `AGENTS.md`、`DEEPCODE.md`、rules、memory、user/project skills、
-  output style、hooks 与 model/effort/mode defaults；turn-scoped lease 为下一步 MCP/plugin cleanup
-  建立统一生命周期。
-- 下一步把 MCP 与 plugin subprocess 接入同一 lease，并统一资源引用/错误诊断。
+  output style、hooks 与 model/effort/mode defaults。
+- MCP 与 plugin subprocess 已接入同一 turn-scoped lease：eager/deferred tools、resource refs、
+  best-effort diagnostics、plugin capability policy gates 与 deterministic cleanup 共享 host 边界；
+  plugin trust hash 覆盖全部安装文件，skills-only plugin 不再被强制启动进程。
 - hook 安全继续收敛到定义哈希级审核：未审阅或已变化的非托管 command hook 默认跳过，
   并在 diagnostics 中暴露来源与审核状态；目录 trust 只是第一道门。
 - 在 worktree 语义安全后启用隔离写任务；sub-agent 深度维持安全上限，按真实需求扩展 agent graph。

@@ -25,6 +25,14 @@ describe('McpAuthStore', () => {
     expect(mcpAuthPath('git/hub', home)).toBe(join(home, '.deepcode', 'mcp-auth', 'git_hub.json'));
   });
 
+  it('can persist under a direct DeepCode data directory', async () => {
+    const directory = join(home, 'custom-data');
+    const store = new McpAuthStore('srv', home, directory);
+    await store.patch({ tokens: TOKENS });
+    expect(store.path()).toBe(join(directory, 'mcp-auth', 'srv.json'));
+    expect((await store.read()).tokens).toEqual(TOKENS);
+  });
+
   it('read() returns {} when absent; patch persists + merges', async () => {
     const s = new McpAuthStore('srv', home);
     expect(await s.read()).toEqual({});

@@ -113,11 +113,9 @@ rl.on('line', () => {});
       { contributes: { hooks: {} } },
       `process.stdin.on('data', () => {});`,
     );
-    // Mutate the index.js AFTER trust was recorded → hash drift
-    // (computeSourceHash hashes plugin.json + skills/*/SKILL.md, NOT
-    // index.js. So we need to mutate the manifest itself.)
-    const manifestPath = join(pluginsDir(home), 'drifty', 'plugin.json');
-    await fs.writeFile(manifestPath, JSON.stringify({ name: 'drifty', version: '0.0.2' }), 'utf8');
+    // Executable code is part of the trust hash, so post-install mutation disables the plugin.
+    const entryPath = join(pluginsDir(home), 'drifty', 'index.js');
+    await fs.writeFile(entryPath, `process.stdout.write('tampered');`, 'utf8');
 
     const hooks = new HookDispatcher({});
     const r = await wirePlugins({ home, hooks, capabilities: makeBridge(), log: () => {} });
@@ -129,6 +127,38 @@ rl.on('line', () => {});
       await r.shutdown();
     }
   }, 10000);
+
+  it('keeps declarative skills-only plugins active without spawning a subprocess', async () => {
+    const dir = join(pluginsDir(home), 'skills-only');
+    await fs.mkdir(join(dir, 'skills', 'demo'), { recursive: true });
+    await fs.writeFile(
+      join(dir, 'plugin.json'),
+      JSON.stringify({ name: 'skills-only', version: '0.0.1' }),
+    );
+    await fs.writeFile(join(dir, 'skills', 'demo', 'SKILL.md'), '# Demo');
+    const hash = await computeSourceHash(dir);
+    await saveTrustState(home, {
+      plugins: {
+        'skills-only': {
+          version: '0.0.1',
+          installedAt: '2026-08-01T00:00:00.000Z',
+          sourceHash: hash,
+          trustedBy: 'user',
+        },
+      },
+    });
+
+    const result = await wirePlugins({
+      home,
+      hooks: new HookDispatcher({}),
+      capabilities: makeBridge(),
+      log: () => undefined,
+    });
+    expect(result.plugins).toHaveLength(1);
+    expect(result.plugins[0]?.subprocess).toBeUndefined();
+    expect(result.spawnFailures).toEqual([]);
+    await result.shutdown();
+  });
 
   it('honors `disabled` option (plugin discovered but enabled=false → not spawned)', async () => {
     await makeInstalledPlugin(

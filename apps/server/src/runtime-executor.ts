@@ -15,11 +15,17 @@ export interface RuntimeHostExecutorOptions {
   createHost: (
     cwd: string,
     mode: Mode,
-    context: { modeExplicit: boolean },
+    context: RuntimeHostCreationContext,
   ) => Promise<RuntimeHost | RuntimeHostLease> | RuntimeHost | RuntimeHostLease;
   systemPrompt?: string;
   model?: string;
   sessionManager?: SessionManager;
+}
+
+export interface RuntimeHostCreationContext {
+  modeExplicit: boolean;
+  signal: AbortSignal;
+  requestApproval: (toolName: string, reason: string) => Promise<'allow' | 'deny' | 'always'>;
 }
 
 export interface RuntimeHostLease {
@@ -27,6 +33,21 @@ export interface RuntimeHostLease {
   systemPrompt?: string;
   model?: string;
   effort?: Effort;
+  diagnostics?: Array<{
+    source: string;
+    code: string;
+    severity: 'warning' | 'error';
+    message: string;
+  }>;
+  prepareUserMessage?: (text: string) => Promise<{
+    text: string;
+    diagnostics: Array<{
+      source: string;
+      code: string;
+      severity: 'warning' | 'error';
+      message: string;
+    }>;
+  }>;
   close?: () => Promise<void> | void;
 }
 
@@ -40,18 +61,37 @@ export class RuntimeHostExecutor implements TurnExecutor {
     const requestedMode = args.input.mode;
     const modeExplicit = isMode(requestedMode);
     const mode: Mode = modeExplicit ? requestedMode : 'default';
+    const interactionItems: TurnExecutionItem[] = [];
+    const requestApproval = async (toolName: string, reason: string) => {
+      const decision = await args.requestApproval(toolName, reason);
+      interactionItems.push({
+        type: 'approval',
+        payload: { toolName, decision, reason },
+      });
+      return decision;
+    };
     const created = await this.options.createHost(args.thread.cwd, mode, {
       modeExplicit,
+      signal: args.signal,
+      requestApproval,
     });
     const lease: RuntimeHostLease = 'host' in created ? created : { host: created };
     try {
       const history = historyFromThread(args.thread);
       const baselineLength = history.length;
-      const text =
-        typeof args.input.text === 'string' ? args.input.text : JSON.stringify(args.input);
+      let text = typeof args.input.text === 'string' ? args.input.text : JSON.stringify(args.input);
+      for (const diagnostic of lease.diagnostics ?? []) {
+        interactionItems.push({ type: 'error', payload: diagnostic });
+      }
+      if (lease.prepareUserMessage) {
+        const prepared = await lease.prepareUserMessage(text);
+        text = prepared.text;
+        for (const diagnostic of prepared.diagnostics) {
+          interactionItems.push({ type: 'error', payload: diagnostic });
+        }
+      }
       const streamingItemId = `${args.turn.id}-assistant`;
       const events: AgentEvent[] = [];
-      const interactionItems: TurnExecutionItem[] = [];
       const effort = parseEffort(args.input.effort ?? lease.effort);
       const effortParams = EFFORT_PARAMS[effort];
       const result = await lease.host.run({
@@ -72,14 +112,10 @@ export class RuntimeHostExecutor implements TurnExecutor {
         persistSessionMessages: false,
         systemReminders: false,
         approval: async (toolName, _input, verdict) => {
-          const decision = await args.requestApproval(
+          const decision = await requestApproval(
             toolName,
             verdict.reason ?? `Approve ${toolName}?`,
           );
-          interactionItems.push({
-            type: 'approval',
-            payload: { toolName, decision, reason: verdict.reason },
-          });
           return decision === 'always' ? 'always' : decision === 'allow';
         },
         askUser: async (request) => {
