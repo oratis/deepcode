@@ -3,6 +3,14 @@
 // a plain browser — lets us screenshot + iterate on the layout without the
 // Tauri backend or a rebuild. Not in the prod bundle (build input = index.html).
 
+import type {
+  ProtocolEvent,
+  ProtocolRequest,
+  ThreadSnapshot,
+  TurnSnapshot,
+} from '@deepcode/protocol';
+import { emit } from '@tauri-apps/api/event';
+import { mockIPC } from '@tauri-apps/api/mocks';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.js';
 import { installTauriShim } from './lib/window-shim.js';
@@ -140,10 +148,166 @@ const MOCK_MESSAGES = [
   { type: 'message', role: 'user', content: [{ type: 'text', text: '加一个 boss 关卡' }] },
 ];
 
-// Mock the Tauri invoke bridge before the app calls it (no invoke runs at import).
-(window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
-  invoke: async (cmd: string) => {
+let nextThread = 1;
+let nextTurn = 1;
+let activeThreadId = MOCK_SESSIONS[0]!.id;
+let activeTurn: TurnSnapshot | null = null;
+const protocolRequests: ProtocolRequest[] = [];
+
+function threadSnapshot(id: string): ThreadSnapshot {
+  return {
+    id,
+    cwd: '/Users/oratis/Projects/DeepCode/test',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:00.000Z',
+    turns: [],
+  };
+}
+
+async function sendProtocol(message: unknown): Promise<void> {
+  await emit('app-server-output', {
+    stream: 'stdout',
+    line: JSON.stringify(message),
+  });
+}
+
+async function sendEvent(event: ProtocolEvent): Promise<void> {
+  await sendProtocol({ method: 'event', params: event });
+}
+
+async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
+  protocolRequests.push(request);
+  const respond = (result: unknown) => sendProtocol({ id: request.id, result });
+  switch (request.method) {
+    case 'initialize':
+      await respond({
+        protocolVersion: 1,
+        capabilities: {
+          threadResume: true,
+          turnInterrupt: true,
+          completedItemPersistence: true,
+          transientDeltas: true,
+          structuredToolEvents: true,
+          interactiveRequests: true,
+        },
+      });
+      break;
+    case 'thread/start': {
+      activeThreadId = `preview-thread-${nextThread++}`;
+      const thread = threadSnapshot(activeThreadId);
+      await sendEvent({ type: 'thread.started', thread });
+      await respond(thread);
+      break;
+    }
+    case 'thread/read':
+    case 'thread/resume': {
+      activeThreadId = String(request.params.threadId);
+      await respond(threadSnapshot(activeThreadId));
+      break;
+    }
+    case 'turn/start': {
+      const turnId = `preview-turn-${nextTurn++}`;
+      activeTurn = {
+        id: turnId,
+        threadId: activeThreadId,
+        status: 'in_progress',
+        startedAt: '2026-08-01T00:00:01.000Z',
+        items: [],
+      };
+      // Emit before the response to exercise the renderer's fast-turn buffer.
+      await sendEvent({ type: 'turn.started', threadId: activeThreadId, turn: activeTurn });
+      await respond(activeTurn);
+      await sendEvent({
+        type: 'item.delta',
+        threadId: activeThreadId,
+        turnId,
+        itemId: 'assistant',
+        delta: 'I’ll update the game safely. ',
+      });
+      await sendEvent({
+        type: 'tool.started',
+        threadId: activeThreadId,
+        turnId,
+        itemId: 'fixture-edit',
+        name: 'Edit',
+        input: { file_path: '/Users/oratis/Projects/DeepCode/test/打飞机.html' },
+      });
+      await sendEvent({
+        type: 'approval.requested',
+        threadId: activeThreadId,
+        turnId,
+        requestId: 'fixture-approval',
+        toolName: 'Edit',
+        reason: 'The fixture verifies an approval-gated write.',
+      });
+      break;
+    }
+    case 'approval/respond': {
+      await respond({ accepted: true });
+      if (!activeTurn) break;
+      const { id: turnId, threadId } = activeTurn;
+      await sendEvent({
+        type: 'tool.completed',
+        threadId,
+        turnId,
+        itemId: 'fixture-edit',
+        result: { content: 'Updated the boss encounter.' },
+      });
+      await sendEvent({
+        type: 'item.delta',
+        threadId,
+        turnId,
+        itemId: 'assistant',
+        delta: 'The boss encounter is ready.',
+      });
+      await sendEvent({
+        type: 'usage.updated',
+        threadId,
+        turnId,
+        usage: { inputTokens: 2_048, outputTokens: 256, cacheReadTokens: 1_024 },
+      });
+      activeTurn = { ...activeTurn, status: 'completed', completedAt: '2026-08-01T00:00:02.000Z' };
+      await sendEvent({ type: 'turn.completed', threadId, turn: activeTurn });
+      break;
+    }
+    case 'user-input/respond':
+      await respond({ accepted: true });
+      break;
+    case 'turn/interrupt': {
+      await respond({ interrupted: activeTurn !== null });
+      if (!activeTurn) break;
+      activeTurn = {
+        ...activeTurn,
+        status: 'interrupted',
+        completedAt: '2026-08-01T00:00:02.000Z',
+      };
+      await sendEvent({
+        type: 'turn.interrupted',
+        threadId: activeTurn.threadId,
+        turn: activeTurn,
+      });
+      break;
+    }
+  }
+}
+
+// Use Tauri's official frontend mock, including event listener registration,
+// so the preview exercises the same app-server bridge as the production UI.
+mockIPC(
+  async (cmd: string, args?: unknown) => {
+    const payload =
+      args !== null && typeof args === 'object' && !Array.isArray(args)
+        ? (args as Record<string, unknown>)
+        : {};
     switch (cmd) {
+      case 'app_server_start':
+      case 'app_server_status':
+        return { running: true, pid: 4242 };
+      case 'app_server_stop':
+        return null;
+      case 'app_server_send':
+        await handleProtocolRequest(JSON.parse(String(payload.message)) as ProtocolRequest);
+        return null;
       case 'load_settings_file':
         return { projectPath: '/Users/oratis/Projects/DeepCode/test' };
       case 'credential_status':
@@ -184,13 +348,30 @@ const MOCK_MESSAGES = [
         return null;
       case 'voice_stop':
         return 'add a dark mode toggle to the settings screen';
+      case 'save_settings_file':
+      case 'save_credentials':
+      case 'append_allow_matcher':
+      case 'session_set_title':
+      case 'session_archive':
+      case 'session_delete':
+      case 'plugin:updater|check':
+        return null;
       default:
         console.warn('[preview] unmocked invoke:', cmd);
         return null;
     }
   },
-  transformCallback: (cb: unknown) => cb,
-};
+  { shouldMockEvents: true },
+);
+
+Object.defineProperty(window, '__DEEPCODE_FIXTURE__', {
+  configurable: true,
+  value: {
+    get protocolRequests() {
+      return [...protocolRequests];
+    },
+  },
+});
 
 installTauriShim();
 // Pretend a session is active so the file panel fetches the mock snapshots above.

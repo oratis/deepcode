@@ -31,6 +31,8 @@ yarn-error.log
 # Test outputs
 coverage/
 .nyc_output/
+apps/desktop/playwright-report/
+apps/desktop/test-results/
 
 # Electron build outputs (pre-Tauri pivot — kept for historical artifacts)
 apps/desktop/release/
