@@ -8,6 +8,7 @@ export {
   defaultSessionsDir,
   newSessionId,
   readSessionRecords,
+  writeMeta,
   SessionCorruptionError,
   SessionWriterConflictError,
   type SessionMeta,

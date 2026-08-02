@@ -121,6 +121,32 @@ export async function appendMessage(
   });
 }
 
+/**
+ * Atomically materialize the complete canonical session projection.
+ *
+ * Protocol stores use this idempotent full rewrite while their richer lifecycle
+ * snapshot remains the source of truth. A title written by another compatible
+ * client is always preserved; explicit rename continues to use `writeMeta`.
+ */
+export async function replaceSession(
+  root: string,
+  meta: SessionMeta,
+  messages: StoredMessage[],
+): Promise<void> {
+  const files = sessionFiles(root, meta.id);
+  await withWriterLock(files, meta.id, async () => {
+    const current = await readMeta(root, meta.id);
+    await writeCanonical(
+      files.jsonlPath,
+      {
+        ...meta,
+        title: current?.title ?? meta.title,
+      },
+      messages,
+    );
+  });
+}
+
 export async function readMessages(root: string, sessionId: string): Promise<StoredMessage[]> {
   const result = await readSessionRecords(root, sessionId);
   const fatal = result.diagnostics.filter((diagnostic) => diagnostic.fatal);
