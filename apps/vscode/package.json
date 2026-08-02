@@ -1,11 +1,15 @@
 {
-  "name": "@deepcode/vscode",
+  "name": "deepcode",
   "displayName": "DeepCode",
   "description": "DeepSeek-powered coding agent — Claude-Code parity inside VS Code.",
   "version": "0.0.0",
   "publisher": "deepcode",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oratis/deepcode.git"
+  },
   "engines": {
     "node": ">=22",
     "vscode": "^1.85.0"
@@ -39,12 +43,6 @@
     "configuration": {
       "title": "DeepCode",
       "properties": {
-        "deepcode.apiKey": {
-          "type": "string",
-          "default": "",
-          "description": "DeepSeek API key. Leave empty to use ~/.deepcode/credentials.json.",
-          "scope": "machine-overridable"
-        },
         "deepcode.model": {
           "type": "string",
           "default": "deepseek-chat",
@@ -96,20 +94,23 @@
     ]
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/build.mjs",
+    "vscode:prepublish": "pnpm build",
     "typecheck": "tsc -b",
-    "test": "vitest run --passWithNoTests",
-    "package": "vsce package",
+    "test": "vitest run",
+    "package": "vsce package --no-dependencies",
     "clean": "rm -rf dist *.vsix *.tsbuildinfo"
   },
   "dependencies": {
-    "@deepcode/core": "workspace:*"
+    "@deepcode/app-server": "workspace:*",
+    "@deepcode/protocol": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.21.5",
     "typescript": "^5.7.0",
     "vitest": "^2.1.9"
-  },
-  "//notes": "vsce + @types/vscode pull ~30 MB; install when ready to ship via `pnpm add -D --filter @deepcode/vscode @vscode/vsce @types/vscode`"
+  }
 }

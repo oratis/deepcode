@@ -28,20 +28,16 @@ export class SpawnedAppServerConnection implements ProtocolClientConnection {
     if (this.child) throw new Error('app-server connection is already open');
     this.closing = false;
     this.stderr = '';
-    const entrypoint = fileURLToPath(new URL('./cli.js', import.meta.url));
-    const child = spawn(
-      this.options.command ?? process.execPath,
-      this.options.args ?? [entrypoint],
-      {
-        cwd: this.options.cwd,
-        env: {
-          ...process.env,
-          ...this.options.env,
-          ...(this.options.home ? { DEEPCODE_HOME: this.options.home } : {}),
-        },
-        stdio: ['pipe', 'pipe', 'pipe'],
+    const args = this.options.args ?? [fileURLToPath(new URL('./cli.js', import.meta.url))];
+    const child = spawn(this.options.command ?? process.execPath, args, {
+      cwd: this.options.cwd,
+      env: {
+        ...process.env,
+        ...this.options.env,
+        ...(this.options.home ? { DEEPCODE_HOME: this.options.home } : {}),
       },
-    );
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
     this.child = child;
     this.lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
     this.lines.on('line', onMessage);

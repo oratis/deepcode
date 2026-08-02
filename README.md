@@ -78,7 +78,7 @@ packages/
 apps/
   cli/           # deepcode-cli — Node.js CLI (npm publishable)
   desktop/       # @deepcode/desktop — Tauri 2 + React Mac client
-  vscode/        # @deepcode/vscode — VS Code extension (v1.1)
+  vscode/        # deepcode — VS Code extension (app-server protocol client)
   lsp/           # @deepcode/lsp — LSP bridge for Neovim/Emacs/Sublime (v1.1)
 docs/
   design/        # internal design docs

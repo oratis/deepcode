@@ -1,17 +1,27 @@
-// VS Code extension entry — DeepCode "Chat" view + 3 commands.
-// Spec: docs/DEVELOPMENT_PLAN.md §v1.1 (VS Code extension)
+// VS Code extension entry — thin UI over the shared app-server protocol.
 
 import type * as vscode from 'vscode';
+import { ProtocolClient, type ProtocolEvent } from '@deepcode/protocol';
+import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
-// Type-only import to keep the build clean without @types/vscode installed
-// during the M0 phase. Real `vscode` is injected by the host at activation.
+import { EditorProtocolRuntime } from './protocol-runtime.js';
+
 type V = typeof import('vscode');
+
+let activeRuntime: EditorProtocolRuntime | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   const vscodeMod = await loadVscode();
   const { commands, window, workspace } = vscodeMod;
+  const appServer = context.asAbsolutePath('dist/app-server.cjs');
+  const runtime = new EditorProtocolRuntime(
+    new ProtocolClient(
+      new SpawnedAppServerConnection({ command: process.execPath, args: [appServer] }),
+    ),
+    () => workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
+  );
+  activeRuntime = runtime;
 
-  // ── Commands ────────────────────────────────────────────────────────
   context.subscriptions.push(
     commands.registerCommand('deepcode.openPanel', () => {
       void commands.executeCommand('workbench.view.extension.deepcode');
@@ -32,170 +42,208 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         value: 'Explain this code.',
       });
       if (!prompt) return;
-      const composed = `${prompt}\n\n----- Selected code -----\n${selection}`;
-      await runAgent(composed, vscodeMod);
+      await runInOutput(`${prompt}\n\n----- Selected code -----\n${selection}`, vscodeMod, runtime);
     }),
     commands.registerCommand('deepcode.review', async () => {
-      // Pipe current diff through code-review skill via runAgent.
-      // Uses `git diff` from the workspace root.
-      const root = workspace.workspaceFolders?.[0]?.uri.fsPath;
-      if (!root) {
+      if (!workspace.workspaceFolders?.[0]) {
         void window.showInformationMessage('DeepCode: open a folder first.');
         return;
       }
-      const prompt =
+      await runInOutput(
         'Review the current uncommitted diff. Cite file:line for each finding. ' +
-        'Categorize as BUG / LATENT / SUGGESTION.';
-      await runAgent(prompt, vscodeMod, root);
+          'Categorize as BUG / LATENT / SUGGESTION.',
+        vscodeMod,
+        runtime,
+      );
     }),
-  );
-
-  // ── Chat view provider ──────────────────────────────────────────────
-  context.subscriptions.push(
-    window.registerWebviewViewProvider('deepcode.chat', new ChatViewProvider(vscodeMod)),
+    window.registerWebviewViewProvider('deepcode.chat', new ChatViewProvider(vscodeMod, runtime)),
   );
 }
 
-export function deactivate(): void {
-  /* no-op */
+export async function deactivate(): Promise<void> {
+  const runtime = activeRuntime;
+  activeRuntime = undefined;
+  await runtime?.close();
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Real runAgent invocation — same @deepcode/core code drives CLI / Mac / LSP
-// ──────────────────────────────────────────────────────────────────────────
-
-async function runAgent(
+async function runInOutput(
   userMessage: string,
   vscodeMod: V,
-  cwd: string = process.cwd(),
+  runtime: EditorProtocolRuntime,
 ): Promise<void> {
   const out = vscodeMod.window.createOutputChannel('DeepCode');
   out.show(true);
   out.appendLine(`▎ DeepCode · ${new Date().toLocaleTimeString()}`);
-  out.appendLine(`  ${userMessage.slice(0, 200)}${userMessage.length > 200 ? '…' : ''}`);
+  out.appendLine(`  ${truncate(userMessage, 200)}`);
   out.appendLine('');
   try {
-    const core = await import('@deepcode/core');
-    const credsStore = new core.CredentialsStore();
-    const creds = await core.resolveCredentials({ store: credsStore });
-    if (!creds.apiKey && !creds.authToken) {
+    await runtime.start(modelInput(userMessage, vscodeMod), (event) => {
+      projectOutputEvent(event, out);
+      void respondToInteraction(event, vscodeMod, runtime);
+    });
+  } catch (error) {
+    out.appendLine(`\n✕ ${(error as Error).message ?? String(error)}`);
+  }
+}
+
+function modelInput(text: string, vscodeMod: V) {
+  const config = vscodeMod.workspace.getConfiguration('deepcode');
+  return {
+    text,
+    model: config.get<string>('model', 'deepseek-chat'),
+    effort: config.get<string>('effort', 'medium'),
+    mode: 'default',
+  };
+}
+
+function projectOutputEvent(event: ProtocolEvent, out: vscode.OutputChannel): void {
+  switch (event.type) {
+    case 'item.delta':
+      out.append(event.delta);
+      break;
+    case 'tool.started':
+      out.appendLine(`\n[${event.name}] ${formatInput(event.input)}`);
+      break;
+    case 'tool.completed':
       out.appendLine(
-        '✕ No DeepSeek credentials. Run `deepcode` once in a terminal to onboard, or set DEEPSEEK_API_KEY.',
+        `  ${event.result.isError ? '✕' : '✓'} ${truncate(event.result.content, 200)}`,
       );
-      return;
-    }
-    const provider = new core.DeepSeekProvider({
-      apiKey: creds.apiKey ?? '',
-      authToken: creds.authToken,
-      baseURL: creds.baseURL,
-    });
-    const runtime = new core.RuntimeHost({
-      provider,
-      tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-      cwd,
-      mode: 'default',
-      permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
-    });
-    await runtime.run({
-      systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
-      userMessage,
-      model: 'deepseek-chat',
-      onEvent: (e) => {
-        if (e.type === 'text_delta') out.append(e.text);
-        else if (e.type === 'tool_use') out.appendLine(`\n[${e.name}] ${formatInput(e.input)}`);
-        else if (e.type === 'tool_result')
-          out.appendLine(`  ${e.result.isError ? '✕' : '✓'} ${truncate(e.result.content, 200)}`);
-        else if (e.type === 'error') out.appendLine(`\n✕ ${e.error}`);
-      },
-    });
-    out.appendLine('\n');
-  } catch (err) {
-    out.appendLine(`\n✕ ${(err as Error).message ?? String(err)}`);
+      break;
+    case 'approval.requested':
+      out.appendLine(`\n[approval] ${event.toolName}: ${event.reason}`);
+      break;
+    case 'user-input.requested':
+      out.appendLine(`\n[input] ${event.question}`);
+      break;
+    case 'turn.completed':
+      out.appendLine('\n');
+      break;
+    case 'turn.interrupted':
+      out.appendLine('\n⏹ interrupted\n');
+      break;
+    case 'turn.failed':
+      out.appendLine(`\n✕ ${turnError(event.turn) ?? 'turn failed'}\n`);
+      break;
+  }
+}
+
+async function respondToInteraction(
+  event: ProtocolEvent,
+  vscodeMod: V,
+  runtime: EditorProtocolRuntime,
+): Promise<void> {
+  if (event.type === 'approval.requested') {
+    const choice = await vscodeMod.window.showWarningMessage(
+      `${event.toolName}: ${event.reason}`,
+      'Allow once',
+      'Deny',
+      'Always allow',
+    );
+    const decision =
+      choice === 'Always allow' ? 'always' : choice === 'Allow once' ? 'allow' : 'deny';
+    await runtime.approve(event.turnId, event.requestId, decision);
+  } else if (event.type === 'user-input.requested') {
+    const answer = event.options.length
+      ? await vscodeMod.window.showQuickPick(
+          event.options.map((option) => ({ label: option.label, description: option.description })),
+          { placeHolder: event.question },
+        )
+      : await vscodeMod.window.showInputBox({ prompt: event.question });
+    await runtime.answer(
+      event.turnId,
+      event.requestId,
+      typeof answer === 'string' ? answer : (answer?.label ?? ''),
+    );
   }
 }
 
 function formatInput(input: Record<string, unknown>): string {
   for (const key of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
-    const v = input[key];
-    if (typeof v === 'string') return v;
+    const value = input[key];
+    if (typeof value === 'string') return value;
   }
   return JSON.stringify(input).slice(0, 80);
 }
 
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s;
+function turnError(turn: Extract<ProtocolEvent, { type: 'turn.failed' }>['turn']) {
+  return [...turn.items].reverse().find((item) => item.type === 'error')?.payload.message as
+    | string
+    | undefined;
+}
+
+function truncate(value: string, length: number): string {
+  return value.length > length ? `${value.slice(0, length)}…` : value;
 }
 
 class ChatViewProvider implements vscode.WebviewViewProvider {
-  constructor(private readonly vscodeMod: V) {}
+  constructor(
+    private readonly vscodeMod: V,
+    private readonly runtime: EditorProtocolRuntime,
+  ) {}
 
   resolveWebviewView(view: vscode.WebviewView): void {
     view.webview.options = { enableScripts: true };
     view.webview.html = chatHtml();
-    view.webview.onDidReceiveMessage((msg: unknown) => {
-      void this.handleMessage(view, msg as { kind: string; text?: string });
+    view.webview.onDidReceiveMessage((message: unknown) => {
+      void this.handleMessage(view, message as { kind: string; text?: string });
     });
   }
 
   private async handleMessage(
     view: vscode.WebviewView,
-    msg: { kind: string; text?: string },
+    message: { kind: string; text?: string },
   ): Promise<void> {
-    if (msg.kind !== 'send' || !msg.text) return;
+    if (message.kind !== 'send' || !message.text) return;
     try {
-      const core = await import('@deepcode/core');
-      const credsStore = new core.CredentialsStore();
-      const creds = await core.resolveCredentials({ store: credsStore });
-      if (!creds.apiKey && !creds.authToken) {
-        view.webview.postMessage({
-          kind: 'assistant',
-          text: '(No DeepSeek credentials. Run `deepcode` in a terminal to onboard.)',
-        });
-        return;
-      }
-      const provider = new core.DeepSeekProvider({
-        apiKey: creds.apiKey ?? '',
-        authToken: creds.authToken,
-        baseURL: creds.baseURL,
+      await this.runtime.start(modelInput(message.text, this.vscodeMod), (event) => {
+        projectWebviewEvent(event, view);
+        void respondToInteraction(event, this.vscodeMod, this.runtime);
       });
-      let buffer = '';
-      const runtime = new core.RuntimeHost({
-        provider,
-        tools: new core.ToolRegistry(core.BUILTIN_TOOLS),
-        cwd: this.vscodeMod.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
-        mode: 'default',
-        permissions: { allow: [...core.SAFE_READONLY_TOOLS] },
-      });
-      await runtime.run({
-        systemPrompt: 'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise.',
-        userMessage: msg.text,
-        model: 'deepseek-chat',
-        onEvent: (e) => {
-          if (e.type === 'text_delta') {
-            buffer += e.text;
-            view.webview.postMessage({ kind: 'assistant_stream', text: e.text });
-          } else if (e.type === 'tool_use') {
-            view.webview.postMessage({
-              kind: 'tool',
-              text: `[${e.name}] ${formatInput(e.input)}`,
-            });
-          } else if (e.type === 'tool_result') {
-            view.webview.postMessage({
-              kind: 'tool',
-              text: (e.result.isError ? '✕ ' : '✓ ') + truncate(e.result.content, 200),
-            });
-          } else if (e.type === 'error') {
-            view.webview.postMessage({ kind: 'assistant', text: `✕ ${e.error}` });
-          }
-        },
-      });
-      if (buffer) view.webview.postMessage({ kind: 'assistant_end' });
-    } catch (err) {
-      view.webview.postMessage({
+    } catch (error) {
+      void view.webview.postMessage({
         kind: 'assistant',
-        text: `✕ ${(err as Error).message ?? String(err)}`,
+        text: `✕ ${(error as Error).message ?? String(error)}`,
       });
     }
+  }
+}
+
+function projectWebviewEvent(event: ProtocolEvent, view: vscode.WebviewView): void {
+  switch (event.type) {
+    case 'item.delta':
+      void view.webview.postMessage({ kind: 'assistant_stream', text: event.delta });
+      break;
+    case 'tool.started':
+      void view.webview.postMessage({
+        kind: 'tool',
+        text: `[${event.name}] ${formatInput(event.input)}`,
+      });
+      break;
+    case 'tool.completed':
+      void view.webview.postMessage({
+        kind: 'tool',
+        text: `${event.result.isError ? '✕' : '✓'} ${truncate(event.result.content, 200)}`,
+      });
+      break;
+    case 'approval.requested':
+      void view.webview.postMessage({
+        kind: 'tool',
+        text: `[approval] ${event.toolName}: ${event.reason}`,
+      });
+      break;
+    case 'user-input.requested':
+      void view.webview.postMessage({ kind: 'tool', text: `[input] ${event.question}` });
+      break;
+    case 'turn.completed':
+    case 'turn.interrupted':
+      void view.webview.postMessage({ kind: 'assistant_end' });
+      break;
+    case 'turn.failed':
+      void view.webview.postMessage({
+        kind: 'assistant',
+        text: `✕ ${turnError(event.turn) ?? 'turn failed'}`,
+      });
+      break;
   }
 }
 
