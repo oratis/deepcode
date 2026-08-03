@@ -10,6 +10,7 @@ import {
   approveProtocolRequest,
   getConfigDiagnostics,
   installProtocolAgentEmitter,
+  listProtocolThreads,
   resumeProtocolThread,
   startProtocolTurn,
 } from './protocol-agent.js';
@@ -66,6 +67,22 @@ export function installTauriShim(): void {
     },
     sessions: {
       async list() {
+        // The app-server owns the thread index. The Tauri reader stays as a
+        // fallback for a sidecar too old to serve thread/list — two readers of
+        // the same directory is what this is working away from, not toward.
+        try {
+          const listed = await listProtocolThreads();
+          if (listed) {
+            return listed.threads.map((t) => ({
+              id: t.id,
+              title: t.title,
+              cwd: t.cwd,
+              updatedAt: t.updatedAt,
+            }));
+          }
+        } catch {
+          /* fall through to the local reader */
+        }
         const rows = await listSessions();
         return rows.map((r) => ({
           id: r.id,

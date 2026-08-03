@@ -1,4 +1,4 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -35,11 +35,42 @@ export class FileThreadStore implements ThreadStore {
     await rename(temporaryPath, path);
   }
 
+  async list(): Promise<ThreadSnapshot[]> {
+    let entries: string[];
+    try {
+      entries = await readdir(this.directory);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
+      throw error;
+    }
+    const threads: ThreadSnapshot[] = [];
+    for (const entry of entries) {
+      if (!entry.endsWith('.json')) continue;
+      // A snapshot written by a concurrent save can be mid-rename; skipping an
+      // unreadable one is better than failing the whole listing.
+      try {
+        threads.push(JSON.parse(await readFile(join(this.directory, entry), 'utf8')));
+      } catch {
+        continue;
+      }
+    }
+    return threads;
+  }
+
+  async archive(threadId: string): Promise<void> {
+    const path = this.pathFor(threadId);
+    const target = join(this.directory, ARCHIVED_DIR);
+    await mkdir(target, { recursive: true });
+    await rename(path, join(target, `${threadId}.json`));
+  }
+
   private pathFor(threadId: string): string {
     if (!validThreadId(threadId)) throw new Error(`Invalid thread id: ${threadId}`);
     return join(this.directory, `${threadId}.json`);
   }
 }
+
+const ARCHIVED_DIR = 'archived';
 
 /**
  * Rich protocol snapshots plus a canonical session-v1 message projection.
@@ -72,6 +103,26 @@ export class CanonicalThreadStore implements ThreadStore {
     const messages = historyFromThread(thread);
     await this.sessions.materialize(metaFromThread(thread), messages);
     await this.snapshots.save(thread);
+  }
+
+  /**
+   * Snapshots first, then any legacy session that has no snapshot yet — so a
+   * listing shows everything a user has, not just what the app-server has
+   * touched since 0.2.0. Legacy rows are projected lazily and not written.
+   */
+  async list(): Promise<ThreadSnapshot[]> {
+    const threads = await this.snapshots.list();
+    const seen = new Set(threads.map((thread) => thread.id));
+    for (const meta of await this.sessions.list()) {
+      if (seen.has(meta.id)) continue;
+      const session = await this.sessions.load(meta.id);
+      if (session) threads.push(threadFromSession(session.meta, session.messages));
+    }
+    return threads;
+  }
+
+  async archive(threadId: string): Promise<void> {
+    await this.snapshots.archive(threadId);
   }
 }
 

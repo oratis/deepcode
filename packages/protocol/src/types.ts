@@ -157,6 +157,12 @@ export interface InitializeResult {
     reviewActions: boolean;
     /** Server streams `reasoning.delta` for models that emit reasoning. */
     reasoningDeltas: boolean;
+    /**
+     * `thread/list`, `thread/fork` and `thread/archive` are served. Without
+     * these a client has to read the session directory itself, which is how the
+     * desktop ended up with two ways to see the same threads.
+     */
+    threadManagement: boolean;
   };
 }
 
@@ -241,6 +247,22 @@ export type ReviewActionRequest =
 
 export type ReviewActionPayload = ReviewActionRequest & { actionId: string };
 
+/** A thread as it appears in a list — enough to render a picker, no turns. */
+export interface ThreadListEntry {
+  id: string;
+  cwd: string;
+  createdAt: string;
+  updatedAt: string;
+  /** First user message, truncated — absent for a thread with no turns yet. */
+  title?: string;
+  turnCount: number;
+  archived?: boolean;
+}
+
+export interface ThreadListResult {
+  threads: ThreadListEntry[];
+}
+
 export type ProtocolMethod =
   | 'initialize'
   | 'config/diagnostics'
@@ -251,6 +273,9 @@ export type ProtocolMethod =
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'
+  | 'thread/list'
+  | 'thread/fork'
+  | 'thread/archive'
   | 'turn/start'
   | 'turn/interrupt'
   | 'approval/respond'

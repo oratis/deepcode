@@ -152,6 +152,7 @@ let nextThread = 1;
 let nextTurn = 1;
 let activeThreadId = MOCK_SESSIONS[0]!.id;
 let activeTurn: TurnSnapshot | null = null;
+const archivedThreads = new Set<string>();
 const protocolRequests: ProtocolRequest[] = [];
 
 // One fixture thread carries completed items so resume can be exercised against
@@ -272,10 +273,29 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
           interactiveRequests: true,
           reviewActions: true,
           reasoningDeltas: true,
+          threadManagement: true,
           workspaceDiff: true,
           configDiagnostics: true,
         },
       });
+      break;
+    case 'thread/list':
+      await respond({
+        threads: MOCK_SESSIONS.filter((session) => !archivedThreads.has(session.id)).map(
+          (session) => ({
+            id: session.id,
+            cwd: '/Users/oratis/Projects/DeepCode/test',
+            createdAt: new Date(session.updated_at_secs * 1000).toISOString(),
+            updatedAt: new Date(session.updated_at_secs * 1000).toISOString(),
+            title: session.title,
+            turnCount: 1,
+          }),
+        ),
+      });
+      break;
+    case 'thread/archive':
+      archivedThreads.add(String(request.params.threadId));
+      await respond({ archived: true });
       break;
     case 'workspace/diff':
       await respond({

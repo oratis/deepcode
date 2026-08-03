@@ -43,6 +43,7 @@ class FakeClient {
         interactiveRequests: true,
         reviewActions: true,
         reasoningDeltas: true,
+        threadManagement: true,
         configDiagnostics: true,
         diagnosticExport: true,
         workspaceDiff: true,

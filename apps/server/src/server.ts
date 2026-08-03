@@ -225,6 +225,12 @@ export class AppServer {
         return this.lifecycle.readThread(requiredId(request.params, 'threadId'));
       case 'thread/resume':
         return this.resumeThread(requiredId(request.params, 'threadId'));
+      case 'thread/list':
+        return this.lifecycle.listThreads();
+      case 'thread/fork':
+        return this.lifecycle.forkThread(requiredId(request.params, 'threadId'), traceId);
+      case 'thread/archive':
+        return this.lifecycle.archiveThread(requiredId(request.params, 'threadId'));
       case 'turn/start':
         return this.startTurn(request.params, traceId);
       case 'turn/interrupt':
