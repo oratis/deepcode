@@ -1747,6 +1747,8 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
 /* ── Changes panel ───────────────────────────────────────────────────────
    Shares the file panel's grid track and resize grip; the content is review
    findings on top and the working-tree diff below. */

@@ -128,6 +128,8 @@ test('runs slash commands in the composer instead of sending them to the model',
   await composer.press('Escape');
   await expect(palette).toBeHidden();
   await expect(composer).toHaveValue('/he');
+});
+
 test('reviews findings and the working tree from the Changes panel', async ({ page }) => {
   // Run a turn so the fixture emits a review finding.
   const composer = page.getByPlaceholder(composerPlaceholder, { exact: true });
