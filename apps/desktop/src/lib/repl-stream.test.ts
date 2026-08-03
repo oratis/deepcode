@@ -7,6 +7,9 @@ import {
   lastAssistantIndex,
   pickTarget,
   storedToMsgs,
+  threadReviewItems,
+  threadToMsgs,
+  type AssistantMsg,
   type Msg,
   type ToolInvocation,
 } from './repl-stream.js';
@@ -168,5 +171,113 @@ describe('repl-stream mutators', () => {
     expect(pickTarget({ file_path: '/a/b.ts' })).toBe('/a/b.ts');
     expect(pickTarget({ command: 'ls -la' })).toBe('ls -la');
     expect(pickTarget({ irrelevant: 1 })).toBeUndefined();
+  });
+});
+
+describe('threadToMsgs', () => {
+  const turn = (items: Array<{ type: string; payload: Record<string, unknown> }>) => ({
+    turns: [{ items }],
+  });
+
+  it('projects a user message', () => {
+    expect(threadToMsgs(turn([{ type: 'user_message', payload: { text: 'hi' } }]))).toEqual([
+      { role: 'user', text: 'hi' },
+    ]);
+  });
+
+  it('attaches a tool result to the assistant turn that issued the call', () => {
+    const msgs = threadToMsgs(
+      turn([
+        {
+          type: 'assistant_message',
+          payload: {
+            message: {
+              role: 'assistant',
+              content: [
+                { type: 'text', text: 'Reading.' },
+                { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'a.ts' } },
+              ],
+            },
+          },
+        },
+        {
+          type: 'tool_result',
+          payload: {
+            message: {
+              role: 'user',
+              content: [{ type: 'tool_result', tool_use_id: 't1', content: 'file body' }],
+            },
+          },
+        },
+      ]),
+    );
+    const assistant = msgs.find((m) => m.role === 'assistant') as AssistantMsg;
+    expect(assistant.turn.tools).toHaveLength(1);
+    // The result must land on the existing card, not create a second turn.
+    expect(assistant.turn.tools[0]!.status).toBe('ok');
+    expect(assistant.turn.tools[0]!.resultText).toBe('file body');
+    expect(msgs.filter((m) => m.role === 'assistant')).toHaveLength(1);
+  });
+
+  it('restores the items the message projection dropped', () => {
+    const msgs = threadToMsgs(
+      turn([
+        { type: 'approval', payload: { toolName: 'Edit', decision: 'allow' } },
+        { type: 'ask_user', payload: { question: 'Which one?', answer: 'the first' } },
+        {
+          type: 'review_finding',
+          payload: { path: 'src/a.ts', startLine: 4, title: 'Null crash' },
+        },
+        { type: 'review_action', payload: { kind: 'apply', findingIds: ['f1'] } },
+        { type: 'error', payload: { message: 'provider timed out' } },
+      ]),
+    );
+    const text = msgs.map((m) => (m.role === 'system' ? m.text : '')).join('\n');
+    expect(text).toContain('Edit');
+    expect(text).toContain('allow');
+    expect(text).toContain('Which one?');
+    expect(text).toContain('the first');
+    expect(text).toContain('src/a.ts:4');
+    expect(text).toContain('Null crash');
+    expect(text).toContain('review apply');
+    expect(text).toContain('provider timed out');
+    expect(msgs.at(-1)).toMatchObject({ level: 'error' });
+  });
+
+  it('keeps items in the order they completed', () => {
+    const msgs = threadToMsgs(
+      turn([
+        { type: 'user_message', payload: { text: 'first' } },
+        { type: 'ask_user', payload: { question: 'q', answer: 'a' } },
+        { type: 'user_message', payload: { text: 'second' } },
+      ]),
+    );
+    expect(msgs.map((m) => m.role)).toEqual(['user', 'system', 'user']);
+  });
+
+  it('ignores item types it does not know', () => {
+    expect(threadToMsgs(turn([{ type: 'something_new', payload: {} }]))).toEqual([]);
+  });
+
+  it('returns nothing for a thread with no turns', () => {
+    expect(threadToMsgs({ turns: [] })).toEqual([]);
+  });
+});
+
+describe('threadReviewItems', () => {
+  it('collects findings and actions across turns', () => {
+    const { findings, actions } = threadReviewItems({
+      turns: [
+        { items: [{ type: 'review_finding', payload: { findingId: 'f1' } }] },
+        {
+          items: [
+            { type: 'review_action', payload: { actionId: 'a1', kind: 'apply' } },
+            { type: 'user_message', payload: { text: 'ignored' } },
+          ],
+        },
+      ],
+    });
+    expect(findings).toEqual([{ findingId: 'f1' }]);
+    expect(actions).toEqual([{ actionId: 'a1', kind: 'apply' }]);
   });
 });
