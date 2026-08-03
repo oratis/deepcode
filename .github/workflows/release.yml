@@ -215,9 +215,19 @@ jobs:
             c.version='${{ needs.validate.outputs.version }}';
             fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n');
           "
-          # And Cargo.toml
+          # And Cargo.toml + the lockfile entry, which must agree or a --locked
+          # cargo invocation refuses to build.
           sed -i.bak -E 's/^version = ".*"/version = "${{ needs.validate.outputs.version }}"/' src-tauri/Cargo.toml
           rm -f src-tauri/Cargo.toml.bak
+          node -e "
+            const fs=require('fs');
+            const p='src-tauri/Cargo.lock';
+            const s=fs.readFileSync(p,'utf8');
+            fs.writeFileSync(p, s.replace(
+              /name = \"deepcode_desktop\"\nversion = \"[^\"]+\"/,
+              'name = \"deepcode_desktop\"\nversion = \"${{ needs.validate.outputs.version }}\"'
+            ));
+          "
 
       - name: Import Developer ID certificate
         env:

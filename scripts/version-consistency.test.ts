@@ -36,6 +36,15 @@ describe('shipped version numbers', () => {
     expect(match?.[1]).toBe(pkgVersion('apps/desktop/src-tauri/tauri.conf.json'));
   });
 
+  // CI runs `cargo check --locked`, which refuses to proceed if Cargo.lock
+  // disagrees with Cargo.toml — bumping the crate without the lock is a red CI.
+  it('Cargo.lock pins the crate version Cargo.toml declares', () => {
+    const lock = read('apps/desktop/src-tauri/Cargo.lock');
+    const match = /name = "deepcode_desktop"\nversion = "([^"]+)"/.exec(lock);
+    const toml = /^version = "([^"]+)"/m.exec(read('apps/desktop/src-tauri/Cargo.toml'));
+    expect(match?.[1]).toBe(toml?.[1]);
+  });
+
   it('the newest CHANGELOG entry is the version we are on', () => {
     const match = /^## \[([0-9][^\]]*)\]/m.exec(read('CHANGELOG.md'));
     expect(match?.[1]).toBe(pkgVersion('apps/cli/package.json'));
