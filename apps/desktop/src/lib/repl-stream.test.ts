@@ -280,6 +280,9 @@ describe('threadReviewItems', () => {
     });
     expect(findings).toEqual([{ findingId: 'f1' }]);
     expect(actions).toEqual([{ actionId: 'a1', kind: 'apply' }]);
+  });
+});
+
 describe('appendReasoningDelta', () => {
   it('opens a turn when reasoning arrives before any answer text', () => {
     const msgs = appendReasoningDelta([], 'first thought');
