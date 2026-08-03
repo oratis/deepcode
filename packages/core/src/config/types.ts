@@ -69,7 +69,22 @@ export interface StatusLineConfig {
   command: string;
 }
 
+/**
+ * How much the Bash tool may touch, independent of how tool calls get approved.
+ * Mirrors the axis Codex exposes as `--sandbox`; `mode` is the modern spelling
+ * and `enabled` is kept for existing settings files.
+ */
+export type SandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access';
+
 export interface SandboxConfig {
+  /**
+   * Preferred over `enabled`. When both are set, `mode` wins.
+   *   read-only          — the workspace is readable, nothing is writable
+   *   workspace-write    — the workspace + temp dirs are writable
+   *   danger-full-access — no sandbox at all
+   */
+  mode?: SandboxMode;
+  /** Legacy switch: true → workspace-write, false → danger-full-access. */
   enabled?: boolean;
   filesystem?: {
     allowWrite?: string[];

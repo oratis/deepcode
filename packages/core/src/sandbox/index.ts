@@ -5,8 +5,9 @@
 
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { SandboxConfig } from '../config/types.js';
+import { join, resolve } from 'node:path';
+import type { SandboxConfig, SandboxMode } from '../config/types.js';
+import { resolveSandboxMode, sandboxConfigForMode } from './policy.js';
 import { allClausesExcluded } from './pipeline.js';
 import { buildLinuxBwrapArgs, buildMacOsProfile, detectPlatform } from './profile.js';
 
@@ -58,8 +59,15 @@ export async function wrapBashCommand(args: {
   userCommand: string;
   cwd: string;
   config: SandboxConfig | undefined;
+  /**
+   * Mode to apply when the config names none. Hosts pass the resolved policy;
+   * library callers that omit it keep the historical "off unless configured"
+   * behaviour so an embedder can't be silently sandboxed by an upgrade.
+   */
+  defaultMode?: SandboxMode;
 }): Promise<SandboxedCommand> {
-  const config = args.config;
+  const mode = resolveSandboxMode(args.config, args.defaultMode ?? 'danger-full-access');
+  const config = sandboxConfigForMode(args.config, mode, args.cwd, await linkedGitDirs(args.cwd));
   if (!config?.enabled) {
     return { command: '/bin/sh', args: ['-c', args.userCommand] };
   }
@@ -93,4 +101,42 @@ export async function wrapBashCommand(args: {
   return { command: '/bin/sh', args: ['-c', args.userCommand] };
 }
 
+/**
+ * The git directories a workspace needs but doesn't contain.
+ *
+ * In a linked worktree `.git` is a file pointing at
+ * `<main>/.git/worktrees/<name>`, and the shared object store lives one level
+ * up again — both outside cwd. Sandboxing the workspace without them breaks
+ * every git command in exactly the worktrees DeepCode's own EnterWorktree tool
+ * creates. Best-effort: any read failure just yields no extra paths.
+ */
+async function linkedGitDirs(cwd: string): Promise<string[]> {
+  try {
+    const pointer = await fs.readFile(join(cwd, '.git'), 'utf8');
+    const match = /^gitdir:\s*(.+)$/m.exec(pointer);
+    if (!match) return [];
+    const gitDir = resolve(cwd, match[1]!.trim());
+    const dirs = [gitDir];
+    try {
+      const commonDir = (await fs.readFile(join(gitDir, 'commondir'), 'utf8')).trim();
+      if (commonDir) dirs.push(resolve(gitDir, commonDir));
+    } catch {
+      /* no commondir — a plain gitdir pointer */
+    }
+    return dirs;
+  } catch {
+    // `.git` is a directory (ordinary repo) or absent — nothing extra needed.
+    return [];
+  }
+}
+
 export { withAdditionalWritableDirs } from './additional-dirs.js';
+
+export {
+  SANDBOX_MODES,
+  isSandboxMode,
+  resolveSandboxMode,
+  sandboxConfigForMode,
+  describeSandboxMode,
+  withSandboxMode,
+} from './policy.js';

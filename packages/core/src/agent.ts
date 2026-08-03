@@ -74,6 +74,8 @@ export interface RunAgentOptions {
   autoMode?: import('./config/types.js').AutoModeConfig;
   /** M3.5: passed through to Bash tool ctx for sandbox wrapping. */
   sandboxConfig?: import('./config/types.js').SandboxConfig;
+  /** Sandbox mode applied when settings name none. Hosts pass workspace-write. */
+  sandboxDefaultMode?: import('./config/types.js').SandboxMode;
   /** M3c: auto-compact when cumulative tokens approach contextWindow * threshold.
    *  When triggered, runs the summarizer call and replaces history mid-loop. */
   autoCompact?: {
@@ -263,6 +265,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     cwd: opts.cwd,
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
+    sandboxDefaultMode: opts.sandboxDefaultMode,
     sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
     turnId: opts.session?.turnId,
     askUser: opts.askUser,

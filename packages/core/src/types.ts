@@ -118,6 +118,8 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Optional platform sandbox config — passed through to Bash tool (M3.5). */
   sandboxConfig?: import('./config/types.js').SandboxConfig;
+  /** Sandbox mode used when `sandboxConfig` names none (hosts: workspace-write). */
+  sandboxDefaultMode?: import('./config/types.js').SandboxMode;
   /**
    * Host callback for interactive prompts (AskUserQuestion). Returns undefined
    * in headless mode. Called by the AskUserQuestion tool with the question +

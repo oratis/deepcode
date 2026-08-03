@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { buildLinuxBwrapArgs, buildMacOsProfile, detectPlatform } from './profile.js';
 
@@ -13,11 +14,26 @@ describe('buildMacOsProfile', () => {
     expect(buildMacOsProfile({ enabled: false }, '/x')).toBe('');
   });
 
-  it('starts with deny-default + allows system reads', () => {
+  it('denies by default, allows reads, and keeps writes narrow', () => {
     const profile = buildMacOsProfile({ enabled: true }, '/proj');
     expect(profile).toMatch(/\(deny default\)/);
-    expect(profile).toMatch(/file-read\* \(subpath "\/usr"\)/);
+    // Reads are broadly allowed — a read allowlist could not survive real
+    // commands (git, /dev/null, temp dirs). Writes stay deny-by-default.
+    expect(profile).toMatch(/\(allow file-read\*\)/);
     expect(profile).toMatch(/file-write\* \(subpath "\/private\/tmp"\)/);
+    expect(profile).not.toMatch(/\(allow file-write\*\)\n/);
+  });
+
+  it('denies the credential stores an agent has no business reading', () => {
+    const profile = buildMacOsProfile({ enabled: true }, '/proj');
+    for (const secret of ['.ssh', '.aws', '.gnupg', '.netrc', 'Library/Keychains']) {
+      expect(profile).toContain(`(deny file-read* (subpath "${homedir()}/${secret}"))`);
+    }
+  });
+
+  it('allows package-manager caches so npm install still works', () => {
+    const profile = buildMacOsProfile({ enabled: true }, '/proj');
+    expect(profile).toContain(`(allow file-write* (subpath "${homedir()}/.npm"))`);
   });
 
   it('includes allowRead + allowWrite paths', () => {

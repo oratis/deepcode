@@ -237,3 +237,27 @@ describe('helpText', () => {
     expect(help).toMatch(/--bare\s+Suppress the REPL startup banner/);
   });
 });
+
+describe('--sandbox', () => {
+  it('accepts each mode', () => {
+    expect(parseArgs(['--sandbox', 'read-only']).sandbox).toBe('read-only');
+    expect(parseArgs(['--sandbox', 'workspace-write']).sandbox).toBe('workspace-write');
+    expect(parseArgs(['--sandbox', 'danger-full-access']).sandbox).toBe('danger-full-access');
+  });
+
+  it('rejects anything else instead of silently ignoring it', () => {
+    const p = parseArgs(['--sandbox', 'yolo']);
+    expect(p.sandbox).toBeUndefined();
+    expect(p.unknownFlags).toEqual(['--sandbox yolo']);
+  });
+
+  it('is independent of --mode', () => {
+    const p = parseArgs(['--mode', 'bypassPermissions', '--sandbox', 'read-only']);
+    expect(p.mode).toBe('bypassPermissions');
+    expect(p.sandbox).toBe('read-only');
+  });
+
+  it('is documented in --help', () => {
+    expect(helpText('1.0.0')).toContain('--sandbox');
+  });
+});

@@ -39,6 +39,8 @@ import {
   loadOutputStyles,
   loadSettings,
   withAdditionalWritableDirs,
+  withSandboxMode,
+  type SandboxMode,
   loadSkills,
   makeSkillTool,
   resolveCredentials,
@@ -63,6 +65,8 @@ export interface HeadlessOpts {
   prompt: string;
   /** text | json | stream-json (cli default 'text'). */
   outputFormat: 'text' | 'json' | 'stream-json';
+  /** `--sandbox <mode>` → overrides settings.sandbox.mode for this run. */
+  sandbox?: SandboxMode;
   mode?: string;
   model?: string;
   effort?: Effort;
@@ -236,7 +240,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       hooks,
       capabilities: buildPluginCapabilitiesHeadless(cwd),
       sandbox: withAdditionalWritableDirs(
-        settings.sandbox,
+        withSandboxMode(settings.sandbox, opts.sandbox),
         settings.permissions?.additionalDirectories,
         cwd,
       ),
@@ -301,7 +305,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       pluginDirs: pluginContrib.dirs,
       autoMode: settings.autoMode,
       sandboxConfig: withAdditionalWritableDirs(
-        settings.sandbox,
+        withSandboxMode(settings.sandbox, opts.sandbox),
         settings.permissions?.additionalDirectories,
         cwd,
       ),
