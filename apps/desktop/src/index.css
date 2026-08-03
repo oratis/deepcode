@@ -1694,3 +1694,57 @@ select {
   font-size: 11px;
   color: var(--text-3);
 }
+
+/* ── Slash palette ───────────────────────────────────────────────────────
+   Opens upward from inside the composer box, so it never covers the message
+   the user is replying to. Positioned against .box (which is the flex column
+   holding the textarea + toolbar). */
+.composer .box {
+  position: relative;
+}
+.slash-palette {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+  padding: 6px;
+  z-index: 20;
+}
+.slash-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-1);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+.slash-row.active {
+  background: var(--brand-tint);
+}
+.slash-name {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.slash-args {
+  color: var(--text-2);
+}
+.slash-summary {
+  color: var(--text-2);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
