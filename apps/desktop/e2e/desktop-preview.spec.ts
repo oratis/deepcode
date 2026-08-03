@@ -48,6 +48,13 @@ test('resumes a thread and completes an approval-gated protocol turn', async ({ 
   const approve = page.getByRole('button', { name: /^Approve \(↵\)$/ });
   await expect(approve).toBeVisible();
   await expect(main.getByText(/I’ll update the game safely\./)).toBeVisible();
+
+  // Reasoning arrives as its own channel: collapsed, not mixed into the answer.
+  const reasoning = main.locator('details.reasoning').first();
+  await expect(reasoning).toBeVisible();
+  await expect(reasoning.getByText(/The boss needs a phase field\./)).toBeHidden();
+  await reasoning.getByText('thinking').click();
+  await expect(reasoning.getByText(/The boss needs a phase field\./)).toBeVisible();
   await expect(main.locator('.tool-card').filter({ hasText: 'Edit' }).last()).toBeVisible();
 
   await approve.click();

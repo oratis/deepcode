@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  appendReasoningDelta,
   appendTextDelta,
   appendToolUse,
   attachToolResult,
@@ -279,5 +280,39 @@ describe('threadReviewItems', () => {
     });
     expect(findings).toEqual([{ findingId: 'f1' }]);
     expect(actions).toEqual([{ actionId: 'a1', kind: 'apply' }]);
+  });
+});
+
+describe('appendReasoningDelta', () => {
+  it('opens a turn when reasoning arrives before any answer text', () => {
+    const msgs = appendReasoningDelta([], 'first thought');
+    expect(msgs).toHaveLength(1);
+    const a = msgs[0] as AssistantMsg;
+    expect(a.turn.reasoning).toBe('first thought');
+    expect(a.turn.text).toBe('');
+    expect(a.turn.streaming).toBe(true);
+  });
+
+  it('accumulates into the open turn without touching the answer', () => {
+    let msgs = appendReasoningDelta([], 'a');
+    msgs = appendReasoningDelta(msgs, 'b');
+    msgs = appendTextDelta(msgs, 'answer');
+    const a = msgs[0] as AssistantMsg;
+    expect(a.turn.reasoning).toBe('ab');
+    expect(a.turn.text).toBe('answer');
+    expect(msgs).toHaveLength(1);
+  });
+
+  it('starts a new turn when the previous one has finished', () => {
+    let msgs = appendTextDelta([], 'done');
+    msgs = finalizeStreaming(msgs);
+    msgs = appendReasoningDelta(msgs, 'next turn thinking');
+    expect(msgs).toHaveLength(2);
+    expect((msgs[1] as AssistantMsg).turn.reasoning).toBe('next turn thinking');
+  });
+
+  it('does not leak reasoning into the answer text', () => {
+    const msgs = appendTextDelta(appendReasoningDelta([], 'secret plan'), 'visible');
+    expect((msgs[0] as AssistantMsg).turn.text).toBe('visible');
   });
 });

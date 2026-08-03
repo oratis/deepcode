@@ -210,6 +210,14 @@ export class DesktopProtocolAgent {
       case 'item.delta':
         this.emit({ kind: 'event', turnId: event.turnId, type: 'text_delta', text: event.delta });
         break;
+      case 'reasoning.delta':
+        this.emit({
+          kind: 'event',
+          turnId: event.turnId,
+          type: 'thinking_delta',
+          text: event.delta,
+        });
+        break;
       case 'tool.started':
         this.emit({
           kind: 'event',

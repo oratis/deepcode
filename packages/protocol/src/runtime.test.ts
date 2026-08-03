@@ -36,6 +36,7 @@ describe('ProtocolRuntime', () => {
         structuredToolEvents: true,
         interactiveRequests: true,
         reviewActions: false,
+        reasoningDeltas: false,
         configDiagnostics: false,
         diagnosticExport: false,
         workspaceDiff: false,

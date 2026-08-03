@@ -46,6 +46,7 @@ import { projectName } from '../lib/project.js';
 import { useVoice } from '../lib/use-voice.js';
 import { insertTranscript } from '../lib/voice.js';
 import {
+  appendReasoningDelta,
   appendTextDelta,
   appendToolUse,
   attachToolResult,
@@ -365,6 +366,9 @@ export function ReplScreen({
       switch (e.type) {
         case 'text_delta':
           setMessages((m) => appendTextDelta(m, e.text ?? ''));
+          break;
+        case 'thinking_delta':
+          setMessages((m) => appendReasoningDelta(m, e.text ?? ''));
           break;
         case 'tool_use': {
           const name = e.name ?? '?';
@@ -1123,6 +1127,7 @@ function renderMessage(
       <div className="body">
         <div className="author">DeepCode</div>
         <div className="content">
+          {m.turn.reasoning ? <ReasoningBlock text={m.turn.reasoning} /> : null}
           {m.turn.text}
           {m.turn.streaming && isActive && <span className="streaming-cursor" />}
           {m.turn.tools.map((t) => (
@@ -1190,4 +1195,28 @@ function abbreviatePath(p: string): string {
 
 function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…\n[truncated]' : s;
+}
+
+/**
+ * The model's reasoning, as a collapsed side channel.
+ *
+ * Collapsed by default: reasoner output is long and is not the answer. Open on
+ * click, and while a turn is still streaming it is often the only thing to look
+ * at, so the summary line reports its length rather than staying silent.
+ */
+function ReasoningBlock({ text }: { text: string }): JSX.Element {
+  const [open, setOpen] = useState(false);
+  const lines = text.split('\n').length;
+  return (
+    <details className="reasoning" open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary>
+        thinking
+        <span className="reasoning-meta">
+          {' · '}
+          {lines} line{lines === 1 ? '' : 's'}
+        </span>
+      </summary>
+      <div className="reasoning-body">{text}</div>
+    </details>
+  );
 }

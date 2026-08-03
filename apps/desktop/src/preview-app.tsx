@@ -271,6 +271,7 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
           structuredToolEvents: true,
           interactiveRequests: true,
           reviewActions: true,
+          reasoningDeltas: true,
           workspaceDiff: true,
           configDiagnostics: true,
         },
@@ -396,6 +397,13 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
       // Emit before the response to exercise the renderer's fast-turn buffer.
       await sendEvent({ type: 'turn.started', threadId: activeThreadId, turn: activeTurn });
       await respond(activeTurn);
+      await sendEvent({
+        type: 'reasoning.delta',
+        threadId: activeThreadId,
+        turnId,
+        itemId: 'assistant-reasoning',
+        delta: 'The boss needs a phase field.\nChecking how spawnBoss reads it.',
+      });
       await sendEvent({
         type: 'item.delta',
         threadId: activeThreadId,
