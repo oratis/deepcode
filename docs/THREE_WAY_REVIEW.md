@@ -240,24 +240,24 @@ AskUserQuestion、模式/模型/effort 下拉、Inspector、FilePanel（Source/D
 本文 §4 的清单是 2026-08-02 的快照。已落地的部分记录在这里，**不回改上面的快照**——
 让一份评估随实现悄悄变形，正是它自己批评的那种漂移。
 
-| 发现                                          | 状态                                              | PR   |
-| --------------------------------------------- | ------------------------------------------------- | ---- |
-| F1 `--help` 宣传 5 个不生效的 flag            | ✅ 已从 help 移除并在使用时告警                   | #217 |
-| F2 `--bare` 文案错误                          | ✅                                                | #217 |
-| F3 版本号不一致                               | ✅ 全部对齐 0.2.0 + 一致性测试 + release 补 stamp | #217 |
-| F4 定位叙事矛盾                               | ✅                                                | #217 |
-| F5 沙箱默认关                                 | ✅ 默认 `workspace-write`                         | #226 |
-| F6 `mode` 混表达两件事                        | ✅ `--sandbox` 正交轴                             | #226 |
-| F7 桌面 review 能力无出口                     | ✅ Changes 面板                                   | #220 |
-| F8 恢复丢结构化 item                          | 🔄 未做                                           | —    |
-| F9 丢弃 reasoning                             | ✅ CLI 已流式展示（桌面仍丢）                     | #218 |
-| F10 工具结果硬截断 200 字符                   | ✅ 改为中段省略                                   | #218 |
-| F11 审批无 diff 预览                          | ✅                                                | #218 |
-| F12 `upgrade` 泄漏内部文档编号                | ✅                                                | #217 |
-| F13 图片输入空壳                              | ⚠️ 有意保留（DeepSeek 无 vision 后端）            | —    |
-| F14 不读 `CLAUDE.md` / `~/.claude`            | ✅ 就地读取                                       | #227 |
-| F15 协议缺 `thread/list` / `fork` / `archive` | 🔄 未做                                           | —    |
-| A 桌面 0 个 slash 命令                        | ✅ 命令面板                                       | #219 |
+| 发现                                          | 状态                                                   | PR          |
+| --------------------------------------------- | ------------------------------------------------------ | ----------- |
+| F1 `--help` 宣传 5 个不生效的 flag            | ✅ 已从 help 移除并在使用时告警                        | #217        |
+| F2 `--bare` 文案错误                          | ✅                                                     | #217        |
+| F3 版本号不一致                               | ✅ 全部对齐 0.2.0 + 一致性测试 + release 补 stamp      | #217        |
+| F4 定位叙事矛盾                               | ✅                                                     | #217        |
+| F5 沙箱默认关                                 | ✅ 默认 `workspace-write`                              | #226        |
+| F6 `mode` 混表达两件事                        | ✅ `--sandbox` 正交轴                                  | #226        |
+| F7 桌面 review 能力无出口                     | ✅ Changes 面板                                        | #220        |
+| F8 恢复丢结构化 item                          | ✅ resume 走 thread 快照的 items                       | #229        |
+| F9 丢弃 reasoning                             | ✅ CLI 流式 + 桌面折叠块（协议新增 `reasoning.delta`） | #218 · #230 |
+| F10 工具结果硬截断 200 字符                   | ✅ 改为中段省略                                        | #218        |
+| F11 审批无 diff 预览                          | ✅                                                     | #218        |
+| F12 `upgrade` 泄漏内部文档编号                | ✅                                                     | #217        |
+| F13 图片输入空壳                              | ⚠️ 有意保留（DeepSeek 无 vision 后端）                 | —           |
+| F14 不读 `CLAUDE.md` / `~/.claude`            | ✅ 就地读取                                            | #227        |
+| F15 协议缺 `thread/list` / `fork` / `archive` | ✅ 三方法 + `threadManagement` capability              | #231        |
+| A 桌面 0 个 slash 命令                        | ✅ 命令面板                                            | #219        |
 
 ### 实现过程中额外发现（快照里没有的）
 
@@ -274,12 +274,23 @@ AskUserQuestion、模式/模型/effort 下拉、Inspector、FilePanel（Source/D
 - **`format:check` 不覆盖 `.css`**：一个 postcss 解析不了的样式表能通过格式门禁；只有
   Playwright 旅程能发现。（本 PR 已把 css 纳入 glob）
 
+### 第二批实现中额外发现
+
+- **桌面事件信封只是第一处**。`item.completed` 里**不带 `payload.message` 的 item 全部被丢弃**——
+  approval / ask_user / error / review_finding 由 app-server 忠实持久化，然后再也不显示；
+  恢复会话看不到自己的 review findings。（#229）
+- **协议根本不传 reasoning**，只有 `reasoningTokens`。桌面不是投影 bug，是线上没有东西可投。（#230）
+- **协议能起、能读、能恢复线程，但不能枚举线程**，所以想做 thread picker 的客户端只能自己去读
+  session 目录——桌面走 Tauri 命令，自带一套行结构和排序。（#231）
+- **rebase 冲突解决要做结构校验**。两次"保留双方"的正则合并分别吃掉了一个 CSS 右花括号和一个
+  `describe()` 结尾；"没有冲突标记了"不等于文件还能解析。两次都是 CI／Playwright 抓到的。
+
 ### 仍未做
 
-- **F8 / 建议 5** —— 恢复会话时重放结构化 item（走 `thread/read` 的 items 而非消息投影）。
-- **F15 / 建议 6** —— 协议补 `thread/list` / `archive` / `fork`，消除客户端两套读路径。
-- 桌面端仍丢弃 reasoning（CLI 已修）。
-- Linux (bwrap) 侧的沙箱模式只共享了解析逻辑，**没有在 Linux 主机上做过 #226 那样的实测**。
+- 桌面侧栏的 archive / delete 仍走 Tauri。`thread/archive` 已经服务，但按钮还没改用它——
+  这是"消除第二个读取者"的后半截。
+- **Linux (bwrap) 侧只共享了 sandbox 模式解析，没有在 Linux 主机上做过 #226 那样的实测。**
+- 图片输入仍是空壳（有意保留：DeepSeek 无 vision 模型）。
 
 ## 附：Codex 侧信息的可信度声明
 
