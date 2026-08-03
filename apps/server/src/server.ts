@@ -36,6 +36,7 @@ export interface TurnExecutionArgs {
   input: Record<string, unknown>;
   signal: AbortSignal;
   publishDelta: (itemId: string, delta: string) => void;
+  publishReasoning: (itemId: string, delta: string) => void;
   publishToolStarted: (itemId: string, name: string, input: Record<string, unknown>) => void;
   publishToolCompleted: (itemId: string, result: { content: string; isError?: boolean }) => void;
   publishUsage: (usage: {
@@ -127,6 +128,7 @@ export class AppServer {
       diagnosticExport: options.diagnosticExport !== undefined,
       workspaceDiff: options.workspaceDiff !== undefined,
       reviewActions: true,
+      reasoningDeltas: true,
     });
   }
 
@@ -375,6 +377,15 @@ export class AppServer {
         signal: controller.signal,
         publishDelta: (itemId, delta) => {
           this.lifecycle.publishDelta({
+            traceId,
+            threadId: thread.id,
+            turnId: turn.id,
+            itemId,
+            delta,
+          });
+        },
+        publishReasoning: (itemId, delta) => {
+          this.lifecycle.publishReasoning({
             traceId,
             threadId: thread.id,
             turnId: turn.id,

@@ -5,6 +5,7 @@ import {
   type DurableProtocolEvent,
   type InitializeResult,
   type ProtocolEvent,
+  type ReasoningDeltaEvent,
   type ThreadSnapshot,
   type TransientDeltaEvent,
   type TurnSnapshot,
@@ -45,6 +46,7 @@ export interface ProtocolRuntimeOptions {
   diagnosticExport?: boolean;
   workspaceDiff?: boolean;
   reviewActions?: boolean;
+  reasoningDeltas?: boolean;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -84,6 +86,7 @@ export class ProtocolRuntime {
         diagnosticExport: this.options.diagnosticExport ?? false,
         workspaceDiff: this.options.workspaceDiff ?? false,
         reviewActions: this.options.reviewActions ?? false,
+        reasoningDeltas: this.options.reasoningDeltas ?? false,
       },
     };
   }
@@ -170,6 +173,11 @@ export class ProtocolRuntime {
 
   publishDelta(event: Omit<TransientDeltaEvent, 'type'>): void {
     this.emit({ type: 'item.delta', ...event });
+  }
+
+  /** Reasoning stream — transient like item.delta, never persisted as an item. */
+  publishReasoning(event: Omit<ReasoningDeltaEvent, 'type'>): void {
+    this.emit({ type: 'reasoning.delta', ...event });
   }
 
   completeTurn(threadId: string, turnId: string): Promise<TurnSnapshot> {

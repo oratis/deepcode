@@ -134,6 +134,12 @@ export class RuntimeHostExecutor implements TurnExecutor {
             case 'text_delta':
               args.publishDelta(streamingItemId, event.text);
               break;
+            case 'thinking_delta':
+              // Reasoning went nowhere: the protocol carried only
+              // reasoningTokens, so DeepSeek's reasoner produced its most
+              // useful output and every client dropped it.
+              args.publishReasoning(`${streamingItemId}-reasoning`, event.text);
+              break;
             case 'tool_use':
               args.publishToolStarted(event.id, event.name, event.input);
               break;

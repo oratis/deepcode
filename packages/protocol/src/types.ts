@@ -114,8 +114,26 @@ export interface TransientDeltaEvent {
   delta: string;
 }
 
+/**
+ * A reasoning delta from a model that produces one (DeepSeek's reasoner).
+ *
+ * Separate from `item.delta` rather than a flag on it: reasoning is not the
+ * answer, it is never persisted as a completed item, and a client that doesn't
+ * understand it must be able to drop it without accidentally rendering it as
+ * assistant text. Gated by the `reasoningDeltas` capability.
+ */
+export interface ReasoningDeltaEvent {
+  type: 'reasoning.delta';
+  traceId?: string;
+  threadId: string;
+  turnId: string;
+  itemId: string;
+  delta: string;
+}
+
 export type TransientProtocolEvent =
   | TransientDeltaEvent
+  | ReasoningDeltaEvent
   | ToolStartedEvent
   | ToolCompletedEvent
   | UsageUpdatedEvent
@@ -137,6 +155,8 @@ export interface InitializeResult {
     diagnosticExport: boolean;
     workspaceDiff: boolean;
     reviewActions: boolean;
+    /** Server streams `reasoning.delta` for models that emit reasoning. */
+    reasoningDeltas: boolean;
   };
 }
 

@@ -20,6 +20,13 @@ export interface ToolInvocation {
 
 export interface AssistantTurn {
   text: string;
+  /**
+   * The model's reasoning for this turn, when it produces any. Kept separate
+   * from `text` so it can be rendered as a distinct, collapsible channel — it
+   * is not the answer, and concatenating it into the answer is how it used to
+   * get dropped instead.
+   */
+  reasoning?: string;
   /** Tool calls interleaved during this turn — rendered as cards after the text. */
   tools: ToolInvocation[];
   streaming: boolean;
@@ -62,6 +69,28 @@ export function appendTextDelta(msgs: Msg[], delta: string): Msg[] {
     return copy;
   }
   return [...msgs, { role: 'assistant', turn: { text: delta, tools: [], streaming: true } }];
+}
+
+/**
+ * Append a reasoning delta to the open assistant turn, opening one if needed.
+ * Reasoning usually arrives *before* any answer text, so this has to be able to
+ * start the turn on its own.
+ */
+export function appendReasoningDelta(msgs: Msg[], delta: string): Msg[] {
+  const idx = lastAssistantIndex(msgs);
+  const target = idx === -1 ? null : (msgs[idx] as AssistantMsg);
+  if (target && target.turn.streaming) {
+    const copy = [...msgs];
+    copy[idx] = {
+      role: 'assistant',
+      turn: { ...target.turn, reasoning: (target.turn.reasoning ?? '') + delta },
+    };
+    return copy;
+  }
+  return [
+    ...msgs,
+    { role: 'assistant', turn: { text: '', reasoning: delta, tools: [], streaming: true } },
+  ];
 }
 
 /** Append a tool invocation to the open assistant turn (same anti-split rule). */
