@@ -1,7 +1,7 @@
 {
   "name": "deepcode",
   "displayName": "DeepCode",
-  "description": "DeepSeek-powered coding agent — Claude-Code parity inside VS Code.",
+  "description": "DeepSeek-powered coding agent inside VS Code — chat, review, and apply.",
   "version": "0.0.0",
   "publisher": "deepcode",
   "private": true,

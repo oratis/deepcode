@@ -2,7 +2,11 @@
 // See docs/DEVELOPMENT_PLAN.md §3 for module structure.
 // M1 surface: DeepSeekProvider + agent loop + 6 P0 tools + sessions
 
-export const VERSION = '0.1.0';
+// The string `deepcode --version`, `--help`, `/upgrade` and `/bug` all print.
+// Kept in lockstep with apps/cli/package.json by scripts/version-consistency.test.ts,
+// and rewritten from the tag by .github/workflows/release.yml at publish time —
+// before this it stayed at 0.1.0 while the CLI shipped as 0.1.6.
+export const VERSION = '0.2.0';
 export const PROJECT_NAME = 'DeepCode';
 
 // Types

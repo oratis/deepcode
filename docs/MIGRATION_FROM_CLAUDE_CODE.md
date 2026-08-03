@@ -1,7 +1,9 @@
 # Migrating from Claude Code
 
-DeepCode targets Claude Code parity. If you already use Claude Code,
-most of your workflow ports over with renames + a different API key.
+DeepCode started as a Claude Code-compatible tool and still reads the same
+file formats, so most of your workflow ports over with renames + a different
+API key. It is no longer chasing 1:1 parity — see
+[`THREE_WAY_REVIEW.md`](THREE_WAY_REVIEW.md) for where the two now differ.
 
 ## TL;DR — the 5-minute switch
 
@@ -34,18 +36,18 @@ deepcode
 
 ## Field-by-field mapping
 
-| Claude Code                        | DeepCode                                | Notes                                                         |
-| ---------------------------------- | --------------------------------------- | ------------------------------------------------------------- |
-| `~/.claude/credentials.json`       | `~/.deepcode/credentials.json`          | Same shape; just rename.                                      |
-| `~/.claude/settings.json`          | `~/.deepcode/settings.json`             | Schema mostly identical; see Settings table below.            |
-| `<proj>/.claude/settings.json`     | `<proj>/.deepcode/settings.json`        | Same.                                                         |
-| `~/.claude/skills/<name>/SKILL.md` | `~/.deepcode/skills/<name>/SKILL.md`    | Same frontmatter format.                                      |
-| `~/.claude/agents/*.md`            | `~/.deepcode/agents/*.md`               | Same shape.                                                   |
-| `~/.claude/plugins/`               | `~/.deepcode/plugins/`                  | Plugin manifest is identical (plugin.json).                   |
-| `CLAUDE.md` (project root)         | `AGENTS.md` (project root)              | Or `DEEPCODE.md`. Both names recognized; AGENTS.md preferred. |
-| `claude` CLI                       | `deepcode` CLI                          | Most flags identical (-p, --mode, --model, --effort).         |
-| `claude doctor`                    | `deepcode doctor`                       | Same.                                                         |
-| `/login`                           | n/a — re-onboard via `deepcode` no-args | We don't have separate login state.                           |
+| Claude Code                        | DeepCode                             | Notes                                                         |
+| ---------------------------------- | ------------------------------------ | ------------------------------------------------------------- |
+| `~/.claude/credentials.json`       | `~/.deepcode/credentials.json`       | Same shape; just rename.                                      |
+| `~/.claude/settings.json`          | `~/.deepcode/settings.json`          | Schema mostly identical; see Settings table below.            |
+| `<proj>/.claude/settings.json`     | `<proj>/.deepcode/settings.json`     | Same.                                                         |
+| `~/.claude/skills/<name>/SKILL.md` | `~/.deepcode/skills/<name>/SKILL.md` | Same frontmatter format.                                      |
+| `~/.claude/agents/*.md`            | `~/.deepcode/agents/*.md`            | Same shape.                                                   |
+| `~/.claude/plugins/`               | `~/.deepcode/plugins/`               | Plugin manifest is identical (plugin.json).                   |
+| `CLAUDE.md` (project root)         | `AGENTS.md` (project root)           | Or `DEEPCODE.md`. Both names recognized; AGENTS.md preferred. |
+| `claude` CLI                       | `deepcode` CLI                       | Most flags identical (-p, --mode, --model, --effort).         |
+| `claude doctor`                    | `deepcode doctor`                    | Same.                                                         |
+| `/login`                           | `/login [<key>]`                     | Stores a new key; `/logout` clears it. No hosted account.     |
 
 ## Settings.json — model field
 
@@ -144,9 +146,11 @@ sub-agents. Both reference systems work.
    bridge once IDE-provider-routing lands — TBD).
 2. **Pricing**: DeepSeek is 10-20× cheaper than Claude for similar
    token counts. `/cost` reflects DeepSeek pricing.
-3. **No image input yet**: vision provider abstraction exists but no
-   provider configured (v1.1).
-4. **`/rewind`**: skeleton only — full rewind UX is in M7 (Mac client).
+3. **No image input**: the vision abstraction exists but DeepSeek ships no
+   vision model, so nothing is wired to it. Screenshots/pasted images are
+   Claude Code-only.
+4. **Terminal UI**: DeepCode's REPL is line-based, not a full-screen TUI.
+   No inline diffs, no `Shift+Tab` mode cycling, no `Ctrl+R` transcript.
 
 ## Behaviors that are NEW in DeepCode
 
@@ -155,11 +159,11 @@ sub-agents. Both reference systems work.
   cost/latency per tier
 - Pipeline-aware sandbox bypass (vs Claude Code's leading-token-only)
 - LSP bridge (Neovim / Emacs / Sublime via `deepcode-lsp`)
-- VS Code extension (skeleton; ships in v1.1)
+- VS Code extension + LSP bridge, both driving the same app-server protocol
 
 ## Getting help
 
 - `deepcode doctor` — diagnostic dump
 - `deepcode --help` — flag reference
-- `~/.deepcode/sessions/<id>.jsonl` — transcript of every session
+- `~/.deepcode/sessions/<id>.v1.jsonl` — transcript of every session
 - File issues at https://github.com/oratis/deepcode/issues
