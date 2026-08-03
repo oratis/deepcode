@@ -295,8 +295,7 @@ function formatInput(input: Record<string, unknown>): string {
 
 function turnError(turn: Extract<ProtocolEvent, { type: 'turn.failed' }>['turn']) {
   return [...turn.items].reverse().find((item) => item.type === 'error')?.payload.message as
-    | string
-    | undefined;
+    string | undefined;
 }
 
 function truncate(value: string, length: number): string {

@@ -3,11 +3,4 @@
 // routing). Update both sites when adding a new screen.
 
 export type ScreenName =
-  | 'repl'
-  | 'sessions'
-  | 'plugins'
-  | 'skills'
-  | 'permissions'
-  | 'mcp'
-  | 'settings'
-  | 'about';
+  'repl' | 'sessions' | 'plugins' | 'skills' | 'permissions' | 'mcp' | 'settings' | 'about';

@@ -709,13 +709,14 @@ Claude Code 的真沙箱：Linux 用 `bwrap`（bubblewrap）、macOS 用 `sandbo
 - 发送时图片自动转 base64 走 vision；> 100 KB 文本走"附件"通道
 
 **`+` 附件菜单**（截图所示，全部实现）：
-| 项 | 快捷键 | 行为 |
-|---|---|---|
-| Add files or photos | ⌘U | 文件选择器；图片自动转 base64 走 vision；> 100KB 文本走"附件"通道（不进上下文，工具按需取） |
-| Add folder | — | 把整个文件夹声明为"额外允许读"目录（写入当前会话的临时 permissions） |
-| Slash commands | — | 等价输入 `/`，弹命令面板 |
-| Connectors › | — | 子菜单：列出当前已配置的 MCP server，可点击"重连 / 查看工具 / 临时禁用" |
-| Add plugins… | — | 打开插件市场（v1 用本地目录 `~/.deepcode/plugins/`，v1.1 上 registry） |
+
+| 项                  | 快捷键 | 行为                                                                                        |
+| ------------------- | ------ | ------------------------------------------------------------------------------------------- |
+| Add files or photos | ⌘U     | 文件选择器；图片自动转 base64 走 vision；> 100KB 文本走"附件"通道（不进上下文，工具按需取） |
+| Add folder          | —      | 把整个文件夹声明为"额外允许读"目录（写入当前会话的临时 permissions）                        |
+| Slash commands      | —      | 等价输入 `/`，弹命令面板                                                                    |
+| Connectors ›        | —      | 子菜单：列出当前已配置的 MCP server，可点击"重连 / 查看工具 / 临时禁用"                     |
+| Add plugins…        | —      | 打开插件市场（v1 用本地目录 `~/.deepcode/plugins/`，v1.1 上 registry）                      |
 
 **右侧控件**（从左到右）：
 
@@ -765,11 +766,12 @@ Claude Code 的真沙箱：Linux 用 `bwrap`（bubblewrap）、macOS 用 `sandbo
 - 顶部 tab 栏：可同时打开多个文件，关闭按钮、未保存黄点
 
 **视图模式**（Tab 内顶部切换）：
-| 视图 | 用途 |
-|---|---|
-| **Source** | Monaco 编辑器只读视图；行号、语法高亮；可点 ✏ 切到编辑态 |
-| **Diff** | 与最近一次 Edit/Write 工具调用产生的 diff 对照；左右 split 或 inline 切换 |
-| **History** | 本会话内该文件的所有版本时间轴，可点击任一历史版本回到 Source/Diff |
+
+| 视图        | 用途                                                                      |
+| ----------- | ------------------------------------------------------------------------- |
+| **Source**  | Monaco 编辑器只读视图；行号、语法高亮；可点 ✏ 切到编辑态                  |
+| **Diff**    | 与最近一次 Edit/Write 工具调用产生的 diff 对照；左右 split 或 inline 切换 |
+| **History** | 本会话内该文件的所有版本时间轴，可点击任一历史版本回到 Source/Diff        |
 
 **键盘**：`⌘W` 关闭当前 tab；`⌘[` / `⌘]` 切换 tab；`⌘\` 切换 split / inline diff。
 
@@ -830,23 +832,24 @@ disabled: false # 用户可在 settings 关闭某 skill
 - 同一会话内同名 skill 不重复加载
 
 **内置 skills（v1 出厂带）**：
-| Skill | 触发场景 |
-|---|---|
-| `init` | 用户说"初始化 DEEPCODE.md / 让我开始"，扫描代码库生成 `DEEPCODE.md` |
-| `skill-creator` | 用户说"做个 skill / 优化这个 skill"，引导创建新 skill |
-| `code-review` | 评审 diff、PR、当前改动 |
-| `security-review` | 安全审查当前分支 |
-| `verify` | 跑应用确认改动真的工作（不只是测试通过） |
-| `run` | 启动本项目并截图 |
-| `keybindings-help` | 编辑 `~/.deepcode/keybindings.json` |
-| `update-config` | 编辑 `settings.json` / hooks / permissions |
-| `fewer-permission-prompts` | 扫描历史会话，自动给 `.deepcode/settings.json` 添加常用工具到 allow 列表 |
-| `xlsx` / `docx` / `pdf` / `pptx` | 操作对应文件类型（如果该业务场景命中） |
-| `consolidate-memory` | 整理 `~/.deepcode/memory/*` 去重、修正 |
-| `claude-api` | （对应 deepseek-api）调 DeepSeek API 的脚手架/迁移 |
-| `loop` | 按间隔重复跑某个命令（轮询 CI 等） |
-| `schedule` | 创建定时远程 agent（见 §3.15 cron） |
-| `review` | 评审 PR |
+
+| Skill                            | 触发场景                                                                 |
+| -------------------------------- | ------------------------------------------------------------------------ |
+| `init`                           | 用户说"初始化 DEEPCODE.md / 让我开始"，扫描代码库生成 `DEEPCODE.md`      |
+| `skill-creator`                  | 用户说"做个 skill / 优化这个 skill"，引导创建新 skill                    |
+| `code-review`                    | 评审 diff、PR、当前改动                                                  |
+| `security-review`                | 安全审查当前分支                                                         |
+| `verify`                         | 跑应用确认改动真的工作（不只是测试通过）                                 |
+| `run`                            | 启动本项目并截图                                                         |
+| `keybindings-help`               | 编辑 `~/.deepcode/keybindings.json`                                      |
+| `update-config`                  | 编辑 `settings.json` / hooks / permissions                               |
+| `fewer-permission-prompts`       | 扫描历史会话，自动给 `.deepcode/settings.json` 添加常用工具到 allow 列表 |
+| `xlsx` / `docx` / `pdf` / `pptx` | 操作对应文件类型（如果该业务场景命中）                                   |
+| `consolidate-memory`             | 整理 `~/.deepcode/memory/*` 去重、修正                                   |
+| `claude-api`                     | （对应 deepseek-api）调 DeepSeek API 的脚手架/迁移                       |
+| `loop`                           | 按间隔重复跑某个命令（轮询 CI 等）                                       |
+| `schedule`                       | 创建定时远程 agent（见 §3.15 cron）                                      |
+| `review`                         | 评审 PR                                                                  |
 
 **Slash command 关联**：每个 skill 自动注册同名 slash command，用户可以 `/<skill-name>` 显式调用（绕过模型自主判断）。
 
@@ -888,12 +891,13 @@ maxTurns: 12 # 防止跑飞的硬上限
 **位置**：`~/.deepcode/output-styles/<name>.md`、`<project>/.deepcode/output-styles/<name>.md`、内置。
 
 **内置 4 种**：
-| Style | 用途 |
-|---|---|
-| `default` | 简洁、直接、最少废话 |
-| `explanatory` | 解释为什么这样改，适合学习 |
-| `learning` | 类教师模式 — 引导用户自己写关键代码，agent 只给出框架 |
-| `proactive` | agent 主动建议下一步、提示风险点 |
+
+| Style         | 用途                                                  |
+| ------------- | ----------------------------------------------------- |
+| `default`     | 简洁、直接、最少废话                                  |
+| `explanatory` | 解释为什么这样改，适合学习                            |
+| `learning`    | 类教师模式 — 引导用户自己写关键代码，agent 只给出框架 |
+| `proactive`   | agent 主动建议下一步、提示风险点                      |
 
 **文件格式**：
 
@@ -930,13 +934,14 @@ keep-coding-instructions: true # 是否保留 system prompt 中的"如何写代�
 5. 系统默认 `medium`
 
 **映射到 DeepSeek**：
-| Effort | `deepseek-chat` `max_tokens` | `deepseek-reasoner` reasoning budget | UI 标签 |
-|---|---|---|---|
-| `low` | 4,000 | 1,500 token | Standard |
-| `medium` | 8,000 | 4,000 token | Standard |
-| `high` | 16,000 | 12,000 token | High |
-| `xhigh` | 24,000 | 24,000 token | Extra High |
-| `max` | 32,000 | unlimited | Max |
+
+| Effort   | `deepseek-chat` `max_tokens` | `deepseek-reasoner` reasoning budget | UI 标签    |
+| -------- | ---------------------------- | ------------------------------------ | ---------- |
+| `low`    | 4,000                        | 1,500 token                          | Standard   |
+| `medium` | 8,000                        | 4,000 token                          | Standard   |
+| `high`   | 16,000                       | 12,000 token                         | High       |
+| `xhigh`  | 24,000                       | 24,000 token                         | Extra High |
+| `max`    | 32,000                       | unlimited                            | Max        |
 
 **环境变量**：`CLAUDE_CODE_EFFORT_LEVEL` → DeepCode 等价 `DEEPCODE_EFFORT_LEVEL`，CI 场景可注入。
 
@@ -974,15 +979,16 @@ UI 上 effort 选择器嵌在模型选择器旁（参考视觉稿 #4 屏 compose
 ```
 
 **贡献点说明**：
-| contributes | 含义 |
-|---|---|
-| `skills` | 注册 skill，命名空间 `<plugin>:<skill>` |
-| `commands` | 注册 slash command；可链接到自家 skill 或直接 inline 一段 prompt |
-| `hooks` | 注册 6 类事件的 hook，与用户 settings.json 中的 hooks 共存（plugin 的先于 user 执行）|
-| `mcpServers` | 注册 MCP server，默认禁用，用户在 settings 里开启 |
-| `agents` | 注册 subagent 类型（带独立 system prompt + tools 白名单），可作为 `Task({ subagent_type: "<plugin>:<agent>" })` 的 type 值 |
-| `statusLines` | 注册状态栏命令变体 |
-| `modes` | 注册自定义 mode |
+
+| contributes   | 含义                                                                                                                       |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `skills`      | 注册 skill，命名空间 `<plugin>:<skill>`                                                                                    |
+| `commands`    | 注册 slash command；可链接到自家 skill 或直接 inline 一段 prompt                                                           |
+| `hooks`       | 注册 6 类事件的 hook，与用户 settings.json 中的 hooks 共存（plugin 的先于 user 执行）                                      |
+| `mcpServers`  | 注册 MCP server，默认禁用，用户在 settings 里开启                                                                          |
+| `agents`      | 注册 subagent 类型（带独立 system prompt + tools 白名单），可作为 `Task({ subagent_type: "<plugin>:<agent>" })` 的 type 值 |
+| `statusLines` | 注册状态栏命令变体                                                                                                         |
+| `modes`       | 注册自定义 mode                                                                                                            |
 
 **安装方式**：
 
@@ -1194,12 +1200,13 @@ CLI 用 ANSI cursor save/restore；GUI 用 React 组件订阅 statusline stream�
 - GUI：右侧文件面板 History tab 内每个快照都有 `↶` 按钮
 
 **5 种回退操作**（弹层让用户选）：
-| 操作 | 含义 |
-|---|---|
-| Restore code | 文件回到该快照，对话不变 |
-| Restore conversation | 对话回到该点，文件不变 |
-| Restore both | 都回 |
-| Summarize-from-here | 把这一点之后的所有对话压缩成一段总结接续 |
+
+| 操作                 | 含义                                                                  |
+| -------------------- | --------------------------------------------------------------------- |
+| Restore code         | 文件回到该快照，对话不变                                              |
+| Restore conversation | 对话回到该点，文件不变                                                |
+| Restore both         | 都回                                                                  |
+| Summarize-from-here  | 把这一点之后的所有对话压缩成一段总结接续                              |
 | Summarize-up-to-here | 把这一点之前的所有对话压缩成一段总结作为新会话起点（替代 `/compact`） |
 
 **存储管理**：sessions cleanup（`cleanupPeriodDays`）连带清理快照；单会话快照硬上限 200 份（超出 LRU 淘汰）。

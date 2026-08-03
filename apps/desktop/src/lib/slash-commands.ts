@@ -14,12 +14,7 @@ import type { ScreenName } from '../types/screens.js';
 
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type AgentMode =
-  | 'default'
-  | 'acceptEdits'
-  | 'plan'
-  | 'auto'
-  | 'dontAsk'
-  | 'bypassPermissions';
+  'default' | 'acceptEdits' | 'plan' | 'auto' | 'dontAsk' | 'bypassPermissions';
 
 export interface SlashCommand {
   /** Including the leading slash. */

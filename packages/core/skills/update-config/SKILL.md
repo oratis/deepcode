@@ -38,15 +38,15 @@ overrides), local.
 
 ## Common requests
 
-| User asks                          | Setting                                  |
+| User asks | Setting |
 | ---------------------------------- | ---------------------------------------- | ------------------------ |
-| "Don't ask me about reads"         | `permissions.allow: ["Read"]`            |
-| "Stop running tests for me"        | `permissions.deny: ["Bash(npm test:*)"]` |
-| "Use deepseek-reasoner by default" | `model: "deepseek-reasoner"`             |
-| "Lower the effort"                 | `effortLevel: "low"`                     |
-| "Turn off the sandbox"             | `sandbox.enabled: false`                 |
-| "Disable plugin X"                 | `disabledPlugins: ["X"]`                 |
-| "Add a hook to lint after edits"   | `hooks.PostToolUse: [{ matcher: "Edit    | Write", hooks: [...] }]` |
+| "Don't ask me about reads" | `permissions.allow: ["Read"]` |
+| "Stop running tests for me" | `permissions.deny: ["Bash(npm test:*)"]` |
+| "Use deepseek-reasoner by default" | `model: "deepseek-reasoner"` |
+| "Lower the effort" | `effortLevel: "low"` |
+| "Turn off the sandbox" | `sandbox.enabled: false` |
+| "Disable plugin X" | `disabledPlugins: ["X"]` |
+| "Add a hook to lint after edits" | `hooks.PostToolUse: [{ matcher: "Edit    | Write", hooks: [...] }]` |
 
 ## Refuse
 

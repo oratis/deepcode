@@ -95,8 +95,7 @@ export class DeepSeekProvider implements Provider {
     for await (const chunk of stream) {
       const choice = chunk.choices?.[0];
       const delta = choice?.delta as
-        | { content?: string; reasoning_content?: string; tool_calls?: unknown[] }
-        | undefined;
+        { content?: string; reasoning_content?: string; tool_calls?: unknown[] } | undefined;
 
       if (delta?.content) {
         text += delta.content;
