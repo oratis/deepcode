@@ -264,19 +264,16 @@ export class DesktopProtocolAgent {
         });
         break;
       case 'item.completed':
-        if (event.item.type === 'review_finding') {
+        // The payload is nested, not spread: a review_action payload carries
+        // its own `kind` ('apply' | 'revert'), and spreading it over the
+        // envelope overwrote `kind: 'event'` — so every consumer filtering on
+        // the envelope discriminator silently dropped these events.
+        if (event.item.type === 'review_finding' || event.item.type === 'review_action') {
           this.emit({
             kind: 'event',
             turnId: event.turnId,
-            type: 'review_finding',
-            ...event.item.payload,
-          });
-        } else if (event.item.type === 'review_action') {
-          this.emit({
-            kind: 'event',
-            turnId: event.turnId,
-            type: 'review_action',
-            ...event.item.payload,
+            type: event.item.type,
+            payload: event.item.payload,
           });
         }
         break;
@@ -376,6 +373,14 @@ export function getWorkspaceDiff() {
 
 export function applyReviewFinding(finding: ReviewFindingPayload) {
   return defaultAgent.applyFinding(finding);
+}
+
+export function applyReviewFindings(findings: ReviewFindingPayload[]) {
+  return defaultAgent.applyFindings(findings);
+}
+
+export function revertReviewAction(actionId: string) {
+  return defaultAgent.revertAction(actionId);
 }
 
 export function abortProtocolTurn(turnId: string) {

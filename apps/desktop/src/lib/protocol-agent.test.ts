@@ -263,7 +263,11 @@ describe('DesktopProtocolAgent', () => {
       },
     });
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'review_finding', path: 'src/a.ts', startLine: 4 }),
+      expect.objectContaining({
+        kind: 'event',
+        type: 'review_finding',
+        payload: expect.objectContaining({ path: 'src/a.ts', startLine: 4 }),
+      }),
     );
     transport.handler?.({
       type: 'item.completed',
@@ -276,8 +280,15 @@ describe('DesktopProtocolAgent', () => {
         payload: { actionId: turn.id, kind: 'apply', findingIds: ['finding-1'] },
       },
     });
+    // The envelope discriminator must survive: a review_action payload carries
+    // its own `kind` ('apply' | 'revert'), which used to overwrite
+    // `kind: 'event'` and hide the event from every consumer.
     expect(events).toContainEqual(
-      expect.objectContaining({ type: 'review_action', findingIds: ['finding-1'] }),
+      expect.objectContaining({
+        kind: 'event',
+        type: 'review_action',
+        payload: expect.objectContaining({ kind: 'apply', findingIds: ['finding-1'] }),
+      }),
     );
   });
 

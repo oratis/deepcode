@@ -4,6 +4,7 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
+import { ChangesPanel } from './components/ChangesPanel.js';
 import { FilePanel } from './components/FilePanel.js';
 import { InspectorPanel } from './components/InspectorPanel.js';
 import { InspectorRail } from './components/InspectorRail.js';
@@ -16,6 +17,8 @@ import { clearProtocolThread as clearAgentHistory } from './lib/protocol-agent.j
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
 import { storedToMsgs, type Msg } from './lib/repl-stream.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
+import { changesBadge } from './lib/changes-reducer.js';
+import { useChanges } from './lib/use-changes.js';
 import { useFilePanel } from './lib/use-file-panel.js';
 import { AboutScreen } from './screens/About.js';
 import { MCPManagerScreen } from './screens/MCPManager.js';
@@ -54,6 +57,9 @@ export function App(): JSX.Element {
   // Right-side file panel (§3.11): opens to the left of the rail.
   const fp = useFilePanel();
   const [filesCollapsed, setFilesCollapsed] = useState(false);
+  // Changes panel (§ review): findings + working-tree diff, same right slot.
+  const changes = useChanges();
+  const [changesOpen, setChangesOpen] = useState(false);
 
   // Drag the panel's left edge to resize (320–800px, persisted by the hook).
   const onFilePanelResizeStart = useCallback(
@@ -78,20 +84,34 @@ export function App(): JSX.Element {
 
   const toggleInspector = useCallback(() => {
     setFilesCollapsed(true); // a visible inspector hides the file panel
+    setChangesOpen(false);
     setInspectorOpen((v) => !v);
   }, []);
 
   const toggleFiles = useCallback(() => {
     setInspectorOpen(false);
+    setChangesOpen(false);
     if (fp.isOpen) setFilesCollapsed((c) => !c);
     else void fp.openViaPicker(); // no tabs yet — let the user pick a file
   }, [fp.isOpen, fp.openViaPicker]);
+
+  const toggleChanges = useCallback(() => {
+    setInspectorOpen(false);
+    setFilesCollapsed(true);
+    setChangesOpen((open) => {
+      // Load on open rather than on mount: the diff is a Git call, and an
+      // unopened panel shouldn't pay for it.
+      if (!open) void changes.refresh();
+      return !open;
+    });
+  }, [changes.refresh]);
 
   // Open a specific file (chat tool card / inspector recent files): surface the
   // file panel and step the inspector aside for it.
   const openFile = useCallback(
     (path: string) => {
       setInspectorOpen(false);
+      setChangesOpen(false);
       setFilesCollapsed(false);
       void fp.open(path);
     },
@@ -184,12 +204,22 @@ export function App(): JSX.Element {
 
   // The rail is always the last 64px column. A panel (file OR inspector) opens
   // to its left, widening the grid so it squeezes chat rather than overlaying.
-  const inspectorShowing = inspectorOpen && !filesVisible;
+  const changesShowing = changesOpen && !filesVisible;
+  const inspectorShowing = inspectorOpen && !filesVisible && !changesShowing;
+  // The Changes panel reuses the file panel's wider grid track — it shows diff
+  // hunks and needs the same room.
   const shellClass =
-    'app-shell' + (filesVisible ? ' file-open' : inspectorShowing ? ' inspector-open' : '');
+    'app-shell' +
+    (filesVisible || changesShowing ? ' file-open' : inspectorShowing ? ' inspector-open' : '');
   // Name of the right-side panel currently showing — surfaced in the otherwise
   // empty macOS titlebar strip so the rail toggles gain a visible, labeled echo.
-  const activePanelName = filesVisible ? 'Files' : inspectorShowing ? 'Inspector' : null;
+  const activePanelName = filesVisible
+    ? 'Files'
+    : changesShowing
+      ? 'Changes'
+      : inspectorShowing
+        ? 'Inspector'
+        : null;
 
   return (
     <div className={shellClass}>
@@ -259,7 +289,18 @@ export function App(): JSX.Element {
           openFile,
         )}
       </main>
-      {filesVisible ? (
+      {changesShowing ? (
+        <ChangesPanel
+          state={changes.state}
+          width={fp.state.width}
+          onRefresh={() => void changes.refresh()}
+          onToggleFile={changes.toggleFile}
+          onApply={(findings) => void changes.apply(findings)}
+          onRevert={(actionId) => void changes.revert(actionId)}
+          onOpenFile={openFile}
+          onResizeStart={onFilePanelResizeStart}
+        />
+      ) : filesVisible ? (
         <FilePanel
           tabs={fp.state.tabs}
           activeIndex={fp.state.activeIndex}
@@ -285,11 +326,14 @@ export function App(): JSX.Element {
       <InspectorRail
         inspectorActive={inspectorShowing}
         filesActive={filesVisible}
+        changesActive={changesShowing}
         settingsActive={SETTINGS_FAMILY.includes(screen)}
         planCount={planCount}
         contextFill={contextFill}
+        changesCount={changesBadge(changes.state)}
         onToggleInspector={toggleInspector}
         onToggleFiles={toggleFiles}
+        onToggleChanges={toggleChanges}
         onSettings={() => setScreen('settings')}
       />
     </div>

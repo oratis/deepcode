@@ -128,4 +128,40 @@ test('runs slash commands in the composer instead of sending them to the model',
   await composer.press('Escape');
   await expect(palette).toBeHidden();
   await expect(composer).toHaveValue('/he');
+test('reviews findings and the working tree from the Changes panel', async ({ page }) => {
+  // Run a turn so the fixture emits a review finding.
+  const composer = page.getByPlaceholder(composerPlaceholder, { exact: true });
+  await composer.fill('Add a boss phase');
+  await composer.press('Enter');
+  const approve = page.getByRole('button', { name: /^Approve \(↵\)$/ });
+  await expect(approve).toBeVisible();
+  await approve.click();
+  await expect(approve).toBeHidden();
+
+  await page.getByRole('button', { name: /^Changes\b/ }).click();
+  const panel = page.getByTestId('changes-panel');
+  await expect(panel).toBeVisible();
+
+  // Findings section: the agent's finding, with its file and priority.
+  await expect(panel.getByText('Boss phase is read before it is validated')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'src/boss.ts:13' })).toBeVisible();
+  await expect(panel.getByText('high', { exact: true })).toBeVisible();
+
+  // Working tree: files with counts, collapsed until asked for.
+  await expect(panel.getByRole('button', { name: 'src/boss.ts', exact: true })).toBeVisible();
+  await expect(panel.getByText('+2', { exact: true })).toBeVisible();
+  await expect(panel.locator('.ch-line')).toHaveCount(0);
+  await panel.locator('.ch-disclose').first().click();
+  await expect(panel.locator('.ch-line.addition')).toHaveCount(2);
+  await expect(panel.locator('.ch-line.deletion')).toHaveCount(1);
+
+  // Binary files say so rather than rendering nothing.
+  await panel.locator('.ch-disclose').last().click();
+  await expect(panel.getByText('Binary file — no textual diff.')).toBeVisible();
+
+  // Applying runs a real turn; the fixture answers with a review_action, and
+  // the row flips to applied + Revert.
+  await panel.getByRole('button', { name: 'Apply', exact: true }).click();
+  await expect(panel.getByText('applied', { exact: true })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Revert', exact: true })).toBeVisible();
 });

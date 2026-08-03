@@ -4,6 +4,7 @@
 // model), so it's no longer "everything opens the inspector":
 //   • ⓘ Inspector — plan / context / recent files / session (toggles the panel)
 //   • ▤ Files     — the file preview panel (Source / Diff / History)
+//   • ⑂ Changes   — review findings + the working-tree diff (apply / revert)
 //   • ⚙ Settings  — the Settings shell (a main-area screen, not a right panel)
 // The active panel's icon is highlighted; clicking it again closes the panel.
 
@@ -14,25 +15,33 @@ interface InspectorRailProps {
   inspectorActive: boolean;
   /** File preview panel is the visible right panel. */
   filesActive: boolean;
+  /** Changes panel is the visible right panel. */
+  changesActive: boolean;
   /** On any settings-family screen (highlights the cog). */
   settingsActive: boolean;
   /** Plan items pending — badge on the Inspector icon. */
   planCount?: number;
   /** Context fill 0..1 — tints the Inspector icon (warn ≥ 0.8). */
   contextFill?: number;
+  /** Findings awaiting action, else changed files — badge on the Changes icon. */
+  changesCount?: number;
   onToggleInspector: () => void;
   onToggleFiles: () => void;
+  onToggleChanges: () => void;
   onSettings: () => void;
 }
 
 export function InspectorRail({
   inspectorActive,
   filesActive,
+  changesActive,
   settingsActive,
   planCount,
   contextFill,
+  changesCount,
   onToggleInspector,
   onToggleFiles,
+  onToggleChanges,
   onSettings,
 }: InspectorRailProps): JSX.Element {
   const ctxColor =
@@ -68,6 +77,19 @@ export function InspectorRail({
       >
         <IconFiles />
         <span className="rail-label">Files</span>
+      </button>
+
+      <button
+        type="button"
+        className={'rail-btn' + (changesActive ? ' active' : '')}
+        title="Changes — review findings & the working-tree diff"
+        onClick={onToggleChanges}
+      >
+        <IconChanges />
+        <span className="rail-label">Changes</span>
+        {changesCount !== undefined && changesCount > 0 && (
+          <span className="dot-badge">{changesCount}</span>
+        )}
       </button>
 
       <span className="rail-spacer" />
@@ -121,6 +143,29 @@ function IconFiles(): JSX.Element {
       <path d="M4 2.6h4.4L12 6.1v7.1a.7.7 0 0 1-.7.7H4a.7.7 0 0 1-.7-.7V3.3A.7.7 0 0 1 4 2.6Z" />
       <path d="M8.3 2.7V6.1H12" />
       <path d="M5.6 9.1h4.8M5.6 11.2h3" />
+    </svg>
+  );
+}
+
+/** Changes — a branch/diff glyph. */
+function IconChanges(): JSX.Element {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="4.5" cy="4" r="1.6" />
+      <circle cx="4.5" cy="12" r="1.6" />
+      <circle cx="11.5" cy="7" r="1.6" />
+      <path d="M4.5 5.6v4.8" />
+      <path d="M10 7.6c-2.4.6-4 1.4-4.2 2.7" />
     </svg>
   );
 }
