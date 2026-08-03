@@ -7,6 +7,22 @@ API key. It is no longer chasing 1:1 parity — see
 
 ## TL;DR — the 5-minute switch
 
+DeepCode reads your existing Claude Code assets **in place** — you do not have to
+move anything to try it:
+
+| Read in place                 | Notes                                               |
+| ----------------------------- | --------------------------------------------------- |
+| `~/.claude/settings.json`     | Used when `~/.deepcode/settings.json` doesn't exist |
+| `~/.claude/CLAUDE.md`         | Loaded as user memory                               |
+| `CLAUDE.md` (any project dir) | Loaded alongside `DEEPCODE.md` / `AGENTS.md`        |
+| `~/.claude/skills/`           | A same-named DeepCode skill wins                    |
+| `~/.claude/agents/`           | A same-named DeepCode agent wins                    |
+
+A project's `.claude/settings.json` is **not** read: project settings pass
+through the directory-trust gate, and that boundary is not widened implicitly.
+
+The copy below is only needed if you want DeepCode to own its own copies.
+
 ```bash
 # 1. Install DeepCode CLI
 npm install -g deepcode-cli

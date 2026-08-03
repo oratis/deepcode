@@ -56,6 +56,36 @@ export function settingsPaths(opts: LoadSettingsOpts): LoadedSettings['sources']
   };
 }
 
+/**
+ * Where the user layer comes from when DeepCode has no settings of its own.
+ *
+ * A Claude Code user's `~/.claude/settings.json` is read in place rather than
+ * requiring `mv ~/.claude/settings.json ~/.deepcode/settings.json`. It is a
+ * *fallback*, not an extra layer: the moment `~/.deepcode/settings.json`
+ * exists it wins outright, so provenance keeps naming one real file and the
+ * trust gate keeps seeing exactly the layers it already knows about.
+ *
+ * User-level only. A project's `.claude/settings.json` is not read: project
+ * settings pass through the directory-trust gate, and quietly widening what
+ * that gate covers is not a change to make in passing.
+ */
+export async function resolveUserSettingsPath(opts: LoadSettingsOpts): Promise<string> {
+  const preferred = settingsPaths(opts).userPath;
+  if (opts.directory) return preferred; // explicit data dir — no fallback
+  try {
+    await fs.access(preferred);
+    return preferred;
+  } catch {
+    const claudePath = join(opts.home ?? homedir(), '.claude', 'settings.json');
+    try {
+      await fs.access(claudePath);
+      return claudePath;
+    } catch {
+      return preferred;
+    }
+  }
+}
+
 async function readJson(path: string): Promise<DeepCodeSettings | undefined> {
   try {
     const raw = await fs.readFile(path, 'utf8');
@@ -79,7 +109,7 @@ async function readJsonRequired(path: string): Promise<DeepCodeSettings> {
 }
 
 export async function loadSettings(opts: LoadSettingsOpts): Promise<LoadedSettings> {
-  const sources = settingsPaths(opts);
+  const sources = { ...settingsPaths(opts), userPath: await resolveUserSettingsPath(opts) };
   const [user, project, local, override] = await Promise.all([
     readJson(sources.userPath),
     readJson(sources.projectPath),

@@ -113,6 +113,12 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
     await addRaw(abs, label, raw, depth);
   };
 
+  // 0. ~/.claude/CLAUDE.md — a Claude Code user's existing global instructions.
+  //    Read first so DeepCode's own files can override it, and read in place
+  //    rather than requiring `mv ~/.claude ~/.deepcode`: the migration guide's
+  //    five-step copy was the largest piece of grit in the way of trying this.
+  await addFile(join(home, '.claude', 'CLAUDE.md'), 'CLAUDE.md (Claude Code)', 0);
+
   // 1. ~/.deepcode/DEEPCODE.md (user-level)
   await addFile(join(directory, 'DEEPCODE.md'), 'user memory', 0);
 
@@ -123,10 +129,13 @@ export async function loadMemory(opts: LoadMemoryOpts): Promise<LoadedMemory> {
     0,
   );
 
-  // 2. DEEPCODE.md walking from cwd → root, deepest first
-  const upwards = walkUpwards(opts.cwd, home);
+  // 2. CLAUDE.md / DEEPCODE.md walking from cwd → root, deepest first.
   // Reverse so root-most first, deepest last (later overrides via concat — Claude Code semantics)
+  const upwards = walkUpwards(opts.cwd, home);
   for (const dir of upwards.reverse()) {
+    // CLAUDE.md before DEEPCODE.md at each level: same-directory DeepCode
+    // instructions win over the Claude Code ones they were derived from.
+    await addFile(join(dir, 'CLAUDE.md'), `${dir}/CLAUDE.md`, 0);
     await addFile(join(dir, 'DEEPCODE.md'), `${dir}/DEEPCODE.md`, 0);
   }
 
