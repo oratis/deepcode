@@ -190,10 +190,82 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
           structuredToolEvents: true,
           interactiveRequests: true,
           reviewActions: true,
+          workspaceDiff: true,
           configDiagnostics: true,
         },
       });
       break;
+    case 'workspace/diff':
+      await respond({
+        repository: true,
+        base: 'HEAD',
+        truncated: false,
+        files: [
+          {
+            path: 'src/boss.ts',
+            status: 'modified',
+            additions: 2,
+            deletions: 1,
+            binary: false,
+            truncated: false,
+            hunks: [
+              {
+                header: '@@ -12,3 +12,4 @@',
+                lines: [
+                  {
+                    kind: 'context',
+                    text: 'export function spawnBoss() {',
+                    oldLine: 12,
+                    newLine: 12,
+                  },
+                  { kind: 'deletion', text: '  return new Boss(1);', oldLine: 13 },
+                  { kind: 'addition', text: '  const phase = readPhase();', newLine: 13 },
+                  { kind: 'addition', text: '  return new Boss(phase);', newLine: 14 },
+                ],
+              },
+            ],
+          },
+          {
+            path: 'assets/boss.png',
+            status: 'added',
+            additions: 0,
+            deletions: 0,
+            binary: true,
+            truncated: false,
+            hunks: [],
+          },
+        ],
+      });
+      break;
+    case 'review/apply': {
+      const findingIds = (request.params.findingIds ?? []) as string[];
+      const turn: TurnSnapshot = {
+        id: `preview-review-${nextTurn++}`,
+        threadId: activeThreadId,
+        status: 'in_progress',
+        startedAt: '2026-08-01T00:00:05.000Z',
+        items: [],
+      };
+      await sendEvent({ type: 'turn.started', threadId: activeThreadId, turn });
+      await respond(turn);
+      await sendEvent({
+        type: 'item.completed',
+        threadId: activeThreadId,
+        turnId: turn.id,
+        item: {
+          id: 'item-review-action',
+          type: 'review_action',
+          completedAt: '2026-08-01T00:00:06.000Z',
+          payload: { actionId: 'action-1', kind: 'apply', findingIds },
+        },
+      });
+      await sendEvent({
+        type: 'turn.completed',
+        threadId: activeThreadId,
+        turn: { ...turn, status: 'completed' },
+      });
+      break;
+    }
     case 'config/diagnostics':
       await respond({
         cwd: String(request.params.cwd),
@@ -291,6 +363,27 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
         threadId,
         turnId,
         usage: { inputTokens: 2_048, outputTokens: 256, cacheReadTokens: 1_024 },
+      });
+      // A review finding, so the Changes panel has something to apply.
+      await sendEvent({
+        type: 'item.completed',
+        threadId,
+        turnId,
+        item: {
+          id: 'item-review-finding',
+          type: 'review_finding',
+          completedAt: '2026-08-01T00:00:02.000Z',
+          payload: {
+            findingId: 'finding-1',
+            title: 'Boss phase is read before it is validated',
+            body: 'readPhase() can return NaN; clamp it before constructing Boss.',
+            path: 'src/boss.ts',
+            startLine: 13,
+            endLine: 13,
+            priority: 1,
+            replacement: '  const phase = Math.max(1, readPhase() || 1);',
+          },
+        },
       });
       activeTurn = { ...activeTurn, status: 'completed', completedAt: '2026-08-01T00:00:02.000Z' };
       await sendEvent({ type: 'turn.completed', threadId, turn: activeTurn });
