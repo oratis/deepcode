@@ -58,6 +58,15 @@ import { captureVoice } from './voice-capture.js';
 import { resolveEffort } from './parse-args.js';
 import { TrustStore } from './trust.js';
 import { resolveBuiltinSkillsDir } from './builtin-skills.js';
+import {
+  ThinkingStream,
+  colorEnabled,
+  makePalette,
+  renderApprovalPreview,
+  renderToolCall,
+  renderToolResult,
+  type Palette,
+} from './render.js';
 
 export interface ReplOpts {
   input: Readable;
@@ -99,6 +108,10 @@ export interface ReplOpts {
   noPlugins?: boolean;
   /** `--settings <file>` → a settings file that wins over discovered layers. */
   settingsPath?: string;
+  /** `--no-color` → force plain output even on a TTY (NO_COLOR is honoured too). */
+  noColor?: boolean;
+  /** `--no-thinking` → don't stream the model's reasoning. */
+  hideThinking?: boolean;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -524,6 +537,12 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   });
   ctx.tasks = tasks;
 
+  // Colour resolves once: a --no-color flag, NO_COLOR/FORCE_COLOR, or whether
+  // stdout is actually a terminal. Piped output stays plain.
+  const palette = makePalette(
+    !opts.noColor && colorEnabled(process.env, (output as { isTTY?: boolean }).isTTY === true),
+  );
+
   if (!opts.bare) {
     output.write(
       `\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`,
@@ -678,6 +697,10 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       }
     }
 
+    // One reasoning stream per turn: it owns the "am I mid-line inside the
+    // thinking gutter" state, which must not leak across turns.
+    const thinking = opts.hideThinking ? null : new ThinkingStream(palette);
+
     // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
     const result = await runtime.run({
       systemPrompt,
@@ -696,8 +719,23 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       // Session-scoped manager: the agent's TaskCreate calls land here too, so
       // background tasks persist across turns and show up in /tasks.
       taskManager: tasks,
-      approval: async (toolName, _input, verdict) => {
-        output.write(`\n  ⏸ Approve ${toolName}?  Reason: ${verdict.reason}\n`);
+      approval: async (toolName, input, verdict) => {
+        output.write(
+          `\n  ${palette.yellow('⏸')} Approve ${palette.bold(toolName)}?  ${palette.dim(verdict.reason)}\n`,
+        );
+        // Show what is about to happen. A Write gets diffed against the file on
+        // disk when it already exists, so an overwrite doesn't look like a
+        // creation.
+        let existing: string | undefined;
+        if (toolName === 'Write' && typeof input.file_path === 'string') {
+          try {
+            const { readFile } = await import('node:fs/promises');
+            existing = await readFile(input.file_path, 'utf8');
+          } catch {
+            /* new file — no baseline */
+          }
+        }
+        output.write(renderApprovalPreview(toolName, input, palette, existing));
         const answer = (await rl.question('     [y]es / [n]o / [a]lways: ')).trim().toLowerCase();
         if (answer === 'a' || answer === 'always') {
           // Persist a bare-tool matcher to project-local settings so the next
@@ -731,8 +769,9 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
         }
         return `Other: ${reply}`;
       },
-      onEvent: (e: AgentEvent) => formatEvent(output, e),
+      onEvent: (e: AgentEvent) => formatEvent(output, e, palette, thinking),
     });
+    if (thinking) output.write(thinking.close());
     history = result.history;
     ctx.usage.inputTokens += result.usage.inputTokens;
     ctx.usage.outputTokens += result.usage.outputTokens;
@@ -770,25 +809,48 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
   return 0;
 }
 
-function formatEvent(out: Writable, e: AgentEvent): void {
+/**
+ * Renders one agent event. Reasoning is a dim side channel that has to be
+ * closed before anything else prints, so this needs the per-turn
+ * `ThinkingStream` rather than being a pure function of the event.
+ */
+function formatEvent(
+  out: Writable,
+  e: AgentEvent,
+  palette: Palette,
+  thinking: ThinkingStream | null,
+): void {
+  const closeThinking = (): void => {
+    if (thinking) out.write(thinking.close());
+  };
+
   switch (e.type) {
     case 'text_delta':
+      closeThinking();
       out.write(e.text);
       return;
     case 'thinking_delta':
+      if (thinking) out.write(thinking.delta(e.text));
       return;
     case 'tool_use':
-      out.write(`\n  ● ${e.name}  ${formatToolInput(e.input)}\n`);
+      closeThinking();
+      out.write(renderToolCall(e.name, e.input, palette));
+      // Show the change itself, not just "Edit src/a.ts" — in acceptEdits mode
+      // there is no approval prompt, so this is the only place the user sees it.
+      if (e.name === 'Edit' || e.name === 'Write') {
+        out.write(renderApprovalPreview(e.name, e.input, palette));
+      }
       return;
     case 'tool_result':
-      if (e.result.isError) out.write(`    ✕ ${truncate(e.result.content, 200)}\n`);
-      else out.write(`    ✓ ${truncate(e.result.content, 200)}\n`);
+      closeThinking();
+      out.write(renderToolResult(e.result.content, e.result.isError === true, palette));
       return;
     case 'usage':
     case 'model_step_complete':
       return;
     case 'error':
-      out.write(`\n  ✕ ${e.error}\n`);
+      closeThinking();
+      out.write(`\n  ${palette.red('✕')} ${e.error}\n`);
       return;
     case 'turn_complete':
       return;
@@ -804,18 +866,6 @@ function assistantText(history: StoredMessage[]): string {
     .map((b) => b.text)
     .join('\n')
     .trim();
-}
-
-function formatToolInput(input: Record<string, unknown>): string {
-  for (const key of ['file_path', 'command', 'pattern', 'path']) {
-    const v = input[key];
-    if (typeof v === 'string') return v;
-  }
-  return JSON.stringify(input).slice(0, 80);
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
 /**

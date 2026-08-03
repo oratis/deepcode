@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeLineDiff, hasChanges } from './diff.js';
-import type { DiffLine } from '../types/file-panel.js';
+import { computeLineDiff, hasChanges, type DiffLine } from './diff.js';
 
 /** Compact a diff to "<sign><text>" rows for readable assertions. */
 function sigs(lines: DiffLine[]): string[] {

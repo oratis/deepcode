@@ -45,6 +45,10 @@ export interface ParsedArgs {
   verbose: boolean;
   /** `--json` — machine-readable output for subcommands (plugins/skills list). */
   json: boolean;
+  /** `--no-color` — never emit ANSI escapes (NO_COLOR / a non-TTY do this too). */
+  noColor: boolean;
+  /** `--no-thinking` — don't stream the model's reasoning in the REPL. */
+  noThinking: boolean;
 
   // Settings overrides
   settingsFile?: string;
@@ -120,6 +124,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
     json: false,
     noPlugins: false,
     strict: false,
+    noColor: false,
+    noThinking: false,
     unknownFlags: [],
     unimplementedFlags: [],
     positional: [],
@@ -242,6 +248,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case a === '--verbose':
         out.verbose = true;
         break;
+      case a === '--no-color':
+        out.noColor = true;
+        break;
+      case a === '--no-thinking':
+        out.noThinking = true;
+        break;
       case a === '--settings':
         out.settingsFile = next();
         break;
@@ -344,6 +356,10 @@ Exit codes (headless): 0 ok · 1 generic · 2 bad-input · 3 api/auth · 4 max-t
 OVERRIDES
   --settings <path>                     Override settings.json discovery (highest-precedence layer)
   --no-plugins                          Disable all plugins for this run
+
+TERMINAL OUTPUT
+  --no-color                            No ANSI colour (NO_COLOR / a pipe do this too)
+  --no-thinking                         Hide the model's reasoning stream
 
 DIAGNOSTICS
   -h, --help                            Show this
