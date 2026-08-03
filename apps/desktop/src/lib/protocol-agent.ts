@@ -4,6 +4,7 @@ import {
   type ProtocolEvent,
   type ProtocolMethod,
   type ReviewFindingPayload,
+  type ThreadListResult,
   type ThreadSnapshot,
   type TurnSnapshot,
   type WorkspaceDiffResult,
@@ -74,6 +75,21 @@ export class DesktopProtocolAgent {
     // before a terminal notification clears it.
     setTimeout(() => this.flushTurn(turn.id), 0);
     return { turnId: turn.id, threadId };
+  }
+
+  async listThreads(): Promise<ThreadListResult | null> {
+    const initialized = await this.transport.connect();
+    // Null, not an empty list: "the server can't tell me" and "there are no
+    // threads" must not look the same to a caller deciding whether to fall back.
+    if (!initialized.capabilities.threadManagement) return null;
+    return this.transport.request<ThreadListResult>('thread/list', {});
+  }
+
+  async archiveThread(threadId: string): Promise<boolean> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.threadManagement) return false;
+    await this.transport.request('thread/archive', { threadId });
+    return true;
   }
 
   async resume(threadId: string): Promise<ThreadSnapshot> {
@@ -361,6 +377,14 @@ export function installProtocolAgentEmitter(emit: (event: DesktopAgentEvent) => 
 
 export function startProtocolTurn(args: StartProtocolTurnArgs) {
   return defaultAgent.start(args);
+}
+
+export function listProtocolThreads() {
+  return defaultAgent.listThreads();
+}
+
+export function archiveProtocolThread(threadId: string) {
+  return defaultAgent.archiveThread(threadId);
 }
 
 export function resumeProtocolThread(threadId: string) {

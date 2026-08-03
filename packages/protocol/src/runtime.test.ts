@@ -37,6 +37,7 @@ describe('ProtocolRuntime', () => {
         interactiveRequests: true,
         reviewActions: false,
         reasoningDeltas: false,
+        threadManagement: true,
         configDiagnostics: false,
         diagnosticExport: false,
         workspaceDiff: false,
@@ -162,5 +163,82 @@ describe('ProtocolRuntime', () => {
       'item.completed',
       'turn.completed',
     ]);
+  });
+});
+
+describe('thread management', () => {
+  it('lists threads newest first, with a title from the first user message', async () => {
+    const store = new MemoryThreadStore();
+    const runtime = deterministicRuntime(store);
+    const older = await runtime.startThread('/a');
+    await runtime.startTurn(older.id, { text: 'older question' });
+
+    // Save a second thread with a later updatedAt than the first.
+    await store.save({
+      id: 'thread-newer',
+      cwd: '/b',
+      createdAt: '2030-01-01T00:00:00.000Z',
+      updatedAt: '2030-01-01T00:00:00.000Z',
+      turns: [],
+    });
+
+    const { threads } = await runtime.listThreads();
+    expect(threads.map((t) => t.id)).toEqual(['thread-newer', older.id]);
+    expect(threads[1]!.title).toBe('older question');
+    expect(threads[1]!.turnCount).toBe(1);
+  });
+
+  it('has no title for a thread nobody has spoken in', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const thread = await runtime.startThread('/a');
+    const { threads } = await runtime.listThreads();
+    expect(threads.find((t) => t.id === thread.id)?.title).toBeUndefined();
+  });
+
+  it('drops an archived thread from the listing', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const thread = await runtime.startThread('/a');
+    expect(await runtime.archiveThread(thread.id)).toEqual({ archived: true });
+    expect((await runtime.listThreads()).threads).toHaveLength(0);
+  });
+
+  it('refuses to archive a thread that does not exist', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    await expect(runtime.archiveThread('nope')).rejects.toThrow(/nope/);
+  });
+
+  it('forks into a new thread and leaves the original alone', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const source = await runtime.startThread('/a');
+    await runtime.startTurn(source.id, { text: 'hello' });
+    await runtime.completeTurn(source.id, (await runtime.readThread(source.id)).turns[0]!.id);
+
+    const fork = await runtime.forkThread(source.id);
+    expect(fork.id).not.toBe(source.id);
+    expect(fork.cwd).toBe(source.cwd);
+    expect(fork.turns).toHaveLength(1);
+    expect((await runtime.readThread(source.id)).turns).toHaveLength(1);
+  });
+
+  it('does not carry an in-progress turn into the fork', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const source = await runtime.startThread('/a');
+    await runtime.startTurn(source.id, { text: 'mid-flight' });
+
+    const fork = await runtime.forkThread(source.id);
+    expect(fork.turns[0]!.status).toBe('interrupted');
+    // …so the fork can immediately start a turn of its own.
+    await expect(runtime.startTurn(fork.id, { text: 'continue' })).resolves.toBeDefined();
+  });
+
+  it('rejects listing and archiving on a store that cannot do them', async () => {
+    const bare = {
+      load: async () => null,
+      save: async () => undefined,
+    };
+    const runtime = deterministicRuntime(bare);
+    expect(runtime.initialize().capabilities.threadManagement).toBe(false);
+    await expect(runtime.listThreads()).rejects.toThrow(/cannot list/);
+    await expect(runtime.archiveThread('x')).rejects.toThrow(/cannot archive/);
   });
 });

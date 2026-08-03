@@ -6,6 +6,7 @@ import {
   type InitializeResult,
   type ProtocolEvent,
   type ReasoningDeltaEvent,
+  type ThreadListResult,
   type ThreadSnapshot,
   type TransientDeltaEvent,
   type TurnSnapshot,
@@ -19,10 +20,18 @@ function clone<T>(value: T): T {
 export interface ThreadStore {
   load(threadId: string): Promise<ThreadSnapshot | null>;
   save(thread: ThreadSnapshot): Promise<void>;
+  /**
+   * Optional: listing and archiving need an index the base store doesn't have.
+   * A store without them leaves `threadManagement` off, and the runtime rejects
+   * the calls rather than pretending an empty list is the truth.
+   */
+  list?(): Promise<ThreadSnapshot[]>;
+  archive?(threadId: string): Promise<void>;
 }
 
 export class MemoryThreadStore implements ThreadStore {
   private readonly threads = new Map<string, ThreadSnapshot>();
+  private readonly archived = new Set<string>();
   saveCount = 0;
 
   async load(threadId: string): Promise<ThreadSnapshot | null> {
@@ -33,6 +42,14 @@ export class MemoryThreadStore implements ThreadStore {
   async save(thread: ThreadSnapshot): Promise<void> {
     this.saveCount++;
     this.threads.set(thread.id, clone(thread));
+  }
+
+  async list(): Promise<ThreadSnapshot[]> {
+    return [...this.threads.values()].filter((thread) => !this.archived.has(thread.id)).map(clone);
+  }
+
+  async archive(threadId: string): Promise<void> {
+    this.archived.add(threadId);
   }
 }
 
@@ -47,6 +64,23 @@ export interface ProtocolRuntimeOptions {
   workspaceDiff?: boolean;
   reviewActions?: boolean;
   reasoningDeltas?: boolean;
+}
+
+/** Title for a thread list row: its first user message, truncated. */
+export function threadTitle(thread: ThreadSnapshot): string | undefined {
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      if (item.type !== 'user_message') continue;
+      const text = item.payload.text;
+      if (typeof text !== 'string') continue;
+      const line = text
+        .split('\n')
+        .map((l) => l.trim())
+        .find(Boolean);
+      if (line) return [...line].slice(0, 60).join('');
+    }
+  }
+  return undefined;
 }
 
 export class ProtocolInvariantError extends Error {
@@ -87,6 +121,9 @@ export class ProtocolRuntime {
         workspaceDiff: this.options.workspaceDiff ?? false,
         reviewActions: this.options.reviewActions ?? false,
         reasoningDeltas: this.options.reasoningDeltas ?? false,
+        threadManagement:
+          typeof this.options.store.list === 'function' &&
+          typeof this.options.store.archive === 'function',
       },
     };
   }
@@ -111,6 +148,58 @@ export class ProtocolRuntime {
 
   async resumeThread(threadId: string): Promise<ThreadSnapshot> {
     return this.requireThread(threadId);
+  }
+
+  async listThreads(): Promise<ThreadListResult> {
+    const list = this.options.store.list;
+    if (!list) throw new ProtocolInvariantError('This store cannot list threads');
+    const threads = await list.call(this.options.store);
+    return {
+      threads: threads
+        .map((thread) => ({
+          id: thread.id,
+          cwd: thread.cwd,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+          title: threadTitle(thread),
+          turnCount: thread.turns.length,
+        }))
+        // Newest first: a picker's first row should be what you were just doing.
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+    };
+  }
+
+  async archiveThread(threadId: string): Promise<{ archived: boolean }> {
+    const archive = this.options.store.archive;
+    if (!archive) throw new ProtocolInvariantError('This store cannot archive threads');
+    await this.requireThread(threadId); // 404 rather than silently succeeding
+    await archive.call(this.options.store, threadId);
+    return { archived: true };
+  }
+
+  /**
+   * Copy a thread into a new one, leaving the original untouched.
+   *
+   * An in-progress turn is copied as `interrupted`: the fork is a new thread
+   * that nothing is executing, and carrying `in_progress` across would make it
+   * permanently refuse to start a turn.
+   */
+  async forkThread(threadId: string, traceId?: string): Promise<ThreadSnapshot> {
+    const source = await this.requireThread(threadId);
+    const now = this.now();
+    const fork: ThreadSnapshot = {
+      id: this.newId('thread'),
+      cwd: source.cwd,
+      createdAt: now,
+      updatedAt: now,
+      turns: source.turns.map((turn) => ({
+        ...clone(turn),
+        status: turn.status === 'in_progress' ? ('interrupted' as const) : turn.status,
+      })),
+    };
+    await this.options.store.save(fork);
+    this.emit({ type: 'thread.started', traceId, thread: clone(fork) });
+    return clone(fork);
   }
 
   async startTurn(
