@@ -36,6 +36,10 @@
       "types": "./dist/keybindings/vim.d.ts",
       "import": "./dist/keybindings/vim.js"
     },
+    "./dist/util/diff.js": {
+      "types": "./dist/util/diff.d.ts",
+      "import": "./dist/util/diff.js"
+    },
     "./credentials": {
       "types": "./dist/credentials/index.d.ts",
       "import": "./dist/credentials/index.js"

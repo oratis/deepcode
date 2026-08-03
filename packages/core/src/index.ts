@@ -394,6 +394,7 @@ export {
 // Scrubbed environment for spawning `git` against an explicit cwd (strips
 // inherited GIT_* so a leaked GIT_DIR can't redirect the call).
 export { gitSpawnEnv } from './util/git-env.js';
+export { computeLineDiff, hasChanges, type DiffLine } from './util/diff.js';
 
 // launchd LaunchAgent installer (M8 — macOS scheduled tasks daemon)
 export {

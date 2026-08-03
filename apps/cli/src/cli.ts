@@ -206,6 +206,8 @@ async function main(): Promise<number> {
     continueSession: args.continue,
     forkSession: args.forkSession,
     bare: args.bare,
+    noColor: args.noColor,
+    hideThinking: args.noThinking,
     noPlugins: args.noPlugins,
     settingsPath: args.settingsFile,
   });
