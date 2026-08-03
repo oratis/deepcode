@@ -62,8 +62,12 @@ export async function loadSkills(opts: LoadSkillsOpts): Promise<Skill[]> {
     await loadFromDir(opts.builtinDir, 'builtin', out);
   }
 
-  // 2. User-level
+  // 2. User-level — DeepCode's own first, so it wins a name collision, then a
+  //    Claude Code user's ~/.claude/skills read in place rather than moved.
   await loadFromDir(join(directory, 'skills'), 'user', out);
+  if (!opts.directory) {
+    await loadFromDir(join(home, '.claude', 'skills'), 'user', out);
+  }
 
   // 3. Project-level
   await loadFromDir(join(opts.cwd, '.deepcode', 'skills'), 'project', out);
@@ -116,6 +120,10 @@ async function loadFromDir(
     }
     if (front.disabled === true) continue;
     const qualifiedName = pluginName ? `${pluginName}:${front.name}` : front.name;
+    // First definition of a name wins. Callers load in precedence order, so a
+    // DeepCode skill shadows the Claude Code skill it was derived from instead
+    // of both being listed to the model.
+    if (out.some((skill) => skill.qualifiedName === qualifiedName)) continue;
     out.push({
       qualifiedName,
       frontmatter: front as SkillFrontmatter,

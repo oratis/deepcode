@@ -41,6 +41,8 @@ export async function loadSubAgents(opts: LoadSubAgentsOpts): Promise<SubAgent[]
   const home = opts.home ?? homedir();
   const out: SubAgent[] = [];
   await loadFromDir(join(home, '.deepcode', 'agents'), 'user', out);
+  // A Claude Code user's agents, read in place rather than moved.
+  await loadFromDir(join(home, '.claude', 'agents'), 'user', out);
   await loadFromDir(
     opts.projectDirOverride ?? join(opts.cwd, '.deepcode', 'agents'),
     'project',
@@ -74,6 +76,10 @@ async function loadFromDir(
     const front = fields as unknown as Partial<SubAgentFrontmatter>;
     if (!front.name || !front.description) continue;
     const qualifiedName = pluginName ? `${pluginName}:${front.name}` : front.name;
+    // First definition wins, matching findAgent()'s .find(). Callers load in
+    // precedence order, so a DeepCode agent shadows a same-named Claude Code
+    // one rather than the list carrying both.
+    if (out.some((agent) => agent.qualifiedName === qualifiedName)) continue;
     out.push({
       qualifiedName,
       frontmatter: front as SubAgentFrontmatter,
