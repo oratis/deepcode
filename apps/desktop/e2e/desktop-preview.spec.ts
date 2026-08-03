@@ -90,3 +90,42 @@ test('shows the shared trust-aware configuration diagnostics in About', async ({
   await expect(main.getByText('permissions', { exact: true })).toBeVisible();
   await expect(main.getByText('1', { exact: true })).toBeVisible();
 });
+
+test('runs slash commands in the composer instead of sending them to the model', async ({
+  page,
+}) => {
+  const composer = page.getByPlaceholder(composerPlaceholder);
+  const main = page.getByRole('main');
+
+  // Typing a slash opens the palette; typing further narrows it.
+  await composer.fill('/');
+  const palette = page.getByRole('listbox', { name: 'Slash commands' });
+  await expect(palette).toBeVisible();
+  await composer.fill('/mo');
+  await expect(palette.getByRole('option')).toHaveCount(2);
+
+  // Arrow keys move the selection; Enter completes rather than submitting
+  // while the highlighted row is not yet fully typed.
+  await composer.press('ArrowDown');
+  await composer.press('Enter');
+  await expect(composer).toHaveValue('/mode ');
+
+  // A complete command runs locally: the header pill flips, and no turn starts.
+  await composer.fill('/mode plan');
+  await composer.press('Enter');
+  await expect(main.getByText('Mode → plan', { exact: true })).toBeVisible();
+  await expect(page.getByText('plan mode', { exact: true })).toBeVisible();
+  await expect(composer).toBeEnabled();
+
+  // Unknown commands are named, not forwarded to the model.
+  await composer.fill('/nope');
+  await composer.press('Enter');
+  await expect(main.getByText(/Unknown command \/nope/)).toBeVisible();
+
+  // Escape dismisses the palette without clearing what was typed.
+  await composer.fill('/he');
+  await expect(palette).toBeVisible();
+  await composer.press('Escape');
+  await expect(palette).toBeHidden();
+  await expect(composer).toHaveValue('/he');
+});

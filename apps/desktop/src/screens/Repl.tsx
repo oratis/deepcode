@@ -25,10 +25,22 @@ import {
   type VimMode,
 } from '@deepcode/core/dist/keybindings/vim.js';
 import { contextWindowFor } from '@deepcode/core/dist/providers/model-metadata.js';
+import { clearProtocolThread, getWorkspaceDiff } from '../lib/protocol-agent.js';
 import { estimateCost } from '@deepcode/core/dist/providers/pricing.js';
 import { Dropdown, type DropdownOption } from '../components/Dropdown.js';
 import { Pill } from '../components/Pill.js';
 import { PlusMenu } from '../components/PlusMenu.js';
+import { SlashPalette } from '../components/SlashPalette.js';
+import {
+  EFFORTS,
+  filterCommands,
+  formatWorkspaceDiff,
+  helpText as slashHelpText,
+  parseSlash,
+  type AgentMode,
+  type Effort,
+  type SlashCommand,
+} from '../lib/slash-commands.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { projectName } from '../lib/project.js';
 import { useVoice } from '../lib/use-voice.js';
@@ -50,9 +62,12 @@ import {
   saveSettingsFile,
 } from '../lib/tauri-api.js';
 import type { InspectorData, TodoItem } from '../types/inspector.js';
+import type { ScreenName } from '../types/screens.js';
 
 interface ReplScreenProps {
   projectPath: string;
+  /** Route to a settings-family screen — `/settings`, `/mcp`, `/about`, … */
+  onNavigate?: (screen: ScreenName) => void;
   /** Called after each turn ends so the parent can refresh the sidebar. */
   onTurnComplete?: () => void;
   /** Called once the backend creates/adopts the canonical thread id. */
@@ -79,9 +94,8 @@ const MAX_RECENT_FILES = 8;
 
 // ─── Types ────────────────────────────────────────────────────────────
 
-type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
-type AgentMode = 'default' | 'acceptEdits' | 'plan' | 'auto' | 'dontAsk' | 'bypassPermissions';
+// Effort / AgentMode and their value lists live with the slash commands that
+// validate them, so the palette and the dropdowns can't drift apart.
 
 const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
   // `meta` is the per-turn output-token budget (maxTokens) the effort maps to in
@@ -217,6 +231,7 @@ interface PendingQuestion {
 
 export function ReplScreen({
   projectPath,
+  onNavigate,
   onTurnComplete,
   onSessionStarted,
   initialMessages,
@@ -240,6 +255,9 @@ export function ReplScreen({
         ],
   );
   const [input, setInput] = useState('');
+  // Slash palette: derived list + which row the arrow keys are on.
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [slashDismissed, setSlashDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
@@ -514,6 +532,34 @@ export function ReplScreen({
     }
   }
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    // The palette owns the arrow keys, Tab and Escape while it is open —
+    // before vim bindings, which would otherwise swallow them.
+    if (slashMatches.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSlashIndex((i) => (i + 1) % slashMatches.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+        return;
+      }
+      if (
+        e.key === 'Tab' ||
+        (e.key === 'Enter' && !e.shiftKey && input.trim() !== slashMatches[slashActive]?.name)
+      ) {
+        e.preventDefault();
+        completeSlash(slashMatches[slashActive]!);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setSlashDismissed(true);
+        return;
+      }
+    }
+
     // Enter submits when vim is off; in vim INSERT mode also submits.
     if (e.key === 'Enter' && !e.shiftKey) {
       if (!vimEnabled || vimStateRef.current?.mode === 'INSERT') {
@@ -582,13 +628,104 @@ export function ReplScreen({
     await window.deepcode.agent.answer({ requestId: req.requestId, answer });
   }
 
+  // ── Slash commands ──
+
+  function say(text: string, level?: 'error'): void {
+    setMessages((m) => [...m, { role: 'system', text, ...(level ? { level } : {}) }]);
+  }
+
+  /** Runs a slash command locally. Returns false if the input wasn't one. */
+  async function runSlash(raw: string): Promise<boolean> {
+    const action = parseSlash(raw);
+    if (!action) return false;
+
+    switch (action.kind) {
+      case 'help':
+        say(slashHelpText());
+        return true;
+      case 'clear':
+        clearProtocolThread();
+        setMessages([{ role: 'system', text: 'New conversation.' }]);
+        setUsage({ inputTokens: 0, outputTokens: 0 });
+        setCostYuan(0);
+        setRecentFiles([]);
+        setTodos([]);
+        return true;
+      case 'set-model':
+        setModel(action.value);
+        say(`Model → ${action.value}`);
+        return true;
+      case 'set-mode':
+        setMode(action.value);
+        say(`Mode → ${action.value}`);
+        return true;
+      case 'set-effort':
+        await handleEffortChange(action.value);
+        say(`Effort → ${action.value}`);
+        return true;
+      case 'cost': {
+        const total = usage.inputTokens + usage.outputTokens;
+        say(
+          `Spend this conversation: ¥${costYuan.toFixed(4)}\n` +
+            `Tokens: ${usage.inputTokens.toLocaleString()} in · ` +
+            `${usage.outputTokens.toLocaleString()} out · ${total.toLocaleString()} total`,
+        );
+        return true;
+      }
+      case 'context': {
+        const window = contextWindowFor(model);
+        const used = usage.inputTokens + usage.outputTokens;
+        const pct = window > 0 ? Math.round((used / window) * 100) : 0;
+        say(
+          `Context: ${used.toLocaleString()} / ${window.toLocaleString()} tokens (${pct}%)\n` +
+            `Model: ${model}`,
+        );
+        return true;
+      }
+      case 'diff':
+        try {
+          const result = await getWorkspaceDiff();
+          say(formatWorkspaceDiff(result));
+        } catch (err) {
+          say(`Could not read the working tree: ${(err as Error).message ?? err}`, 'error');
+        }
+        return true;
+      case 'navigate':
+        if (onNavigate) onNavigate(action.screen);
+        else say('This build cannot navigate from the composer.', 'error');
+        return true;
+      case 'error':
+        say(action.message, 'error');
+        return true;
+    }
+  }
+
+  function completeSlash(command: SlashCommand): void {
+    setInput(command.args ? `${command.name} ` : command.name);
+    setSlashIndex(0);
+    // A command taking arguments stays open for typing; one that doesn't is
+    // ready to send, so get the palette out of the way.
+    if (!command.args) setSlashDismissed(true);
+    composerRef.current?.focus();
+  }
+
   // ── Send ──
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const text = input.trim();
     if (!text || busy || pendingApproval || pendingQuestion) return;
     setInput('');
-    setMessages((m) => [...m, { role: 'user', text }]);
+    setSlashDismissed(false);
+    setSlashIndex(0);
+
+    // Slash commands run here, not in the model. Echo the command so the
+    // transcript shows what was asked for.
+    if (text.startsWith('/')) {
+      setMessages((m) => [...m, { role: 'user', text }]);
+      if (await runSlash(text)) return;
+    } else {
+      setMessages((m) => [...m, { role: 'user', text }]);
+    }
     setBusy(true);
     try {
       const r = await window.deepcode.agent.start({
@@ -623,6 +760,11 @@ export function ReplScreen({
   // is in flight or pending approval — changing them mid-turn would
   // contradict the system prompt already sent.
   const controlsLocked = busy || pendingApproval !== null || pendingQuestion !== null;
+
+  // Palette rows for what's typed. Declared after controlsLocked because it
+  // reads it — render order is source order inside a component body.
+  const slashMatches = slashDismissed || controlsLocked ? [] : filterCommands(input);
+  const slashActive = Math.min(slashIndex, Math.max(0, slashMatches.length - 1));
 
   // Only the last assistant turn is "active" — its cursor blinks while the rest
   // stay static. Guards against a second cursor if a turn was left streaming.
@@ -717,10 +859,21 @@ export function ReplScreen({
       <div className="composer">
         <form onSubmit={handleSubmit}>
           <div className="box">
+            <SlashPalette
+              commands={slashMatches}
+              activeIndex={slashActive}
+              onPick={completeSlash}
+              onHover={setSlashIndex}
+            />
             <textarea
               ref={composerRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // Re-open the palette when the user edits back into a command.
+                setSlashDismissed(false);
+                setSlashIndex(0);
+              }}
               onKeyDown={handleKeyDown}
               placeholder={
                 pendingQuestion
@@ -937,16 +1090,23 @@ function renderMessage(
     );
   }
   if (m.role === 'system') {
-    // System messages are a thin inline hint — no avatar, no author label.
+    // One-liners are a thin centred hint. Command output (/help, /diff, /cost)
+    // is multi-line and column-aligned, so it gets a left-aligned monospace
+    // block instead — centring it and collapsing the newlines turned the help
+    // table into a paragraph.
+    const block = m.text.includes('\n');
     return (
       <div
         key={i}
         style={{
-          fontSize: 11.5,
+          fontSize: block ? 12 : 11.5,
           color: m.level === 'error' ? 'var(--error)' : 'var(--text-3)',
-          textAlign: 'center',
+          textAlign: block ? 'left' : 'center',
+          whiteSpace: block ? 'pre-wrap' : undefined,
+          maxWidth: block ? 760 : undefined,
+          marginInline: block ? 'auto' : undefined,
           padding: '6px 12px',
-          fontFamily: m.level === 'error' ? 'JetBrains Mono, monospace' : 'inherit',
+          fontFamily: block || m.level === 'error' ? 'JetBrains Mono, monospace' : 'inherit',
           background: m.level === 'error' ? 'rgba(255, 84, 112, 0.06)' : 'transparent',
           borderRadius: 'var(--radius-sm)',
           lineHeight: 1.5,

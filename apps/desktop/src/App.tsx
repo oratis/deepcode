@@ -327,6 +327,7 @@ function renderScreen(
       return (
         <ReplScreen
           projectPath={projectPath}
+          onNavigate={setScreen}
           onTurnComplete={onTurnComplete}
           onSessionStarted={onSessionStarted}
           initialMessages={initialMessages}
