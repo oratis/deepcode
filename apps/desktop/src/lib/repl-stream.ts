@@ -164,11 +164,10 @@ function lastToolIndex(
 
 /** Clear the streaming flag on ALL assistant turns (not just the last one). */
 export function finalizeStreaming(msgs: Msg[]): Msg[] {
-  return msgs.map(
-    (m): Msg =>
-      m.role === 'assistant' && m.turn.streaming
-        ? { role: 'assistant', turn: { ...m.turn, streaming: false } }
-        : m,
+  return msgs.map((m): Msg =>
+    m.role === 'assistant' && m.turn.streaming
+      ? { role: 'assistant', turn: { ...m.turn, streaming: false } }
+      : m,
   );
 }
 
