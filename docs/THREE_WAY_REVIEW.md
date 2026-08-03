@@ -233,6 +233,54 @@ AskUserQuestion、模式/模型/effort 下拉、Inspector、FilePanel（Source/D
 
 ---
 
+---
+
+## 7. 进展跟踪
+
+本文 §4 的清单是 2026-08-02 的快照。已落地的部分记录在这里，**不回改上面的快照**——
+让一份评估随实现悄悄变形，正是它自己批评的那种漂移。
+
+| 发现                                          | 状态                                              | PR   |
+| --------------------------------------------- | ------------------------------------------------- | ---- |
+| F1 `--help` 宣传 5 个不生效的 flag            | ✅ 已从 help 移除并在使用时告警                   | #217 |
+| F2 `--bare` 文案错误                          | ✅                                                | #217 |
+| F3 版本号不一致                               | ✅ 全部对齐 0.2.0 + 一致性测试 + release 补 stamp | #217 |
+| F4 定位叙事矛盾                               | ✅                                                | #217 |
+| F5 沙箱默认关                                 | ✅ 默认 `workspace-write`                         | #226 |
+| F6 `mode` 混表达两件事                        | ✅ `--sandbox` 正交轴                             | #226 |
+| F7 桌面 review 能力无出口                     | ✅ Changes 面板                                   | #220 |
+| F8 恢复丢结构化 item                          | 🔄 未做                                           | —    |
+| F9 丢弃 reasoning                             | ✅ CLI 已流式展示（桌面仍丢）                     | #218 |
+| F10 工具结果硬截断 200 字符                   | ✅ 改为中段省略                                   | #218 |
+| F11 审批无 diff 预览                          | ✅                                                | #218 |
+| F12 `upgrade` 泄漏内部文档编号                | ✅                                                | #217 |
+| F13 图片输入空壳                              | ⚠️ 有意保留（DeepSeek 无 vision 后端）            | —    |
+| F14 不读 `CLAUDE.md` / `~/.claude`            | ✅ 就地读取                                       | #227 |
+| F15 协议缺 `thread/list` / `fork` / `archive` | 🔄 未做                                           | —    |
+| A 桌面 0 个 slash 命令                        | ✅ 命令面板                                       | #219 |
+
+### 实现过程中额外发现（快照里没有的）
+
+- **`deepcode --version` 一直印 `0.1.0`**：它读 core 的 `VERSION` 常量，而 release 工作流只
+  patch `apps/cli/package.json`。每个发布版的 `--version` / `--help` / `/upgrade` / `/bug`
+  都是错的。（#217）
+- **macOS 沙箱一旦启用就读不到工作目录**：profile 是 `(deny default)` 且没有 cwd 规则，
+  Linux 侧却 bind 了 cwd 读写。没人撞上是因为默认没人开得起来。（#226）
+- **桌面事件信封被 payload 覆盖**：`{ kind: 'event', ...payload }` 里 `review_action` 的
+  payload 自带 `kind: 'apply'|'revert'`，把信封判别字段覆盖掉了；按文档形状过滤的消费者
+  会静默丢弃这些事件。之所以没人发现，是因为在此之前根本没有消费者。（#220）
+- **skills / sub-agents 同名不去重**：同名 skill 会被向模型描述两次，同名 agent 由
+  `.find()` 解析到先扫到的那个。（#227）
+- **`format:check` 不覆盖 `.css`**：一个 postcss 解析不了的样式表能通过格式门禁；只有
+  Playwright 旅程能发现。（本 PR 已把 css 纳入 glob）
+
+### 仍未做
+
+- **F8 / 建议 5** —— 恢复会话时重放结构化 item（走 `thread/read` 的 items 而非消息投影）。
+- **F15 / 建议 6** —— 协议补 `thread/list` / `archive` / `fork`，消除客户端两套读路径。
+- 桌面端仍丢弃 reasoning（CLI 已修）。
+- Linux (bwrap) 侧的沙箱模式只共享了解析逻辑，**没有在 Linux 主机上做过 #226 那样的实测**。
+
 ## 附：Codex 侧信息的可信度声明
 
 Claude Code 侧的对照来自实际能力核对。**Codex 侧**基于其公开的稳定设计（`codex-rs` 分层、
