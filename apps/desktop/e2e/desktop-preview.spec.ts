@@ -167,3 +167,24 @@ test('reviews findings and the working tree from the Changes panel', async ({ pa
   await expect(panel.getByText('applied', { exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: 'Revert', exact: true })).toBeVisible();
 });
+
+test('resumes a thread from its protocol items, not just its messages', async ({ page }) => {
+  await page.locator('[title*="2026-06-02-bbb222"]').click();
+  const main = page.getByRole('main');
+
+  // Messages and tool cards, as before.
+  await expect(main.getByText('Harden the loader', { exact: true })).toBeVisible();
+  await expect(main.getByText(/Reading the loader\./)).toBeVisible();
+  await expect(main.locator('.tool-card').filter({ hasText: 'Read' })).toBeVisible();
+
+  // The items the message projection dropped on the floor.
+  await expect(main.getByText('⏸ Edit — allow', { exact: true })).toBeVisible();
+  await expect(main.getByText('❯ Which loader? → the config one', { exact: true })).toBeVisible();
+  await expect(main.getByText(/Loader swallows parse errors/)).toBeVisible();
+
+  // And the finding is live in the Changes panel, not just narrated.
+  await page.getByRole('button', { name: /^Changes\b/ }).click();
+  const panel = page.getByTestId('changes-panel');
+  await expect(panel.getByText('Loader swallows parse errors')).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'src/loader.ts:42' })).toBeVisible();
+});

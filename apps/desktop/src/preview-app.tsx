@@ -154,13 +154,94 @@ let activeThreadId = MOCK_SESSIONS[0]!.id;
 let activeTurn: TurnSnapshot | null = null;
 const protocolRequests: ProtocolRequest[] = [];
 
+// One fixture thread carries completed items so resume can be exercised against
+// the protocol snapshot; the others stay empty so the legacy message-projection
+// fallback keeps being covered too.
+const THREAD_WITH_ITEMS = MOCK_SESSIONS[1]!.id;
+
 function threadSnapshot(id: string): ThreadSnapshot {
   return {
     id,
     cwd: '/Users/oratis/Projects/DeepCode/test',
     createdAt: '2026-08-01T00:00:00.000Z',
     updatedAt: '2026-08-01T00:00:00.000Z',
-    turns: [],
+    turns:
+      id === THREAD_WITH_ITEMS
+        ? [
+            {
+              id: 'resumed-turn-1',
+              threadId: id,
+              status: 'completed',
+              startedAt: '2026-08-01T00:00:00.000Z',
+              completedAt: '2026-08-01T00:00:04.000Z',
+              items: [
+                {
+                  id: 'i1',
+                  type: 'user_message',
+                  completedAt: '2026-08-01T00:00:00.000Z',
+                  payload: { text: 'Harden the loader' },
+                },
+                {
+                  id: 'i2',
+                  type: 'assistant_message',
+                  completedAt: '2026-08-01T00:00:01.000Z',
+                  payload: {
+                    message: {
+                      role: 'assistant',
+                      content: [
+                        { type: 'text', text: 'Reading the loader.' },
+                        {
+                          type: 'tool_use',
+                          id: 't1',
+                          name: 'Read',
+                          input: { file_path: 'src/loader.ts' },
+                        },
+                      ],
+                    },
+                  },
+                },
+                {
+                  id: 'i3',
+                  type: 'tool_result',
+                  completedAt: '2026-08-01T00:00:02.000Z',
+                  payload: {
+                    message: {
+                      role: 'user',
+                      content: [{ type: 'tool_result', tool_use_id: 't1', content: 'ok' }],
+                    },
+                  },
+                },
+                {
+                  id: 'i4',
+                  type: 'approval',
+                  completedAt: '2026-08-01T00:00:02.500Z',
+                  payload: { toolName: 'Edit', decision: 'allow' },
+                },
+                {
+                  id: 'i5',
+                  type: 'ask_user',
+                  completedAt: '2026-08-01T00:00:03.000Z',
+                  payload: { question: 'Which loader?', answer: 'the config one' },
+                },
+                {
+                  id: 'i6',
+                  type: 'review_finding',
+                  completedAt: '2026-08-01T00:00:03.500Z',
+                  payload: {
+                    findingId: 'resumed-finding-1',
+                    title: 'Loader swallows parse errors',
+                    body: 'The catch returns undefined.',
+                    path: 'src/loader.ts',
+                    startLine: 42,
+                    endLine: 42,
+                    priority: 1,
+                    replacement: 'throw err;',
+                  },
+                },
+              ],
+            },
+          ]
+        : [],
   };
 }
 

@@ -75,14 +75,18 @@ export function installTauriShim(): void {
         }));
       },
       async resume({ id }) {
-        await resumeProtocolThread(id);
+        // The snapshot carries every completed item — approvals, ask-user
+        // exchanges, errors, review findings. The session projection keeps only
+        // the message-bearing ones, so resuming from it silently dropped the
+        // rest even though they were on disk.
+        const thread = await resumeProtocolThread(id);
         const lines = await sessionRead(id);
         const history = lines.map((l) => ({
           role: l.role,
           content: l.content,
           timestamp: l.timestamp ?? '',
         })) as unknown as import('@deepcode/core/dist/types.js').StoredMessage[];
-        return { history, sessionId: id };
+        return { history, sessionId: id, thread };
       },
     },
     plugins: {

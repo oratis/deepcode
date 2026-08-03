@@ -22,6 +22,11 @@ export interface UseChanges {
   apply: (findings: ReviewFinding[]) => Promise<void>;
   revert: (actionId: string) => Promise<void>;
   clear: () => void;
+  /** Seed findings/actions carried by a resumed thread. */
+  adopt: (items: {
+    findings: Record<string, unknown>[];
+    actions: Record<string, unknown>[];
+  }) => void;
 }
 
 interface BusEvent {
@@ -103,5 +108,27 @@ export function useChanges(): UseChanges {
   const toggleFile = useCallback((path: string) => dispatch({ type: 'toggle-file', path }), []);
   const clear = useCallback(() => dispatch({ type: 'cleared' }), []);
 
-  return { state, refresh, toggleFile, apply, revert, clear };
+  // Resuming replays the thread's review items so the panel shows what the
+  // conversation already found, not an empty list over a repo full of changes.
+  const adopt = useCallback(
+    (items: { findings: Record<string, unknown>[]; actions: Record<string, unknown>[] }) => {
+      dispatch({ type: 'cleared' });
+      for (const finding of items.findings) {
+        dispatch({ type: 'finding', finding: finding as unknown as ReviewFinding });
+      }
+      for (const action of items.actions) {
+        dispatch({
+          type: 'action',
+          action: {
+            actionId: String(action.actionId ?? ''),
+            findingIds: Array.isArray(action.findingIds) ? action.findingIds.map(String) : [],
+            kind: action.kind === 'revert' ? 'revert' : 'apply',
+          },
+        });
+      }
+    },
+    [],
+  );
+
+  return { state, refresh, toggleFile, apply, revert, clear, adopt };
 }

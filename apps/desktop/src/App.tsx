@@ -15,7 +15,13 @@ import { UpdateBanner } from './components/UpdateBanner.js';
 import { registerShortcut } from './lib/keyboard.js';
 import { clearProtocolThread as clearAgentHistory } from './lib/protocol-agent.js';
 import { loadProjectPath, saveProjectPath } from './lib/project.js';
-import { storedToMsgs, type Msg } from './lib/repl-stream.js';
+import {
+  storedToMsgs,
+  threadReviewItems,
+  threadToMsgs,
+  type Msg,
+  type ThreadLike,
+} from './lib/repl-stream.js';
 import { onUpdateDownloaded, startUpdaterPolling } from './lib/updater.js';
 import { changesBadge } from './lib/changes-reducer.js';
 import { useChanges } from './lib/use-changes.js';
@@ -237,8 +243,17 @@ export function App(): JSX.Element {
           // Load the session's stored messages, adopt them into the agent, and
           // remount ReplScreen seeded with the reconstructed conversation.
           try {
-            const { history } = await window.deepcode.sessions.resume({ id });
-            setResumedMessages(storedToMsgs(history as Parameters<typeof storedToMsgs>[0]));
+            const { history, thread } = await window.deepcode.sessions.resume({ id });
+            const snapshot = thread as ThreadLike | undefined;
+            // Prefer the protocol snapshot; fall back to the message projection
+            // for legacy threads that have no items yet.
+            const hasItems = (snapshot?.turns ?? []).some((t) => t.items.length > 0);
+            setResumedMessages(
+              hasItems
+                ? threadToMsgs(snapshot!)
+                : storedToMsgs(history as Parameters<typeof storedToMsgs>[0]),
+            );
+            if (snapshot) changes.adopt(threadReviewItems(snapshot));
           } catch {
             setResumedMessages(undefined); // fall back to a fresh view
           }

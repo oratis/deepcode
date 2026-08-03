@@ -157,8 +157,20 @@ export interface StoredLine {
  * dropped (they were streaming-only). All turns are non-streaming (finalized).
  */
 export function storedToMsgs(stored: StoredLine[]): Msg[] {
-  let msgs: Msg[] = [];
-  for (const m of stored) {
+  return stored.reduce(appendStoredLine, [] as Msg[]);
+}
+
+/**
+ * Fold one stored message into the transcript.
+ *
+ * Split out of storedToMsgs so a thread projection can interleave non-message
+ * items without losing tool-result attachment: a `tool_result` block has to be
+ * matched against the assistant turn already in `msgs`, which a fresh
+ * storedToMsgs([line]) call cannot see.
+ */
+export function appendStoredLine(input: Msg[], m: StoredLine): Msg[] {
+  let msgs = [...input];
+  {
     if (m.role === 'assistant') {
       const texts: string[] = [];
       const tools: ToolInvocation[] = [];
@@ -201,4 +213,106 @@ export function pickTarget(input: Record<string, unknown>): string | undefined {
     if (typeof v === 'string') return v;
   }
   return undefined;
+}
+
+// ── Resuming from a protocol thread ──────────────────────────────────────
+
+/** The subset of a protocol CompletedItem this projection needs. */
+export interface ThreadItem {
+  type: string;
+  payload: Record<string, unknown>;
+}
+export interface ThreadTurn {
+  items: ThreadItem[];
+}
+export interface ThreadLike {
+  turns: ThreadTurn[];
+}
+
+/**
+ * Rebuild the transcript from a protocol thread snapshot.
+ *
+ * The session projection the desktop used to resume from keeps only the items
+ * that carry a StoredMessage, so approvals, ask-user exchanges, errors and
+ * review findings were persisted in the snapshot and then never shown again.
+ * This reads the snapshot itself, so a resumed conversation looks like the one
+ * that was interrupted.
+ */
+export function threadToMsgs(thread: ThreadLike): Msg[] {
+  let msgs: Msg[] = [];
+  const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      switch (item.type) {
+        case 'user_message':
+          if (str(item.payload.text)) msgs.push({ role: 'user', text: str(item.payload.text) });
+          break;
+
+        case 'assistant_message':
+        case 'tool_result': {
+          const message = item.payload.message as StoredLine | undefined;
+          if (Array.isArray(message?.content)) msgs = appendStoredLine(msgs, message);
+          break;
+        }
+
+        case 'approval': {
+          const tool = str(item.payload.toolName) || 'tool';
+          const decision = str(item.payload.decision) || 'answered';
+          msgs.push({ role: 'system', text: `⏸ ${tool} — ${decision}` });
+          break;
+        }
+
+        case 'ask_user': {
+          const question = str(item.payload.question);
+          const answer = str(item.payload.answer);
+          msgs.push({ role: 'system', text: `❯ ${question}${answer ? ` → ${answer}` : ''}` });
+          break;
+        }
+
+        case 'review_finding':
+          msgs.push({
+            role: 'system',
+            text: `⚑ ${str(item.payload.path)}${
+              typeof item.payload.startLine === 'number' ? `:${item.payload.startLine}` : ''
+            } — ${str(item.payload.title)}`,
+          });
+          break;
+
+        case 'review_action':
+          msgs.push({
+            role: 'system',
+            text: `${str(item.payload.kind) === 'revert' ? '↩' : '✎'} review ${str(
+              item.payload.kind,
+            )} · ${(item.payload.findingIds as string[] | undefined)?.length ?? 0} finding(s)`,
+          });
+          break;
+
+        case 'error':
+          msgs.push({
+            role: 'system',
+            text: str(item.payload.message) || 'Turn failed.',
+            level: 'error',
+          });
+          break;
+      }
+    }
+  }
+  return msgs;
+}
+
+/** Review findings and actions carried by a resumed thread, for the Changes panel. */
+export function threadReviewItems(thread: ThreadLike): {
+  findings: Record<string, unknown>[];
+  actions: Record<string, unknown>[];
+} {
+  const findings: Record<string, unknown>[] = [];
+  const actions: Record<string, unknown>[] = [];
+  for (const turn of thread.turns) {
+    for (const item of turn.items) {
+      if (item.type === 'review_finding') findings.push(item.payload);
+      else if (item.type === 'review_action') actions.push(item.payload);
+    }
+  }
+  return { findings, actions };
 }

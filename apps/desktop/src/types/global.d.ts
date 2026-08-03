@@ -51,7 +51,13 @@ export interface DeepCodeAPI {
   };
   sessions: {
     list: (args?: { limit?: number }) => Promise<SessionListEntry[]>;
-    resume: (args: { id: string }) => Promise<{ history: unknown[]; sessionId: string }>;
+    /**
+     * Resumes the protocol thread and returns its snapshot. `history` remains
+     * the canonical message projection for legacy threads that have no items.
+     */
+    resume: (args: {
+      id: string;
+    }) => Promise<{ history: unknown[]; sessionId: string; thread?: unknown }>;
   };
   plugins: {
     list: () => Promise<PluginRow[]>;
