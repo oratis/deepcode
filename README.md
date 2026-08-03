@@ -60,6 +60,7 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 | 文件                                                                         | 内容                                                |
 | ---------------------------------------------------------------------------- | --------------------------------------------------- |
 | [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)                 | 当前整体改造计划、审计证据、正反方审议与 PR 路线    |
+| [docs/THREE_WAY_REVIEW.md](docs/THREE_WAY_REVIEW.md)                         | 与 Claude Code / Codex 的三方能力+界面对比与优先级  |
 | [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)                         | 整体开发方案 v0.5（1500+ 行 / §3 模块 / §6 里程碑） |
 | [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html)                           | 视觉设计 v0.4（11 屏 mockup）                       |
 | [docs/security-model.md](docs/security-model.md)                             | 威胁模型 + 防御层 + 攻击向量测试 + 已知缺口         |
