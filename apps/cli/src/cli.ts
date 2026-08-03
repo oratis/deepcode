@@ -40,6 +40,15 @@ async function main(): Promise<number> {
     return 2;
   }
 
+  // Accepted-but-inert flags. Warn rather than exit: they used to be listed in
+  // `--help` and may already sit in someone's scripts, but silently ignoring a
+  // flag the user deliberately passed is worse than a noisy line on stderr.
+  if (args.unimplementedFlags.length > 0) {
+    for (const flag of args.unimplementedFlags) {
+      process.stderr.write(`Warning: ${flag} is not implemented yet and was ignored.\n`);
+    }
+  }
+
   // -C / --cd <dir>: change the working directory before anything resolves cwd
   // (Codex parity). Done here — after --help/--version short-circuit but before
   // every subcommand/REPL/headless path that reads process.cwd() — so a single
@@ -61,7 +70,7 @@ async function main(): Promise<number> {
   }
   if (args.upgrade) {
     process.stdout.write(`Run: npm i -g deepcode-cli@latest\n`);
-    process.stdout.write(`(Self-update via electron-updater is Mac-client only — see §4b.)\n`);
+    process.stdout.write(`(The Mac client updates itself; only the CLI needs this.)\n`);
     return 0;
   }
 

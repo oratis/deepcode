@@ -57,6 +57,13 @@ export interface ParsedArgs {
 
   // Diagnostics
   unknownFlags: string[];
+  /**
+   * Flags that parse but have no consumer yet. They are accepted (so existing
+   * scripts keep running) and reported once at startup, rather than silently
+   * doing nothing — which is how `--permission-mode` shipped broken for months.
+   * Not listed in `--help`: `--help` documents what works.
+   */
+  unimplementedFlags: string[];
 
   // Positional args (rarely used)
   positional: string[];
@@ -114,6 +121,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
     noPlugins: false,
     strict: false,
     unknownFlags: [],
+    unimplementedFlags: [],
     positional: [],
   };
 
@@ -237,23 +245,31 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case a === '--settings':
         out.settingsFile = next();
         break;
+      // The four override flags below and `--strict` are still parsed so old
+      // invocations don't hard-fail, but nothing consumes them yet. Record them
+      // so the CLI can say so instead of pretending they took effect.
       case a === '--agents':
         out.agentsDir = next();
+        out.unimplementedFlags.push('--agents');
         break;
       case a === '--mcp-config':
         out.mcpConfig = next();
+        out.unimplementedFlags.push('--mcp-config');
         break;
       case a === '--plugin-dir':
         out.pluginDir = next();
+        out.unimplementedFlags.push('--plugin-dir');
         break;
       case a === '--plugin-url':
         out.pluginUrl = next();
+        out.unimplementedFlags.push('--plugin-url');
         break;
       case a === '--no-plugins':
         out.noPlugins = true;
         break;
       case a === '--strict':
         out.strict = true;
+        out.unimplementedFlags.push('--strict');
         break;
       case a.startsWith('--'):
         out.unknownFlags.push(a);
@@ -271,7 +287,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 }
 
 export function helpText(version: string): string {
-  return `DeepCode v${version} — DeepSeek-powered AI coding agent (Claude Code parity)
+  return `DeepCode v${version} — DeepSeek-powered AI coding agent
 
 USAGE
   deepcode                              Interactive REPL
@@ -297,8 +313,8 @@ USAGE
 
 MODE
   --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions
-  --permission-mode <name>              Alias for --mode (Claude Code parity)
-  --bare                                No plugins / MCP / skills — just kernel + tools
+  --permission-mode <name>              Alias for --mode (Claude Code compatibility)
+  --bare                                Suppress the REPL startup banner (scripting / minimal output)
 
 WORKING DIRECTORY
   -C, --cd <dir>                        Change to <dir> before running (default: current dir)
@@ -326,13 +342,8 @@ HEADLESS / CI (-p mode only)
 Exit codes (headless): 0 ok · 1 generic · 2 bad-input · 3 api/auth · 4 max-turns · 5 aborted
 
 OVERRIDES
-  --settings <path>                     Override settings.json discovery
-  --agents <dir>                        Override sub-agents dir
-  --mcp-config <path>                   Override MCP server config
-  --plugin-dir <dir>                    Temporarily mount a plugin dir
-  --plugin-url <gh:user/repo>           Temporarily mount a remote plugin
+  --settings <path>                     Override settings.json discovery (highest-precedence layer)
   --no-plugins                          Disable all plugins for this run
-  --strict                              Strict mode: only official-marketplace plugins, no hooks
 
 DIAGNOSTICS
   -h, --help                            Show this

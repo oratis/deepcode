@@ -88,12 +88,21 @@ jobs:
           cache: 'pnpm'
           registry-url: https://registry.npmjs.org
       - run: pnpm install --frozen-lockfile
-      - run: pnpm build
+
+      # Before `pnpm build`: core's VERSION is compiled into dist, and it is what
+      # `deepcode --version`, `--help`, `/upgrade` and `/bug` print.
+      - name: Stamp core VERSION from tag
+        run: |
+          sed -i.bak -E "s/^export const VERSION = '.*';/export const VERSION = '${{ needs.validate.outputs.version }}';/" packages/core/src/index.ts
+          rm -f packages/core/src/index.ts.bak
+          grep -q "export const VERSION = '${{ needs.validate.outputs.version }}';" packages/core/src/index.ts
 
       - name: Set CLI version from tag
         run: |
           cd apps/cli
           npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+
+      - run: pnpm build
 
       - name: Publish
         run: |
@@ -122,6 +131,12 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+
+      # The extension bundles its own app-server, which bundles core.
+      - name: Stamp core VERSION from tag
+        run: |
+          sed -i.bak -E "s/^export const VERSION = '.*';/export const VERSION = '${{ needs.validate.outputs.version }}';/" packages/core/src/index.ts
+          rm -f packages/core/src/index.ts.bak
 
       - name: Set extension version from tag
         run: npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
@@ -187,6 +202,9 @@ jobs:
 
       - name: Set version
         run: |
+          # core VERSION first — the sidecar it builds into reports it.
+          sed -i.bak -E "s/^export const VERSION = '.*';/export const VERSION = '${{ needs.validate.outputs.version }}';/" packages/core/src/index.ts
+          rm -f packages/core/src/index.ts.bak
           cd apps/desktop
           npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
           # Sync the tauri.conf.json version too
@@ -197,9 +215,19 @@ jobs:
             c.version='${{ needs.validate.outputs.version }}';
             fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n');
           "
-          # And Cargo.toml
+          # And Cargo.toml + the lockfile entry, which must agree or a --locked
+          # cargo invocation refuses to build.
           sed -i.bak -E 's/^version = ".*"/version = "${{ needs.validate.outputs.version }}"/' src-tauri/Cargo.toml
           rm -f src-tauri/Cargo.toml.bak
+          node -e "
+            const fs=require('fs');
+            const p='src-tauri/Cargo.lock';
+            const s=fs.readFileSync(p,'utf8');
+            fs.writeFileSync(p, s.replace(
+              /name = \"deepcode_desktop\"\nversion = \"[^\"]+\"/,
+              'name = \"deepcode_desktop\"\nversion = \"${{ needs.validate.outputs.version }}\"'
+            ));
+          "
 
       - name: Import Developer ID certificate
         env:

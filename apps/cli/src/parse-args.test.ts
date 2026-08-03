@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseArgs, resolveEffort } from './parse-args.js';
+import { helpText, parseArgs, resolveEffort } from './parse-args.js';
 
 describe('parseArgs', () => {
   it('parses empty argv', () => {
@@ -183,5 +183,57 @@ describe('resolveEffort (precedence)', () => {
 
   it('ignores empty env var', () => {
     expect(resolveEffort({ envVar: '', settingsLevel: 'max' })).toBe('max');
+  });
+});
+
+describe('flags that parse but do nothing', () => {
+  it('reports each inert flag instead of silently ignoring it', () => {
+    const p = parseArgs([
+      '--agents',
+      '/tmp/a',
+      '--mcp-config',
+      '/tmp/m.json',
+      '--plugin-dir',
+      '/tmp/p',
+      '--plugin-url',
+      'gh:o/r',
+      '--strict',
+    ]);
+    expect(p.unimplementedFlags).toEqual([
+      '--agents',
+      '--mcp-config',
+      '--plugin-dir',
+      '--plugin-url',
+      '--strict',
+    ]);
+    // Still accepted, so existing scripts keep running rather than exiting 2.
+    expect(p.unknownFlags).toEqual([]);
+  });
+
+  it('leaves implemented flags out of the report', () => {
+    const p = parseArgs(['--settings', '/tmp/s.json', '--no-plugins', '--bare']);
+    expect(p.unimplementedFlags).toEqual([]);
+    expect(p.settingsFile).toBe('/tmp/s.json');
+    expect(p.noPlugins).toBe(true);
+    expect(p.bare).toBe(true);
+  });
+});
+
+describe('helpText', () => {
+  const help = helpText('9.9.9');
+
+  it('does not advertise flags nothing consumes', () => {
+    for (const flag of ['--agents', '--mcp-config', '--plugin-dir', '--plugin-url', '--strict']) {
+      expect(help).not.toContain(flag);
+    }
+  });
+
+  it('still documents the overrides that work', () => {
+    expect(help).toContain('--settings');
+    expect(help).toContain('--no-plugins');
+  });
+
+  it('describes --bare as what it actually does', () => {
+    expect(help).toMatch(/--bare\s+Suppress the REPL startup banner/);
   });
 });
