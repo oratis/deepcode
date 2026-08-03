@@ -42,6 +42,8 @@ import {
   settingsPaths,
   wirePlugins,
   withAdditionalWritableDirs,
+  withSandboxMode,
+  type SandboxMode,
   collectPluginContributions,
   type Effort,
   type McpClientHandle,
@@ -112,6 +114,8 @@ export interface ReplOpts {
   noColor?: boolean;
   /** `--no-thinking` → don't stream the model's reasoning. */
   hideThinking?: boolean;
+  /** `--sandbox <mode>` → overrides settings.sandbox.mode for this run. */
+  sandbox?: SandboxMode;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -450,7 +454,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
         hooks,
         capabilities: buildPluginCapabilities(cwd),
         sandbox: withAdditionalWritableDirs(
-          settings.sandbox,
+          withSandboxMode(settings.sandbox, opts.sandbox),
           settings.permissions?.additionalDirectories,
           cwd,
         ),
@@ -472,7 +476,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     pluginDirs: pluginContrib.dirs,
     autoMode: settings.autoMode,
     sandboxConfig: withAdditionalWritableDirs(
-      settings.sandbox,
+      withSandboxMode(settings.sandbox, opts.sandbox),
       settings.permissions?.additionalDirectories,
       cwd,
     ),

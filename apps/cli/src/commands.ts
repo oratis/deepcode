@@ -14,6 +14,8 @@ import type {
   VoiceStatus,
 } from '@deepcode/core';
 import {
+  describeSandboxMode,
+  resolveSandboxMode,
   contextWindowFor,
   estimateCost,
   redact,
@@ -242,6 +244,7 @@ export const StatusCommand: SlashCommand = {
       `CWD       : ${ctx.cwd}`,
       `Model     : ${ctx.model}`,
       `Mode      : ${ctx.mode}`,
+      `Sandbox   : ${describeSandboxMode(resolveSandboxMode(ctx.settings.sandbox))}`,
       `Effort    : ${ctx.effort}`,
       `API key   : ${redact(ctx.creds.apiKey ?? ctx.creds.authToken)}`,
       `Base URL  : ${ctx.creds.baseURL ?? 'https://api.deepseek.com/v1'}`,

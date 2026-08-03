@@ -224,3 +224,50 @@ etc.) as **untrusted**. We:
 1. Do NOT open a public GitHub issue.
 2. Email security@<TBD>.dev with reproduction steps + commit SHA.
 3. We aim to triage within 72 hours.
+
+## Sandbox modes (0.2.1)
+
+The Bash tool runs under a platform sandbox whose posture is chosen by
+`sandbox.mode` (settings) or `--sandbox` (CLI), independently of the permission
+`Mode` that decides how a tool call is approved:
+
+| Mode                 | Workspace                            | Temp + package caches | Elsewhere |
+| -------------------- | ------------------------------------ | --------------------- | --------- |
+| `read-only`          | read                                 | write                 | read      |
+| `workspace-write`    | read+write                           | write                 | read      |
+| `danger-full-access` | unrestricted — no sandbox is applied |
+
+**`workspace-write` is the default** for every host (CLI, headless, app-server).
+Library callers of `wrapBashCommand` keep the previous "off unless configured"
+behaviour unless they pass `defaultMode`, so embedding DeepCode cannot become
+silently sandboxed by an upgrade.
+
+### What is and is not protected
+
+Writes and network are deny-by-default. **Reads are allowed** except for a
+denied set of credential stores (`~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.netrc`,
+`~/.docker/config.json`, `~/.config/gh`, `~/.deepcode/credentials.json`,
+`~/Library/Keychains`) plus anything in `filesystem.denyRead`.
+
+This is a deliberate change from the previous read allowlist, which did not
+survive contact with real commands: git could not resolve Xcode's developer
+directory, nothing could open `/dev/null`, temp writes failed because SBPL
+`subpath` does not match the directory node itself, and `~/.gitconfig` was
+denied. A sandbox that breaks `ls` is a sandbox nobody turns on.
+
+Package-manager caches (`~/.npm`, `~/.cache`, `~/.cargo`, `~/.pnpm-store`,
+`~/.yarn`, `~/.bun`, `~/Library/Caches`) are writable: they are
+content-addressed caches, and denying them turns `npm install` into a confusing
+permission error while protecting nothing.
+
+A linked git worktree's git directories live outside the workspace, so they are
+added to the writable set — otherwise every git command fails inside the
+worktrees DeepCode's own `EnterWorktree` tool creates.
+
+### Verified on macOS
+
+Under `workspace-write`: workspace read/write, temp writes, `git`, `node`,
+`npm install`, `tsc` and `vitest` all succeed; writes outside the workspace and
+reads of `~/.ssh` are denied. Under `read-only` the same holds except workspace
+writes are denied. Linux (bwrap) already bound cwd read-write and is unchanged
+apart from the shared mode resolution.

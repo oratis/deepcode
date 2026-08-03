@@ -12,6 +12,7 @@ export type {
   McpServerConfig,
   StatusLineConfig,
   SandboxConfig,
+  SandboxMode,
   UpdateConfig,
   WorktreeConfig,
   AutoModeConfig,

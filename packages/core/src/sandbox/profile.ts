@@ -12,6 +12,7 @@
 // Windows: disabled per §0.2.
 
 import { homedir, platform } from 'node:os';
+import { dirname } from 'node:path';
 import type { SandboxConfig } from '../config/types.js';
 
 export type SandboxPlatform = 'macos' | 'linux' | 'unsupported';
@@ -33,7 +34,7 @@ export function detectPlatform(): SandboxPlatform {
  * has 200+ predicates) is out of scope for M3.5. We cover the dimensions plan
  * §3.9a calls out: fs read/write, net allow/deny, excluded commands.
  */
-export function buildMacOsProfile(config: SandboxConfig, _cwd: string): string {
+export function buildMacOsProfile(config: SandboxConfig, cwd: string): string {
   if (!config.enabled) return '';
   const fs = config.filesystem ?? {};
   const net = config.network ?? {};
@@ -51,31 +52,45 @@ export function buildMacOsProfile(config: SandboxConfig, _cwd: string): string {
     '(allow mach-lookup)',
     '(allow iokit-open)',
     '(allow ipc-posix-shm)',
-    '; allow read of system libraries + caches',
-    // Literal entries for root + /private so path traversal (getcwd, stat of
-    // ancestor dirs) doesn't get denied. `subpath` matches contents under but
-    // NOT the directory entry itself.
-    '(allow file-read* (literal "/"))',
-    '(allow file-read* (literal "/private"))',
-    '(allow file-read* (literal "/private/var"))',
-    '(allow file-read* (literal "/Users"))',
-    '(allow file-read* (subpath "/usr"))',
-    '(allow file-read* (subpath "/System"))',
-    '(allow file-read* (subpath "/Library"))',
-    '(allow file-read* (subpath "/private/etc"))',
-    '(allow file-read* (subpath "/private/var/db"))',
-    '(allow file-read* (subpath "/private/var/folders"))', // dyld closure cache
-    '(allow file-read* (subpath "/dev"))',
-    '(allow file-read* (subpath "/bin"))',
-    '(allow file-read* (subpath "/sbin"))',
-    '(allow file-read* (subpath "/opt"))',
-    `(allow file-read* (subpath "${home}/.config"))`,
-    `(allow file-read* (subpath "${home}/.npm"))`,
-    `(allow file-read* (subpath "${home}/.cache"))`,
-    `(allow file-read* (subpath "/private/tmp"))`,
+    // Reads are allowed, writes are not.
+    //
+    // This used to be a read allowlist, and it did not survive contact with
+    // real commands: git could not resolve Xcode's developer dir, nothing
+    // could open /dev/null, temp writes failed because `subpath` does not
+    // match the directory node itself, and reading ~/.gitconfig was denied.
+    // Every one of those is a silent, confusing failure inside an agent.
+    //
+    // What the sandbox actually protects is *writes* and *network*, which stay
+    // deny-by-default. Well-known credential stores are denied below, and any
+    // filesystem.denyRead entry is applied last, so a stricter posture is still
+    // expressible — it is just no longer the thing that has to be right for
+    // `ls` to work.
+    '; reads: broadly allowed, with credential stores denied below',
+    '(allow file-read*)',
+    '; writes: denied unless granted for the workspace / temp dirs',
     `(allow file-write* (subpath "/private/tmp"))`,
-    `(allow file-write* (subpath "/private/var/folders"))`, // macOS tmp
+    `(allow file-write* (subpath "/private/var/folders"))`, // macOS per-user temp
+    // /dev/null and /dev/tty are opened read-write by ~everything. Character
+    // devices are not the filesystem the sandbox is protecting.
+    `(allow file-write* (subpath "/dev"))`,
+    // Package-manager caches. Denying these turns `npm install` — one of the
+    // most common things an agent runs — into a confusing permission error,
+    // while protecting nothing: they are content-addressed caches, not source
+    // and not secrets. Everything else under $HOME stays read-only.
+    ...['.npm', '.cache', '.cargo', '.pnpm-store', '.yarn', '.bun', 'Library/Caches'].map(
+      (dir) => `(allow file-write* (subpath "${escapeSbpl(`${home}/${dir}`)}"))`,
+    ),
   ];
+
+  // The workspace itself. `(deny default)` means an enabled sandbox denied
+  // reads of the project directory unless someone remembered to list it under
+  // filesystem.allowRead — so `cat src/a.ts` failed inside the sandbox, while
+  // the Linux path bound cwd read-write. sandboxConfigForMode() now folds cwd
+  // into allowRead/allowWrite, and these entries cover the ancestor directories
+  // a resolved path has to traverse.
+  for (const ancestor of ancestorsOf(cwd)) {
+    lines.push(`(allow file-read* (literal "${escapeSbpl(ancestor)}"))`);
+  }
 
   for (const p of fs.allowRead ?? []) {
     lines.push(`(allow file-read* (subpath "${escapeSbpl(expandTilde(p, home))}"))`);
@@ -85,6 +100,23 @@ export function buildMacOsProfile(config: SandboxConfig, _cwd: string): string {
     lines.push(`(allow file-read* (subpath "${expanded}"))`);
     lines.push(`(allow file-write* (subpath "${expanded}"))`);
   }
+  // Credential stores an agent has no business reading. Denies beat the blanket
+  // read allow above (SBPL is last-match-wins), and a user's own denyRead
+  // entries come after these.
+  for (const secret of [
+    `${home}/.ssh`,
+    `${home}/.aws`,
+    `${home}/.gnupg`,
+    `${home}/.netrc`,
+    `${home}/.docker/config.json`,
+    `${home}/.config/gh`,
+    `${home}/.deepcode/credentials.json`,
+    `${home}/Library/Keychains`,
+  ]) {
+    lines.push(`(deny file-read* (subpath "${escapeSbpl(secret)}"))`);
+    lines.push(`(deny file-read* (literal "${escapeSbpl(secret)}"))`);
+  }
+
   // Explicit deny rules go LAST so they override the allows above
   for (const p of fs.denyRead ?? []) {
     lines.push(`(deny file-read* (subpath "${escapeSbpl(expandTilde(p, home))}"))`);
@@ -109,6 +141,20 @@ export function buildMacOsProfile(config: SandboxConfig, _cwd: string): string {
   }
 
   return lines.join('\n') + '\n';
+}
+
+/** Every directory between "/" and `p`, inclusive — needed for path traversal. */
+function ancestorsOf(p: string): string[] {
+  const out: string[] = [];
+  let current = p;
+  while (current && current !== '/' && current !== '.') {
+    out.push(current);
+    const next = dirname(current);
+    if (next === current) break;
+    current = next;
+  }
+  out.push('/');
+  return out;
 }
 
 function escapeSbpl(s: string): string {

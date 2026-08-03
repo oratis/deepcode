@@ -18,7 +18,7 @@ import {
   wrapBashCommand,
 } from '../sandbox/index.js';
 import type { NetworkSandboxHandle, SpawnNetworkSandboxOpts } from '../sandbox/index.js';
-import type { SandboxConfig } from '../config/types.js';
+import type { SandboxConfig, SandboxMode } from '../config/types.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface BashInput {
@@ -31,6 +31,8 @@ interface BashInput {
 // ToolContext carries sandbox config (+ optional test seams) from the loop owner.
 type SandboxCtx = ToolContext & {
   sandboxConfig?: SandboxConfig;
+  /** Mode to apply when settings name none — hosts set workspace-write. */
+  sandboxDefaultMode?: SandboxMode;
   /** Test seam: override the platform used for the net-sandbox decision. */
   sandboxPlatform?: NodeJS.Platform;
   /** Test seam: override the network-sandbox spawner. */
@@ -213,6 +215,7 @@ export const BashTool: ToolHandler = {
         userCommand: input.command,
         cwd: ctx.cwd,
         config: bgCfg,
+        defaultMode: sctx.sandboxDefaultMode,
       });
       const dir = join(ctx.sessionDir ?? tmpdir(), 'bg');
       const id = `bg-${Date.now().toString(36)}-${process.pid}-${bgSeq++}`;
@@ -266,6 +269,7 @@ export const BashTool: ToolHandler = {
       userCommand: input.command,
       cwd: ctx.cwd,
       config: effectiveCfg,
+      defaultMode: sctx.sandboxDefaultMode,
     });
 
     return new Promise((resolvePromise) => {

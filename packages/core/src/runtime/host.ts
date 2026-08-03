@@ -4,7 +4,12 @@ import {
   type RunAgentOptions,
   type RunAgentResult,
 } from '../agent.js';
-import type { AutoModeConfig, PermissionRules, SandboxConfig } from '../config/types.js';
+import type {
+  AutoModeConfig,
+  PermissionRules,
+  SandboxConfig,
+  SandboxMode,
+} from '../config/types.js';
 import type { HookDispatcher } from '../hooks/index.js';
 import type { Provider } from '../providers/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
@@ -23,6 +28,12 @@ export interface RuntimeHostOptions {
   approval?: ApprovalCallback;
   autoMode?: AutoModeConfig;
   sandboxConfig?: SandboxConfig;
+  /**
+   * Sandbox mode when settings name none. Every host gets `workspace-write`:
+   * commands may write inside the workspace and temp/cache dirs, and nowhere
+   * else. Pass `'danger-full-access'` to opt a host out.
+   */
+  sandboxDefaultMode?: SandboxMode;
   pluginDirs?: string[];
 }
 
@@ -35,6 +46,7 @@ type HostBoundOption =
   | 'approval'
   | 'autoMode'
   | 'sandboxConfig'
+  | 'sandboxDefaultMode'
   | 'pluginDirs';
 
 export type RuntimeTurnOptions = Omit<RunAgentOptions, HostBoundOption | 'cwd'> & {
@@ -74,6 +86,7 @@ export class RuntimeHost {
       approval: approval ?? this.options.approval,
       autoMode: this.options.autoMode,
       sandboxConfig: this.options.sandboxConfig,
+      sandboxDefaultMode: this.options.sandboxDefaultMode ?? 'workspace-write',
       pluginDirs: this.options.pluginDirs,
     });
   }

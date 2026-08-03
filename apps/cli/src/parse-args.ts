@@ -3,7 +3,8 @@
 // Returns a strongly-typed shape. Unknown flags are collected into `unknown` for
 // graceful "did you mean..." errors.
 
-import type { Effort, Mode } from '@deepcode/core';
+import type { Effort, Mode, SandboxMode } from '@deepcode/core';
+import { SANDBOX_MODES } from '@deepcode/core';
 
 export interface ParsedArgs {
   // Action triggers (mutually exclusive — first match wins)
@@ -25,6 +26,11 @@ export interface ParsedArgs {
   effort?: Effort;
   maxTurns?: number;
   bare: boolean;
+  /**
+   * `--sandbox <mode>` — what a command may touch. Orthogonal to `--mode`,
+   * which is about how a tool call gets approved.
+   */
+  sandbox?: SandboxMode;
 
   /** `-C` / `--cd <dir>`: chdir to this directory before running (Codex parity). */
   cwd?: string;
@@ -200,6 +206,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
       case a === '--bare':
         out.bare = true;
         break;
+      case a === '--sandbox': {
+        const v = next();
+        if (v && (SANDBOX_MODES as string[]).includes(v)) out.sandbox = v as SandboxMode;
+        else out.unknownFlags.push(`--sandbox ${v ?? ''}`);
+        break;
+      }
       case a === '-C' || a === '--cd':
         out.cwd = next();
         break;
@@ -330,6 +342,10 @@ MODE
 
 WORKING DIRECTORY
   -C, --cd <dir>                        Change to <dir> before running (default: current dir)
+
+SANDBOX (what commands may touch — independent of --mode, which is how they're approved)
+  --sandbox <mode>                      read-only | workspace-write | danger-full-access
+                                        Default: workspace-write
 
 MODEL & EFFORT
   --model <id>                          deepseek-chat | deepseek-reasoner

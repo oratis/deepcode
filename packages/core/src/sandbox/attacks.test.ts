@@ -14,7 +14,7 @@
 
 import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { wrapBashCommand } from './index.js';
@@ -214,9 +214,13 @@ describe.runIf(hasSandboxExec)('sandbox-exec end-to-end (macOS)', () => {
 
   it('blocks writing outside allowed paths', async () => {
     // Try to write to ~/Documents/foo — NOT in allowWrite, must fail.
-    const target = join(workDir, 'untrusted-write-target');
-    // We pick a path under workDir so we can be sure it doesn't exist; the
-    // sandbox should be configured to allow only a SIBLING dir for writes.
+    // Deliberately NOT under the OS temp dir: the profile allows temp writes
+    // (compilers, package managers and mktemp all need them), so a target
+    // inside $TMPDIR would test the temp allowance rather than the workspace
+    // boundary this case is about.
+    const outsideRoot = await fs.mkdtemp(join(homedir(), '.deepcode-sb-e2e-'));
+    const target = join(outsideRoot, 'untrusted-write-target');
+    // The sandbox should be configured to allow only a SIBLING dir for writes.
     const allowedDir = join(workDir, 'allowed');
     await fs.mkdir(allowedDir);
     const wrapped = await wrapBashCommand({
@@ -238,6 +242,7 @@ describe.runIf(hasSandboxExec)('sandbox-exec end-to-end (macOS)', () => {
     } catch {
       exists = false;
     }
+    await fs.rm(outsideRoot, { recursive: true, force: true });
     expect(exists).toBe(false);
     // The shell may exit non-zero or stderr should mention permission
     const combined = (res.stderr ?? '') + ' ' + (res.stdout ?? '');

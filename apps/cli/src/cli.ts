@@ -157,6 +157,7 @@ async function main(): Promise<number> {
       cwd: process.cwd(),
       prompt: args.prompt,
       outputFormat: args.outputFormat,
+      sandbox: args.sandbox,
       mode: args.mode,
       model: args.model,
       effort: args.effort,
@@ -208,6 +209,7 @@ async function main(): Promise<number> {
     bare: args.bare,
     noColor: args.noColor,
     hideThinking: args.noThinking,
+    sandbox: args.sandbox,
     noPlugins: args.noPlugins,
     settingsPath: args.settingsFile,
   });
