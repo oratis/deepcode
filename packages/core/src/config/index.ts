@@ -93,3 +93,12 @@ export {
   type LoadedFileContract,
   type LoadFileContractOpts,
 } from './file-contract-loader.js';
+
+export {
+  contractGovernedTools,
+  evaluateContract,
+  fileContractWarnings,
+  mostRestrictive,
+  type ContractDispatchRequest,
+  type ContractWarningInput,
+} from './contract-dispatch.js';

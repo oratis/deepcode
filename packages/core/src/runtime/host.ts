@@ -10,6 +10,9 @@ import type {
   SandboxConfig,
   SandboxMode,
 } from '../config/types.js';
+import { fileContractWarnings } from '../config/contract-dispatch.js';
+import { loadFileContract, type LoadedFileContract } from '../config/file-contract-loader.js';
+import { resolveSandboxMode } from '../sandbox/policy.js';
 import type { HookDispatcher } from '../hooks/index.js';
 import type { Provider } from '../providers/types.js';
 import type { ToolRegistry } from '../tools/registry.js';
@@ -35,6 +38,15 @@ export interface RuntimeHostOptions {
    */
   sandboxDefaultMode?: SandboxMode;
   pluginDirs?: string[];
+  /**
+   * Override $HOME when looking for a user-level file contract (tests).
+   */
+  home?: string;
+  /**
+   * Skip loading the file contract. Only for callers that have no workspace to
+   * read it from; every real host wants the default.
+   */
+  disableFileContract?: boolean;
 }
 
 type HostBoundOption =
@@ -47,7 +59,8 @@ type HostBoundOption =
   | 'autoMode'
   | 'sandboxConfig'
   | 'sandboxDefaultMode'
-  | 'pluginDirs';
+  | 'pluginDirs'
+  | 'contract';
 
 export type RuntimeTurnOptions = Omit<RunAgentOptions, HostBoundOption | 'cwd'> & {
   cwd?: string;
@@ -64,6 +77,8 @@ export type RuntimeTurnOptions = Omit<RunAgentOptions, HostBoundOption | 'cwd'> 
 export class RuntimeHost {
   readonly mode: Mode;
   readonly permissions: PermissionRules;
+  /** Populated on first run; per-cwd because a turn may name its own. */
+  private readonly contracts = new Map<string, LoadedFileContract>();
 
   constructor(private readonly options: RuntimeHostOptions) {
     const policy = resolveRuntimePolicy(options);
@@ -71,10 +86,54 @@ export class RuntimeHost {
     this.permissions = policy.permissions;
   }
 
+  /**
+   * Load (and cache) the contract for a workspace.
+   *
+   * The host does this rather than each client passing one in. Four clients
+   * each remembering an optional argument is exactly the shape AGENTS.md rules
+   * out for anything that gates tool execution.
+   */
+  async fileContract(cwd?: string): Promise<LoadedFileContract> {
+    const dir = cwd ?? this.options.cwd;
+    if (!dir) return { status: 'absent' };
+    if (this.options.disableFileContract) return { status: 'absent' };
+    const cached = this.contracts.get(dir);
+    if (cached) return cached;
+    const loaded = await loadFileContract({ cwd: dir, home: this.options.home });
+    this.contracts.set(dir, loaded);
+    return loaded;
+  }
+
+  /**
+   * Operator warnings about how far the contract actually reaches, for hosts to
+   * print at startup and for `deepcode doctor`.
+   */
+  async contractWarnings(cwd?: string): Promise<string[]> {
+    const loaded = await this.fileContract(cwd);
+    return fileContractWarnings({
+      ...loaded,
+      sandboxMode: resolveSandboxMode(
+        this.options.sandboxConfig,
+        this.options.sandboxDefaultMode ?? 'workspace-write',
+      ),
+    });
+  }
+
+  /**
+   * Not `async`: the missing-cwd check is a programming error and has always
+   * thrown synchronously. Making the whole method async would quietly turn that
+   * throw into a rejection and change what callers catch, so the async work
+   * lives in `runWithContract` behind a synchronous guard.
+   */
   run(turn: RuntimeTurnOptions): Promise<RunAgentResult> {
     const cwd = turn.cwd ?? this.options.cwd;
     if (!cwd) throw new Error('RuntimeHost requires cwd in the host or turn options');
+    return this.runWithContract(turn, cwd);
+  }
+
+  private async runWithContract(turn: RuntimeTurnOptions, cwd: string): Promise<RunAgentResult> {
     const { modeOverride, approval, ...agentTurn } = turn;
+    const contract = (await this.fileContract(cwd)).contract;
     return runAgent({
       ...agentTurn,
       provider: this.options.provider,
@@ -82,6 +141,7 @@ export class RuntimeHost {
       cwd,
       mode: modeOverride ?? this.mode,
       permissions: this.permissions,
+      contract,
       hooks: this.options.hooks,
       approval: approval ?? this.options.approval,
       autoMode: this.options.autoMode,

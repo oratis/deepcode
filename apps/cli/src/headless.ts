@@ -330,6 +330,11 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
         cwd,
       ),
     });
+    // Say up front how far the contract actually reaches. A read `deny` with
+    // the sandbox off looks like protection and is not.
+    for (const warning of await runtime.contractWarnings(cwd)) {
+      errOutput.write(`Warning: ${warning}\n`);
+    }
     const result = await runtime.run({
       systemPrompt,
       userMessage,

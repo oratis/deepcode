@@ -480,7 +480,14 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       settings.permissions?.additionalDirectories,
       cwd,
     ),
+    home: opts.home,
   });
+  // Surfaced at startup rather than on first refusal: a read `deny` running with
+  // the sandbox off looks like protection and is not, and the user should learn
+  // that before they rely on it.
+  for (const warning of await runtime.contractWarnings(cwd)) {
+    output.write(`Warning: ${warning}\n`);
+  }
   const ctx: SessionContext = {
     cwd,
     model,

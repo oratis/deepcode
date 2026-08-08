@@ -13,6 +13,7 @@ import { runMcpCommand } from './mcp-cmd.js';
 import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
+import { runContractCommand } from './contract-cmd.js';
 import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
 import { TrustStore } from './trust.js';
@@ -105,6 +106,13 @@ async function main(): Promise<number> {
     const home = process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode');
     return runDiagnosticsCommand(args.positional.slice(1), {
       home,
+      cwd: process.cwd(),
+      output: process.stdout,
+      errOutput: process.stderr,
+    });
+  }
+  if (args.positional[0] === 'contract') {
+    return runContractCommand(args.positional.slice(1), {
       cwd: process.cwd(),
       output: process.stdout,
       errOutput: process.stderr,

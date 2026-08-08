@@ -58,6 +58,7 @@ const SUBCOMMANDS = [
   'plugins',
   'skills',
   'cron',
+  'contract',
   'scheduler',
   'setup-token',
   'completion',

@@ -1,10 +1,12 @@
 import type { Effort, Mode, Provider } from '@deepcode/core';
 import { withAdditionalWritableDirs } from '@deepcode/core';
-import type {
-  DeepCodeSettings,
-  McpServerConfig,
-  PermissionRules,
-  SandboxConfig,
+import {
+  loadFileContract,
+  type DeepCodeSettings,
+  type FileContract,
+  type McpServerConfig,
+  type PermissionRules,
+  type SandboxConfig,
 } from '@deepcode/core/config';
 import { dispatchToolCall } from '@deepcode/core/harness';
 import { HookDispatcher } from '@deepcode/core/hooks';
@@ -43,7 +45,7 @@ export const DEFAULT_APP_SERVER_SYSTEM_PROMPT =
   'actionable issue, using a precise workspace-relative path and line range.';
 
 export interface RuntimeCompositionDiagnostic {
-  source: 'mcp' | 'plugin';
+  source: 'mcp' | 'plugin' | 'config';
   code: string;
   severity: 'warning' | 'error';
   message: string;
@@ -109,6 +111,17 @@ export async function composeRuntime(
   const { cwd, directory, settings } = options;
   const services = { ...DEFAULT_SERVICES, ...options.services };
   const diagnostics: RuntimeCompositionDiagnostic[] = [];
+  // Loaded here so the plugin capability bridge is gated by the same path rules
+  // as the agent's own tools; a plugin subprocess must not be a way around them.
+  const fileContract = await loadFileContract({ cwd, directory });
+  if (fileContract.status === 'invalid') {
+    diagnostics.push({
+      source: 'config',
+      code: 'file_contract_invalid',
+      severity: 'error',
+      message: `File contract at ${fileContract.path} could not be parsed, so no path rules are in effect: ${fileContract.error}`,
+    });
+  }
   const pluginsEnabled = settings.plugins?.globalEnabled !== false;
   let pluginDiscoverySucceeded = true;
   let pluginDirs: string[] = [];
@@ -212,6 +225,7 @@ export async function composeRuntime(
           cwd,
           mode: options.mode ?? 'default',
           permissions: settings.permissions,
+          contract: fileContract.contract,
           hooks,
           provider: options.provider,
           autoMode: settings.autoMode,
@@ -304,6 +318,8 @@ interface PluginBridgeOptions {
   cwd: string;
   mode: Mode;
   permissions?: PermissionRules;
+  /** Path-axis rules — a plugin subprocess must not be a way around them. */
+  contract?: FileContract;
   hooks: HookDispatcher;
   provider?: Provider;
   autoMode?: DeepCodeSettings['autoMode'];
@@ -323,6 +339,7 @@ export function buildPluginCapabilityBridge(options: PluginBridgeOptions): Plugi
       input,
       mode: options.mode,
       rules: options.permissions,
+      contract: options.contract,
       hooks: options.hooks,
       cwd: options.cwd,
       autoMode: options.autoMode,
