@@ -1310,6 +1310,90 @@ export const BackgroundCommand: SlashCommand = {
   },
 };
 
+/**
+ * `/combo [name]` — distil the current thread into a SKILL.md draft.
+ *
+ * Two properties this deliberately keeps:
+ *
+ *   - `allowed-tools` comes from what the thread actually called, not from a
+ *     guess. Hand-written skills are almost always broader than needed.
+ *   - Nothing is written without the user seeing the draft first, and a second
+ *     `/combo <name> --write` is what commits it. `/combo` alone previews.
+ */
+export const ComboCommand: SlashCommand = {
+  name: '/combo',
+  description: 'Distil this thread into a reusable skill draft (/combo [name] [--write]).',
+  async run(args, ctx) {
+    const history = ctx.history ?? [];
+    if (history.length === 0) return ['Nothing to distil yet — do some work first.'];
+
+    const { distillSkill, loadFileContract, FileLedger } = await import('@deepcode/core');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+
+    const write = args.includes('--write');
+    const name = args.find((a) => !a.startsWith('--'));
+    const contract = await loadFileContract({ cwd: ctx.cwd, home: ctx.home });
+
+    const skill = distillSkill({
+      history,
+      ...(name ? { name } : {}),
+      cwd: ctx.cwd,
+      ...(contract.contract ? { contract: contract.contract } : {}),
+      model: ctx.model,
+      effort: ctx.effort,
+    });
+
+    const target = path.join(ctx.cwd, '.deepcode', 'skills', skill.name, 'SKILL.md');
+    const lines: string[] = [];
+
+    if (!write) {
+      // Preview first. A skill is a shareable artifact assembled from a
+      // transcript, so the user reads it before it exists on disk.
+      lines.push(`Draft skill "${skill.name}" → ${target}`, '');
+      lines.push(`allowed-tools (from actual use): ${skill.allowedTools.join(', ') || 'none'}`);
+      if (skill.paths.length > 0) lines.push(`files: ${skill.paths.join(', ')}`);
+      for (const note of skill.redactions) lines.push(`withheld: ${note}`);
+      lines.push('', '---8<---', skill.content.trimEnd(), '---8<---', '');
+      lines.push(`Write it with: /combo ${skill.name} --write`);
+      return lines;
+    }
+
+    try {
+      await fs.access(target);
+      return [`${target} already exists — rename with /combo <other-name> --write.`];
+    } catch {
+      /* absent, which is the normal path */
+    }
+
+    try {
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, skill.content, 'utf8');
+    } catch (err) {
+      return [`(Could not write the skill: ${(err as Error).message})`];
+    }
+
+    // Creating a skill changes what future runs may do, which puts it on the
+    // governance timeline rather than the ordinary change stream.
+    await new FileLedger({ cwd: ctx.cwd, ...(ctx.home ? { home: ctx.home } : {}) }).append(
+      'governance',
+      {
+        actor: 'user',
+        intent: `distil thread ${ctx.sessionId} into a skill`,
+        paths: [path.relative(ctx.cwd, target)],
+        summary: `created skill "${skill.name}" from a thread`,
+        rollbackHint: { kind: 'manual', ref: `delete ${target}` },
+      },
+    );
+
+    lines.push(`✓ Wrote ${target}`);
+    lines.push(`  allowed-tools: ${skill.allowedTools.join(', ') || 'none'}`);
+    for (const note of skill.redactions) lines.push(`  withheld: ${note}`);
+    lines.push('  Review it before relying on it — it was generated from a transcript.');
+    return lines;
+  },
+};
+
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   HelpCommand,
   ClearCommand,
@@ -1334,6 +1418,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   PermissionsCommand,
   AgentsCommand,
   SkillsCommand,
+  ComboCommand,
   ExportCommand,
   CompactCommand,
   DiffCommand,

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
@@ -537,5 +537,87 @@ describe('inspector + export commands', () => {
       .match('/compact')!
       .cmd.run([], makeContext({ provider: { name: 'm', runTurn: async () => ({}) } as never }));
     expect(out.join('\n')).toMatch(/Nothing to compact/);
+  });
+});
+
+describe('/combo', () => {
+  let cwd: string;
+  let home: string;
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'dc-combo-cwd-'));
+    home = await mkdtemp(join(tmpdir(), 'dc-combo-home-'));
+  });
+  afterEach(async () => {
+    await rm(cwd, { recursive: true, force: true });
+    await rm(home, { recursive: true, force: true });
+  });
+
+  const reg = new CommandRegistry();
+
+  function threadContext() {
+    return makeContext({
+      cwd,
+      home,
+      history: [
+        { role: 'user', content: [{ type: 'text', text: 'fix the auth bug' }], timestamp: 'now' },
+        {
+          role: 'assistant',
+          content: [
+            { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'src/auth.ts' } },
+            { type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: 'src/auth.ts' } },
+          ],
+          timestamp: 'now',
+        },
+      ],
+    });
+  }
+
+  async function run(args: string[], ctx = threadContext()) {
+    const match = reg.match('/combo');
+    if (!match) throw new Error('/combo not registered');
+    return { lines: await match.cmd.run(args, ctx), ctx };
+  }
+
+  it('previews without writing anything', async () => {
+    // A skill is a shareable artifact built from a transcript. The user reads it
+    // before it exists on disk.
+    const { lines } = await run([]);
+    expect(lines.join('\n')).toContain('Draft skill');
+    expect(lines.join('\n')).toContain('--write');
+    await expect(
+      readFile(join(cwd, '.deepcode', 'skills', 'fix-the-auth-bug', 'SKILL.md'), 'utf8'),
+    ).rejects.toThrow();
+  });
+
+  it('shows the derived allowed-tools in the preview', async () => {
+    const { lines } = await run([]);
+    expect(lines.join('\n')).toContain('Edit, Read');
+  });
+
+  it('writes the skill on --write and logs it as governance', async () => {
+    const { lines } = await run(['--write']);
+    expect(lines.join('\n')).toContain('Wrote');
+    const written = await readFile(
+      join(cwd, '.deepcode', 'skills', 'fix-the-auth-bug', 'SKILL.md'),
+      'utf8',
+    );
+    expect(written).toContain('allowed-tools');
+    expect(written).toContain('TODO: review before use');
+
+    const { readProjectLedger } = await import('@deepcode/core');
+    const gov = await readProjectLedger(cwd, 'governance', home);
+    expect(gov[0]?.summary).toContain('created skill');
+  });
+
+  it('refuses to overwrite an existing skill', async () => {
+    await run(['--write']);
+    const { lines } = await run(['--write']);
+    expect(lines.join('\n')).toContain('already exists');
+  });
+
+  it('says there is nothing to distil on an empty thread', async () => {
+    const { lines } = await run([], makeContext({ cwd, home, history: [] }));
+    expect(lines.join('\n')).toContain('Nothing to distil');
   });
 });
