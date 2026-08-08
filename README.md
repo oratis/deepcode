@@ -15,7 +15,7 @@
 
 DeepCode 让 DeepSeek 可以在本地代码库中执行读取、编辑、命令、审阅、MCP 和可恢复会话工作。项目最初以 Claude Code 兼容为目标，现在正转向经过验证的 Codex 式运行模型：统一任务生命周期、可靠中断、清晰权限边界和跨客户端一致行为。
 
-- **已可用**：Node.js CLI、Tauri macOS 客户端、核心工具、MCP、hooks、skills、plugins、sandbox、sessions、background tasks 与 voice input。
+- **已可用**：Node.js CLI、Tauri macOS 客户端、核心工具、MCP、hooks、skills、plugins、sandbox、sessions、background tasks、voice input，以及 0.3.0 的工作区治理层（file contract、change ledger、runtime capabilities、`/combo`、trigger profile）。
 - **在收敛**：VS Code/LSP、统一权限、真实取消、thread/turn/item 协议与跨客户端恢复。
 - **兼容优先**：继续读取既有 `settings.json`、`DEEPCODE.md`、`AGENTS.md` 和 Claude 风格扩展资产，但不以未经验证的“1:1 parity”作为安全或完成度承诺。
 - **设计路线**：完整审查、正反方审议和分阶段 PR 见 [Codex alignment plan](docs/CODEX_ALIGNMENT_PLAN.md)。
@@ -53,6 +53,9 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 | [docs/BEHAVIOR_PARITY.md](docs/BEHAVIOR_PARITY.md)                       | 与 Claude Code 的逐项行为对比                   |
 | [docs/SHIPPING_MAC.md](docs/SHIPPING_MAC.md)                             | 给 maintainer：Apple Dev ID + 签名 + 公证全流程 |
 | [docs/VOICE_INPUT.md](docs/VOICE_INPUT.md)                               | 装 whisper.cpp 本地语音输入                     |
+| [docs/file-contract.md](docs/file-contract.md)                           | 路径维度权限契约（`deepcode contract`）         |
+| [docs/change-ledger.md](docs/change-ledger.md)                           | 变更账本与回滚（`deepcode ledger`）             |
+| [docs/combo.md](docs/combo.md)                                           | `/combo` —— 把做完的 thread 蒸馏成 skill        |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)                               | 5 分钟 launch 视频逐段录制脚本                  |
 
 ### 设计文档
@@ -61,6 +64,8 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 | ---------------------------------------------------------------------------- | --------------------------------------------------- |
 | [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)                 | 当前整体改造计划、审计证据、正反方审议与 PR 路线    |
 | [docs/THREE_WAY_REVIEW.md](docs/THREE_WAY_REVIEW.md)                         | 与 Claude Code / Codex 的三方能力+界面对比与优先级  |
+| [docs/FLOATBOAT_ADOPTION_PLAN.md](docs/FLOATBOAT_ADOPTION_PLAN.md)           | 工作区治理层的采纳/拒绝决策记录与实施偏差           |
+| [docs/research/floatboat.md](docs/research/floatboat.md)                     | Floatboat / Selfware 调研（带证据分级）             |
 | [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md)                         | 整体开发方案 v0.5（1500+ 行 / §3 模块 / §6 里程碑） |
 | [docs/VISUAL_DESIGN.html](docs/VISUAL_DESIGN.html)                           | 视觉设计 v0.4（11 屏 mockup）                       |
 | [docs/security-model.md](docs/security-model.md)                             | 威胁模型 + 防御层 + 攻击向量测试 + 已知缺口         |
