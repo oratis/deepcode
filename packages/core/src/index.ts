@@ -124,6 +124,29 @@ export {
   type VoiceConfig,
 } from './config/index.js';
 
+// File contract — path-axis permission rules (plan §2.A)
+export {
+  evaluatePath,
+  globMatches,
+  normalizeContractPath,
+  parseFileContract,
+  contractNeedsSandbox,
+  fileContractPaths,
+  loadFileContract,
+  DEFAULT_CONTRACT_DEFAULTS,
+  FileContractError,
+  RECOMMENDED_FILE_CONTRACT,
+  type ContractAction,
+  type ContractDecision,
+  type ContractEvaluation,
+  type ContractOwner,
+  type ContractRequest,
+  type FileContract,
+  type FileContractRule,
+  type FileContractStatus,
+  type LoadedFileContract,
+} from './config/index.js';
+
 // Credentials (M2; M3c adds ApiKeyHelperRefresher)
 export {
   CredentialsStore,

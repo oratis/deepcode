@@ -66,3 +66,30 @@ export {
   type PermissionVerdict,
   type PermissionRequest,
 } from './permissions.js';
+
+export {
+  evaluatePath,
+  globMatches,
+  normalizeContractPath,
+  parseFileContract,
+  specificity,
+  DEFAULT_CONTRACT_DEFAULTS,
+  FileContractError,
+  type ContractAction,
+  type ContractDecision,
+  type ContractEvaluation,
+  type ContractOwner,
+  type ContractRequest,
+  type FileContract,
+  type FileContractRule,
+} from './file-contract.js';
+
+export {
+  contractNeedsSandbox,
+  fileContractPaths,
+  loadFileContract,
+  RECOMMENDED_FILE_CONTRACT,
+  type FileContractStatus,
+  type LoadedFileContract,
+  type LoadFileContractOpts,
+} from './file-contract-loader.js';
