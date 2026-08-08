@@ -9,3 +9,4 @@ export * from './runtime-composition.js';
 export * from './structured-logger.js';
 export * from './diagnostic-export.js';
 export * from './workspace-diff.js';
+export { capabilitiesFor } from './capabilities.js';

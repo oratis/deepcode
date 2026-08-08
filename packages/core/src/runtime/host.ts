@@ -12,7 +12,8 @@ import type {
 } from '../config/types.js';
 import { fileContractWarnings } from '../config/contract-dispatch.js';
 import { loadFileContract, type LoadedFileContract } from '../config/file-contract-loader.js';
-import { FileLedger, type LedgerSink } from '../ledger/index.js';
+import { FileLedger, ledgerPath, type LedgerSink } from '../ledger/index.js';
+import { buildRuntimeCapabilities, type RuntimeCapabilities } from './capabilities.js';
 import { resolveSandboxMode } from '../sandbox/policy.js';
 import type { HookDispatcher } from '../hooks/index.js';
 import type { Provider } from '../providers/types.js';
@@ -125,6 +126,36 @@ export class RuntimeHost {
     const ledger = new FileLedger({ cwd, home: this.options.home });
     this.ledgers.set(cwd, ledger);
     return ledger;
+  }
+
+  /**
+   * What this runtime may write and what it will always stop to ask about.
+   *
+   * Built through the shared builder so a client asking the CLI and a client
+   * asking the app-server get the same answer for the same settings.
+   */
+  async capabilities(cwd?: string): Promise<RuntimeCapabilities> {
+    const dir = cwd ?? this.options.cwd ?? process.cwd();
+    const contract = await this.fileContract(dir);
+    const ledgerEnabled = !this.options.disableLedger;
+    return buildRuntimeCapabilities({
+      cwd: dir,
+      mode: this.mode,
+      permissions: this.permissions,
+      sandboxConfig: this.options.sandboxConfig,
+      sandboxDefaultMode: this.options.sandboxDefaultMode ?? 'workspace-write',
+      fileContract: contract.status,
+      ledger: {
+        enabled: ledgerEnabled,
+        path: ledgerEnabled ? ledgerPath(dir, 'changes', this.options.home) : '',
+      },
+      modules: {
+        hooks: !!this.options.hooks,
+        plugins: (this.options.pluginDirs?.length ?? 0) > 0,
+        ledger: ledgerEnabled,
+        fileContract: contract.status === 'loaded',
+      },
+    });
   }
 
   /**

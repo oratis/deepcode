@@ -163,7 +163,34 @@ export interface InitializeResult {
      * desktop ended up with two ways to see the same threads.
      */
     threadManagement: boolean;
+    /**
+     * `runtime/capabilities` is served. Distinct from the flags above: those
+     * say which protocol features exist, this one says what the runtime will
+     * write and what it always stops to ask about.
+     */
+    runtimeCapabilities: boolean;
   };
+}
+
+/**
+ * What the runtime may write, and which actions always need a human.
+ *
+ * Deliberately not folded into `InitializeResult.capabilities`. That object
+ * answers "which protocol methods work"; this one answers "what is this
+ * runtime allowed to do to my machine". Keeping them apart is what stops the
+ * next field from landing in the wrong one.
+ */
+export interface RuntimeCapabilitiesResult {
+  writeScope: string[];
+  confirmationRequired: string[];
+  sandbox: { mode: string; effective: boolean };
+  permissions: {
+    mode: string;
+    fileContract: 'absent' | 'loaded' | 'invalid';
+    ruleCounts: { allow: number; ask: number; deny: number };
+  };
+  ledger: { enabled: boolean; path: string };
+  modules: Record<string, 'enabled' | 'disabled'>;
 }
 
 export type ConfigLayerName = 'user' | 'project' | 'local' | 'override';
@@ -265,6 +292,7 @@ export interface ThreadListResult {
 
 export type ProtocolMethod =
   | 'initialize'
+  | 'runtime/capabilities'
   | 'config/diagnostics'
   | 'diagnostics/export'
   | 'workspace/diff'

@@ -60,6 +60,7 @@ export interface ProtocolRuntimeOptions {
   newTraceId?: () => string;
   onEvent?: (event: ProtocolEvent) => void;
   configDiagnostics?: boolean;
+  runtimeCapabilities?: boolean;
   diagnosticExport?: boolean;
   workspaceDiff?: boolean;
   reviewActions?: boolean;
@@ -117,6 +118,7 @@ export class ProtocolRuntime {
         structuredToolEvents: true,
         interactiveRequests: true,
         configDiagnostics: this.options.configDiagnostics ?? false,
+        runtimeCapabilities: this.options.runtimeCapabilities ?? false,
         diagnosticExport: this.options.diagnosticExport ?? false,
         workspaceDiff: this.options.workspaceDiff ?? false,
         reviewActions: this.options.reviewActions ?? false,

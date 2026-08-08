@@ -10,3 +10,9 @@ export {
   type RuntimeHostOptions,
   type RuntimeTurnOptions,
 } from './host.js';
+export {
+  ALWAYS_CONFIRMED_ACTIONS,
+  buildRuntimeCapabilities,
+  type BuildRuntimeCapabilitiesInput,
+  type RuntimeCapabilities,
+} from './capabilities.js';

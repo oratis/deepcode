@@ -3,8 +3,15 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §5 / §5a
 // M2: onboarding + REPL + slash commands + settings + permissions matcher.
 
-import { CredentialsStore, VERSION, diagnoseSettings, redact } from '@deepcode/core';
-import { runAppServer } from '@deepcode/app-server';
+import {
+  CredentialsStore,
+  VERSION,
+  diagnoseSettings,
+  fileContractWarnings,
+  loadFileContract,
+  redact,
+} from '@deepcode/core';
+import { capabilitiesFor, runAppServer } from '@deepcode/app-server';
 import { homedir } from 'node:os';
 import { resolve } from 'node:path';
 import { runDiagnosticsCommand } from './diagnostics-cmd.js';
@@ -266,6 +273,23 @@ async function doctor(): Promise<number> {
   } catch (error) {
     process.stdout.write(`Configuration error: ${(error as Error).message}\n`);
     failed = true;
+  }
+  // What this runtime may actually do, from the same builder the app-server
+  // uses — so `doctor` cannot describe a posture the runtime does not have.
+  try {
+    const home = process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode');
+    const caps = await capabilitiesFor(cwd, home);
+    process.stdout.write(`Sandbox: ${caps.sandbox.mode}\n`);
+    process.stdout.write(`Write scope: ${caps.writeScope.join(', ') || '(nothing writable)'}\n`);
+    process.stdout.write(`File contract: ${caps.permissions.fileContract}\n`);
+    process.stdout.write(`Always confirmed: ${caps.confirmationRequired.join(', ')}\n`);
+    process.stdout.write(`Ledger: ${caps.ledger.enabled ? caps.ledger.path : 'disabled'}\n`);
+    const contract = await loadFileContract({ cwd, directory: home });
+    for (const warning of fileContractWarnings({ ...contract, sandboxMode: caps.sandbox.mode })) {
+      process.stdout.write(`Warning: ${warning}\n`);
+    }
+  } catch (error) {
+    process.stdout.write(`Capabilities error: ${(error as Error).message}\n`);
   }
   return failed ? 1 : 0;
 }

@@ -554,3 +554,11 @@ export {
   type ApplyPresentation,
 } from './runtime/apply-ceremony.js';
 export { planRollback, type RollbackContext, type RollbackPlanResult } from './ledger/rollback.js';
+
+// Runtime capability declaration (plan §2.C)
+export {
+  ALWAYS_CONFIRMED_ACTIONS,
+  buildRuntimeCapabilities,
+  type BuildRuntimeCapabilitiesInput,
+  type RuntimeCapabilities,
+} from './runtime/capabilities.js';
