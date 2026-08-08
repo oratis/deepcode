@@ -1,5 +1,5 @@
-import { FileLedger } from '@deepcode/core';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { FileLedger, captureSnapshot } from '@deepcode/core';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough } from 'node:stream';
@@ -126,5 +126,126 @@ describe('deepcode ledger', () => {
     const err = capture();
     expect(await runLedgerCommand(['bogus'], { cwd, home, errOutput: err.stream })).toBe(2);
     expect(err.text()).toContain('Usage:');
+  });
+});
+
+describe('deepcode ledger rollback', () => {
+  let cwd: string;
+  let home: string;
+  let sessionsRoot: string;
+  let ledger: FileLedger;
+  const sessionId = 'thread-cli';
+
+  beforeEach(async () => {
+    cwd = await mkdtemp(join(tmpdir(), 'dc-rb-cwd-'));
+    home = await mkdtemp(join(tmpdir(), 'dc-rb-home-'));
+    sessionsRoot = await mkdtemp(join(tmpdir(), 'dc-rb-sessions-'));
+    ledger = new FileLedger({ cwd, home });
+  });
+  afterEach(async () => {
+    for (const dir of [cwd, home, sessionsRoot]) await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A recorded edit with a real snapshot behind it. */
+  async function recordedEdit(): Promise<{ id: string; file: string }> {
+    const file = join(cwd, 'a.ts');
+    await writeFile(file, 'original\n');
+    await captureSnapshot({
+      sessionsRoot,
+      sessionId,
+      cwd,
+      filePath: file,
+      reason: 'pre-Edit',
+      seq: 1,
+    });
+    await writeFile(file, 'changed\n');
+    const written = await ledger.append('changes', {
+      actor: 'agent',
+      tool: 'Edit',
+      threadId: sessionId,
+      paths: ['a.ts'],
+      summary: 'edited a.ts',
+      rollbackHint: { kind: 'snapshot', ref: '1' },
+    });
+    return { id: written!.id, file };
+  }
+
+  it('restores the file and records the rollback on the governance timeline', async () => {
+    const { id, file } = await recordedEdit();
+    const out = capture();
+    const code = await runLedgerCommand(['rollback', id], {
+      cwd,
+      home,
+      sessionsRoot,
+      output: out.stream,
+      confirm: async () => 'accept',
+    });
+    expect(code).toBe(0);
+    expect(await readFile(file, 'utf8')).toBe('original\n');
+
+    // An audit trail with an unlogged undo is not an audit trail.
+    const out2 = capture();
+    await runLedgerCommand(['list', '--kind', 'governance'], { cwd, home, output: out2.stream });
+    expect(out2.text()).toContain('rolled back');
+  });
+
+  it('changes nothing when the user declines', async () => {
+    const { id, file } = await recordedEdit();
+    const out = capture();
+    await runLedgerCommand(['rollback', id], {
+      cwd,
+      home,
+      sessionsRoot,
+      output: out.stream,
+      confirm: async () => 'reject',
+    });
+    expect(await readFile(file, 'utf8')).toBe('changed\n');
+    expect(out.text()).toContain('nothing was changed');
+  });
+
+  it('shows the explanation and preview before asking', async () => {
+    const { id } = await recordedEdit();
+    let shown = '';
+    await runLedgerCommand(['rollback', id], {
+      cwd,
+      home,
+      sessionsRoot,
+      output: capture().stream,
+      confirm: async (p) => {
+        shown = JSON.stringify(p);
+        return 'reject';
+      },
+    });
+    expect(shown).toContain('snapshot');
+    expect(shown).toContain('a.ts');
+  });
+
+  it('explains why a record cannot be rolled back instead of failing obscurely', async () => {
+    const written = await ledger.append('changes', {
+      actor: 'agent',
+      paths: ['a.ts'],
+      summary: 'edited a.ts',
+    });
+    const err = capture();
+    const code = await runLedgerCommand(['rollback', written!.id], {
+      cwd,
+      home,
+      sessionsRoot,
+      errOutput: err.stream,
+    });
+    expect(code).toBe(1);
+    expect(err.text()).toContain('no rollback point');
+  });
+
+  it('fails on an unknown id', async () => {
+    const err = capture();
+    expect(
+      await runLedgerCommand(['rollback', 'nope'], {
+        cwd,
+        home,
+        sessionsRoot,
+        errOutput: err.stream,
+      }),
+    ).toBe(1);
   });
 });

@@ -6,6 +6,7 @@ The ledger records what the agent changed, why, and how to undo it.
 deepcode ledger list                 # recent records
 deepcode ledger show <id>            # one record in full
 deepcode ledger export --out audit.md
+deepcode ledger rollback <id>        # undo one recorded change
 ```
 
 ## Why it exists separately from sessions
@@ -90,6 +91,38 @@ from these records, so the readable ones stay useful on their own.
 Newest 5000 records per file, nothing older than 90 days; trimmed automatically
 as records accumulate. A log that only grows is one somebody eventually deletes
 wholesale — which loses the recent records too.
+
+## Rolling back
+
+`deepcode ledger rollback <id>` undoes one recorded change. It never applies
+silently — every rollback goes through four steps:
+
+1. **Explain** — where the change came from, how the states were compared, what
+   will physically happen, and how to get back afterwards.
+2. **Preview** — the file that will be restored or deleted.
+3. **Confirm** — accept, reject, or defer. Anything other than an explicit yes
+   is a no; a mistyped answer must not overwrite your files.
+4. **Apply** — and record the rollback itself on the governance timeline. An
+   audit trail with an unlogged undo is not an audit trail.
+
+### Conflicts are surfaced, not silently resolved
+
+Undoing an _old_ change is not the same operation as undoing the last one. The
+plan warns before you decide when:
+
+- later changes to the same file in that session would be discarded along with
+  it (a `post-` capture of the same call doesn't count — otherwise every
+  single-edit rollback would warn about itself);
+- the file was modified outside DeepCode since the last snapshot;
+- the record is a `Bash` checkpoint, which restores **every** tracked file that
+  command touched.
+
+### When it isn't possible
+
+Snapshots and ledger records age out on different schedules, so a record can
+outlive the checkpoint it points at. You get a reason — "snapshot 7 is no longer
+available", "this record has no rollback point" — rather than a stack trace.
+These are expected states of an audit log, not errors.
 
 ## It is not an authority
 
