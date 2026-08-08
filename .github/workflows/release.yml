@@ -117,10 +117,19 @@ jobs:
           rm -f packages/core/src/index.ts.bak
           grep -q "export const VERSION = '${{ needs.validate.outputs.version }}';" packages/core/src/index.ts
 
+      # Same workspace-protocol problem as build-vscode. This job had never run
+      # (it needs both build jobs), so the bug was latent rather than observed.
       - name: Set CLI version from tag
         run: |
           cd apps/cli
-          npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+          node -e '
+            const fs = require("fs");
+            const p = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+            pkg.version = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+          ' "${{ needs.validate.outputs.version }}"
+          node -e 'process.exit(require("./package.json").version === process.argv[1] ? 0 : 1)' "${{ needs.validate.outputs.version }}"
 
       - run: pnpm build
 
@@ -158,8 +167,19 @@ jobs:
           sed -i.bak -E "s/^export const VERSION = '.*';/export const VERSION = '${{ needs.validate.outputs.version }}';/" packages/core/src/index.ts
           rm -f packages/core/src/index.ts.bak
 
+      # Not `npm version`: this is a pnpm workspace, and npm rejects the
+      # `workspace:*` dependency protocol with EUNSUPPORTEDPROTOCOL before it
+      # ever writes the field. Editing the one key touches nothing else.
       - name: Set extension version from tag
-        run: npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+            pkg.version = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+          ' "${{ needs.validate.outputs.version }}"
+          node -e 'process.exit(require("./package.json").version === process.argv[1] ? 0 : 1)' "${{ needs.validate.outputs.version }}"
         working-directory: apps/vscode
 
       - name: Package VSIX
@@ -210,7 +230,13 @@ jobs:
       - name: Prepare pinned Node sidecar runtime
         env:
           NODE_SIDECAR_VERSION: 22.23.1
-          NODE_SIDECAR_SHA256: ef28d8fab2c0e4314522d4bb1b7173270aa3937e93b92cb7de79c112ac1fa953
+          # Verified against https://nodejs.org/dist/v22.23.1/SHASUMS256.txt and by
+          # hashing the downloaded artifact. The previous value never matched any
+          # published tarball, so this check had never once passed.
+          # Re-derive when bumping:
+          #   curl -sS https://nodejs.org/dist/v<VER>/SHASUMS256.txt \
+          #     | grep node-v<VER>-darwin-arm64.tar.xz
+          NODE_SIDECAR_SHA256: fb526811860f81dcac7dd8b2b55eca4accfc5d61c3b7c2508f2639faee8a738d
         run: |
           archive="node-v${NODE_SIDECAR_VERSION}-darwin-arm64.tar.xz"
           curl --fail --location --retry 3 \
