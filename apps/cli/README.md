@@ -1,11 +1,11 @@
-# deepcode-cli
+# @deepcode/cli
 
 DeepCode CLI — Node.js 一键安装的命令行 AI 编程代理。
 
 ## Install (post-v1)
 
 ```bash
-npm i -g deepcode-cli
+npm i -g @deepcode/cli
 deepcode --help
 ```
 

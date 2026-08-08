@@ -1,5 +1,5 @@
 {
-  "name": "deepcode-cli",
+  "name": "@deepcode/cli",
   "version": "0.3.0",
   "description": "DeepCode CLI — DeepSeek-powered AI coding agent for real codebases",
   "license": "MIT",

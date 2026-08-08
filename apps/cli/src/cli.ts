@@ -78,7 +78,7 @@ async function main(): Promise<number> {
     return doctor();
   }
   if (args.upgrade) {
-    process.stdout.write(`Run: npm i -g deepcode-cli@latest\n`);
+    process.stdout.write(`Run: npm i -g @deepcode/cli@latest\n`);
     process.stdout.write(`(The Mac client updates itself; only the CLI needs this.)\n`);
     return 0;
   }
