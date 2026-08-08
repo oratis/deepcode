@@ -371,7 +371,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # Full history: gen-release-notes walks the commit range. A shallow
+      # clone makes the root-commit lookup return HEAD itself, so the range
+      # comes out empty and the release body reads '0 commits.' — which is
+      # exactly what v0.3.0 shipped with.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
