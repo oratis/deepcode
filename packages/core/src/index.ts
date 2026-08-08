@@ -541,3 +541,16 @@ export {
   ledgerKindForTool,
   type ToolCallRecordInput,
 } from './ledger/record-tool-call.js';
+
+// No Silent Apply ceremony (plan §2.F)
+export {
+  applyWithCeremony,
+  renderApplyPresentation,
+  type ApplyConfirm,
+  type ApplyDecision,
+  type ApplyExplanation,
+  type ApplyOutcome,
+  type ApplyPlan,
+  type ApplyPresentation,
+} from './runtime/apply-ceremony.js';
+export { planRollback, type RollbackContext, type RollbackPlanResult } from './ledger/rollback.js';

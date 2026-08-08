@@ -2,18 +2,25 @@
 // Plan: docs/FLOATBOAT_ADOPTION_PLAN.md §2.B · Docs: docs/change-ledger.md
 
 import {
+  FileLedger,
   LEDGER_KINDS,
+  applyWithCeremony,
+  defaultSessionsDir,
   findLedgerRecord,
   ledgerPath,
+  planRollback,
   readProjectLedger,
+  renderApplyPresentation,
   renderLedgerMarkdown,
+  type ApplyConfirm,
   type LedgerKind,
   type LedgerRecord,
 } from '@deepcode/core';
 import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import type { Writable } from 'node:stream';
+import { createInterface } from 'node:readline/promises';
+import type { Readable, Writable } from 'node:stream';
 
 export interface LedgerCmdDeps {
   cwd: string;
@@ -21,6 +28,15 @@ export interface LedgerCmdDeps {
   output?: Writable;
   errOutput?: Writable;
   json?: boolean;
+  /** Where sessions (and therefore snapshots) live; overridden in tests. */
+  sessionsRoot?: string;
+  /** Input for the rollback confirmation prompt. */
+  input?: Readable;
+  /**
+   * Substitute confirmation. Tests supply one; there is no default that says
+   * yes, because a No Silent Apply with an implicit yes is not one.
+   */
+  confirm?: ApplyConfirm;
 }
 
 export async function runLedgerCommand(args: string[], deps: LedgerCmdDeps): Promise<number> {
@@ -35,6 +51,8 @@ export async function runLedgerCommand(args: string[], deps: LedgerCmdDeps): Pro
       return show(args.slice(1), deps, out, err);
     case 'export':
       return exportCmd(args.slice(1), deps, out, err);
+    case 'rollback':
+      return rollback(args.slice(1), deps, out, err);
     default:
       err.write(`Unknown subcommand "${sub}".\n\n`);
       usage(err);
@@ -161,6 +179,86 @@ async function exportCmd(
   return 0;
 }
 
+/**
+ * Undo one recorded change, through the full ceremony: explain, preview,
+ * confirm, restore, then record the rollback itself.
+ */
+async function rollback(
+  args: string[],
+  deps: LedgerCmdDeps,
+  out: Writable,
+  err: Writable,
+): Promise<number> {
+  const id = args[0];
+  if (!id) {
+    err.write('Usage: deepcode ledger rollback <id>\n');
+    return 2;
+  }
+  const home = deps.home ?? homedir();
+  const found = await findLedgerRecord(deps.cwd, id, home);
+  if (!found) {
+    err.write(`No ledger record with id "${id}".\n`);
+    return 1;
+  }
+
+  const planned = await planRollback({
+    record: found.record,
+    sessionsRoot: deps.sessionsRoot ?? defaultSessionsDir(),
+    cwd: deps.cwd,
+  });
+  if (planned.status === 'unavailable') {
+    err.write(`Cannot roll back ${id}: ${planned.reason}.\n`);
+    return 1;
+  }
+
+  const confirm = deps.confirm ?? promptConfirm(deps, out);
+  const outcome = await applyWithCeremony(planned.plan, confirm);
+
+  switch (outcome.status) {
+    case 'applied': {
+      const restored = outcome.result ?? [];
+      out.write(`Rolled back ${id}: ${restored.length} file(s) restored.\n`);
+      // The rollback is itself a change, and belongs on the governance
+      // timeline — an audit trail with an unlogged undo is not an audit trail.
+      await new FileLedger({ cwd: deps.cwd, home }).append('governance', {
+        actor: 'user',
+        intent: `roll back ${id}`,
+        paths: restored,
+        summary: `rolled back ${id}: ${found.record.summary}`,
+        rollbackHint: { kind: 'manual', ref: 'use git to undo this rollback' },
+      });
+      return 0;
+    }
+    case 'rejected':
+      out.write('Rollback cancelled; nothing was changed.\n');
+      return 0;
+    case 'deferred':
+      out.write('Rollback deferred; nothing was changed.\n');
+      return 0;
+    case 'failed':
+      err.write(`Rollback failed: ${outcome.error?.message ?? 'unknown error'}\n`);
+      return 1;
+  }
+}
+
+/** Interactive accept/reject/defer prompt. */
+function promptConfirm(deps: LedgerCmdDeps, out: Writable): ApplyConfirm {
+  return async (presentation) => {
+    out.write('\n' + renderApplyPresentation(presentation) + '\n');
+    const input = deps.input ?? process.stdin;
+    const rl = createInterface({ input, output: out as NodeJS.WritableStream });
+    try {
+      const answer = (await rl.question('Apply this rollback? [y/N/defer] ')).trim().toLowerCase();
+      if (answer === 'defer' || answer === 'd') return 'defer';
+      // Anything other than an explicit yes is a no. A mistyped answer must not
+      // overwrite the user's files.
+      return answer === 'y' || answer === 'yes' ? 'accept' : 'reject';
+    } finally {
+      rl.close();
+    }
+  };
+}
+
 function usage(out: Writable): void {
   out.write(
     [
@@ -169,6 +267,7 @@ function usage(out: Writable): void {
       '  list [--kind changes|governance] [--limit N]   Recent records (default)',
       '  show <id>                                      One record in full',
       '  export [--kind K] [--out <path>]               Markdown digest',
+      '  rollback <id>                                  Undo one recorded change',
       '',
       `Stored under ${dirname(ledgerPath('<project>', 'changes', '<home>'))}`,
       '',
