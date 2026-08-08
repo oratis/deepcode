@@ -16,6 +16,10 @@ adopted, what was rejected, and where the implementation diverged from the plan.
 
 ### ⚠️ Breaking
 
+- **The CLI is published as `@deepcode/cli`, not `deepcode-cli`.** Install with
+  `npm i -g @deepcode/cli`. The unscoped name on npm belongs to an unrelated
+  project, so it was never ours to publish to. The binary is still `deepcode`
+  and nothing about the tool's behaviour changes. (#249)
 - **Unattended runs no longer inherit a permissive permission mode.** A
   `permissions.defaultMode` of `bypassPermissions` or `acceptEdits` — chosen for
   interactive convenience — is clamped to `default` for scheduled jobs, which

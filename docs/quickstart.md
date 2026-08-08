@@ -15,7 +15,7 @@ permission, and recovery behavior is still being unified; see the
 
 ```bash
 # 1. Install
-npm i -g deepcode-cli
+npm i -g @deepcode/cli
 
 # 2. Start the REPL — the first run walks you through setting your DeepSeek key
 deepcode

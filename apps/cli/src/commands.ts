@@ -1151,7 +1151,7 @@ export const UpgradeCommand: SlashCommand = {
   run() {
     return [
       `DeepCode CLI v${VERSION}`,
-      'Update the CLI:  npm i -g deepcode-cli@latest',
+      'Update the CLI:  npm i -g @deepcode/cli@latest',
       'The macOS desktop app auto-updates via GitHub Releases.',
     ];
   },

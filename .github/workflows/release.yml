@@ -21,6 +21,8 @@ jobs:
       version: ${{ steps.version.outputs.version }}
       channel: ${{ steps.version.outputs.channel }}
       is_mandatory: ${{ steps.version.outputs.is_mandatory }}
+      has_apple: ${{ steps.credentials.outputs.has_apple }}
+      has_npm: ${{ steps.credentials.outputs.has_npm }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -55,6 +57,25 @@ jobs:
         run: pnpm test
       - run: pnpm docs:check
       - run: pnpm release:check
+
+      # Which publication legs can even run. A job that cannot possibly succeed
+      # should be skipped, not failed — a red release for a missing credential
+      # teaches people to ignore red releases.
+      - name: Detect available publishing credentials
+        id: credentials
+        run: |
+          if [ -n "${{ secrets.APPLE_ID }}" ] && [ -n "${{ secrets.CSC_LINK }}" ]; then
+            echo "has_apple=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_apple=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Apple signing secrets absent — skipping the Mac client build. See docs/RELEASING.md."
+          fi
+          if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
+            echo "has_npm=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_npm=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NPM_TOKEN absent — skipping the npm publish. See docs/RELEASING.md."
+          fi
 
       - name: Install Chromium
         run: pnpm --filter @deepcode/desktop exec playwright install --with-deps chromium
@@ -93,10 +114,13 @@ jobs:
   # Publish CLI to npm
   # ----------------------------------------------------------------------
   publish-cli:
-    name: Publish deepcode-cli to npm
+    name: Publish @deepcode/cli to npm
     # Avoid a partial release: do not publish npm until both installable
     # desktop/editor artifacts have built successfully.
     needs: [validate, build-vscode, build-mac]
+    # The anti-partial-release rule stands: npm still waits on both installable
+    # artifacts. It additionally needs a token to exist at all.
+    if: needs.validate.outputs.has_npm == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -209,6 +233,7 @@ jobs:
   build-mac:
     name: Build + sign + notarize Mac client (Tauri)
     needs: validate
+    if: needs.validate.outputs.has_apple == 'true'
     runs-on: macos-14
     timeout-minutes: 30
     steps:
@@ -333,6 +358,16 @@ jobs:
   github-release:
     name: Publish GitHub Release
     needs: [validate, publish-cli, build-vscode, build-mac]
+    # Ship what was actually built. `always()` is required because a skipped
+    # dependency would otherwise skip this job too — but the guard still refuses
+    # to publish when something tried and *failed*, so a broken build never
+    # becomes a release.
+    if: >-
+      always()
+      && needs.validate.result == 'success'
+      && needs.build-vscode.result == 'success'
+      && needs.build-mac.result != 'failure'
+      && needs.publish-cli.result != 'failure'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -346,6 +381,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Download Mac DMG
+        if: needs.build-mac.result == 'success'
         uses: actions/download-artifact@v8
         with:
           name: mac-release
@@ -367,6 +403,14 @@ jobs:
             FROM=$(git rev-list --max-parents=0 HEAD)
           fi
           npx tsx scripts/gen-release-notes.ts "$FROM" HEAD > release-notes.md
+          # A release page missing an artifact reads as "there is no Mac build"
+          # rather than "it was not produced this time". Say which.
+          if [ "${{ needs.build-mac.result }}" != "success" ]; then
+            printf '\n---\n\n> **No macOS build in this release.** Apple signing credentials were not configured when it was cut; see `docs/RELEASING.md`.\n' >> release-notes.md
+          fi
+          if [ "${{ needs.publish-cli.result }}" != "success" ]; then
+            printf '\n> **Not published to npm.** `NPM_TOKEN` was not configured when this release was cut; install from source or the VSIX.\n' >> release-notes.md
+          fi
           cat release-notes.md
 
       - name: Create GitHub Release
