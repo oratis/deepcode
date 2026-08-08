@@ -5,6 +5,94 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-08-08
+
+A workspace-governance layer: what the agent may touch, what it changed, and how
+to undo it. Derived from a first-hand study of Floatboat's open **Selfware
+protocol** — see [`docs/research/floatboat.md`](docs/research/floatboat.md) for
+the research (with evidence grading) and
+[`docs/FLOATBOAT_ADOPTION_PLAN.md`](docs/FLOATBOAT_ADOPTION_PLAN.md) for what was
+adopted, what was rejected, and where the implementation diverged from the plan.
+
+### ⚠️ Breaking
+
+- **Unattended runs no longer inherit a permissive permission mode.** A
+  `permissions.defaultMode` of `bypassPermissions` or `acceptEdits` — chosen for
+  interactive convenience — is clamped to `default` for scheduled jobs, which
+  run with nobody present to approve anything. Set a job's `profile.mode`
+  explicitly to opt back in. The clamp names itself and the fix in the job log
+  on the first run after upgrading. (#244)
+
+### 🔒 Security
+
+- **`.env` could be read, and there was no way to say otherwise.** Permission
+  rules match on the _tool_; their only path-aware match is a prefix compare
+  against an argument that is usually an absolute path, so `Read(.env*)` matched
+  nothing. The new [file contract](docs/file-contract.md) adds the missing axis —
+  glob × read/write/execute × allow/ask/deny — composed with the existing rules
+  by most-restrictive-wins. It can only tighten. (#238, #239)
+- A contract `deny` **cannot be waived by `bypassPermissions`**. It states
+  something standing about a path rather than prompting about one call, so the
+  mode that exists to skip prompts has no business clearing it. (#239)
+- Plugin subprocesses are gated by the same path rules; the capability bridge
+  previously called the dispatcher without a contract. (#239)
+- `/combo` drafts exclude paths the contract denies reading and redact
+  credential-shaped values. A rule that stops at the tool call but not at the
+  export is not much of a rule. (#243)
+
+### ✨ Added
+
+- **File contract** — `deepcode contract <show|init|check>`. Optional; with no
+  contract file, behaviour is unchanged. (#238, #239)
+- **Change ledger** — `deepcode ledger <list|show|export|rollback>`. An
+  append-only record pairing each mutation with the request that motivated it
+  and the checkpoint that reverses it, on two timelines (`changes`,
+  `governance`). Stored outside the repository so `git status` stays clean.
+  (#240, #241)
+- **No Silent Apply** — explain, preview, accept/reject/defer, rollback point
+  first. `confirm` is a required argument, so a caller that cannot ask a human
+  cannot apply. (#241)
+- **`runtime/capabilities`** — a protocol method answering what the runtime may
+  write and which actions always stop for a human, distinct from `initialize`'s
+  protocol-feature flags. The CLI and app-server build it through one function,
+  with a test asserting they agree field-for-field. (#242)
+- **`/combo`** — distil a finished thread into a `SKILL.md` draft, with
+  `allowed-tools` derived from the tools actually called. (#243)
+- **Trigger profiles** — per-job `mode`, `permissions`, and `sandbox` for
+  scheduled work. Permissions and sandbox can only tighten. (#244)
+- `onApprovalRequired: 'abort'` for scheduled jobs, plus exit code `6`. A job
+  whose first write is refused otherwise grinds on and reports a confidently
+  wrong result. (#237)
+- `deepcode doctor` prints the runtime capability declaration and the
+  file-contract warnings. (#242)
+
+### 🐛 Fixed
+
+- Aborting mid-batch left `tool_use` blocks unanswered, which a provider rejects
+  on resume. Remaining calls now get an explicit "never ran" result. (#237)
+- `docs/cli-flags.md`'s exit-code table contradicted the implementation (it
+  listed `3` as "tool denied" and `5` as "API key invalid"). Corrected against
+  `apps/cli/src/headless.ts`, which owns the contract. (#237)
+
+### 📄 Documentation
+
+- New: [`docs/file-contract.md`](docs/file-contract.md),
+  [`docs/change-ledger.md`](docs/change-ledger.md),
+  [`docs/combo.md`](docs/combo.md),
+  [`docs/research/floatboat.md`](docs/research/floatboat.md),
+  [`docs/FLOATBOAT_ADOPTION_PLAN.md`](docs/FLOATBOAT_ADOPTION_PLAN.md).
+- `docs/security-model.md` gains threats #8–#10 and a **residual-risk** section
+  stating plainly that the file contract is policy, not a boundary: it does not
+  constrain Bash, and only the sandbox does.
+
+### 🚫 Deliberately not adopted
+
+`.self` self-executing distribution (a supply-chain surface for a coding agent),
+Floatboat's passive habit observation across files and browser tabs (a privacy
+line, and unnecessary — `/combo` gets the value from an explicit invocation),
+cross-organisation agent networks, and a second loopback HTTP runtime alongside
+the app-server. Reasoning in the adoption plan §3.
+
 ## [0.2.0] — 2026-08-02
 
 Largest release so far: the desktop app, VS Code extension, and LSP server stop

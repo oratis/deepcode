@@ -12,15 +12,40 @@ against the threat model here.
 DeepCode is an LLM-driven coding assistant. The threats we care about, in
 decreasing order of operator severity:
 
-| #   | Threat                                                                   | Severity         | Where mitigated                                                         |
-| --- | ------------------------------------------------------------------------ | ---------------- | ----------------------------------------------------------------------- |
-| 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call  | High             | M3.5 sandbox + M5.1 env strip                                           |
-| 2   | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)    | High             | M3.5 sandbox + permissions                                              |
-| 3   | Plugin (third-party code) does either #1 or #2                           | High             | M5.1 subprocess + (M5.1-ext) OS sandbox                                 |
-| 4   | Hook script (third-party shell snippet) does either #1 or #2             | Medium           | Exact-definition review + source trust; hook commands remain host code  |
-| 5   | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule | Medium           | escapeSbpl()                                                            |
-| 6   | Untrusted project's AGENTS.md drives the agent into harmful action       | Low              | Trust store (`/trust`)                                                  |
-| 7   | DNS exfiltration of secrets from sandboxed Bash                          | Partly mitigated | M3.5-ext DNS allowlist (netns.ts) — names only; raw-IP dials still pass |
+| #   | Threat                                                                         | Severity         | Where mitigated                                                                                                            |
+| --- | ------------------------------------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call        | High             | M3.5 sandbox + M5.1 env strip                                                                                              |
+| 2   | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)          | High             | M3.5 sandbox + permissions                                                                                                 |
+| 3   | Plugin (third-party code) does either #1 or #2                                 | High             | M5.1 subprocess + (M5.1-ext) OS sandbox                                                                                    |
+| 4   | Hook script (third-party shell snippet) does either #1 or #2                   | Medium           | Exact-definition review + source trust; hook commands remain host code                                                     |
+| 5   | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule       | Medium           | escapeSbpl()                                                                                                               |
+| 6   | Untrusted project's AGENTS.md drives the agent into harmful action             | Low              | Trust store (`/trust`); a file-contract `deny` is independent of model judgement, so prompt injection cannot argue past it |
+| 7   | DNS exfiltration of secrets from sandboxed Bash                                | Partly mitigated | M3.5-ext DNS allowlist (netns.ts) — names only; raw-IP dials still pass                                                    |
+| 8   | Model reads an in-project secret (`.env`, `*.pem`) through a read tool         | Partly mitigated | File contract `read: deny` — covers Read/Grep/Glob, **not Bash** (see below)                                               |
+| 9   | Unattended job runs with a permissive mode inherited from interactive settings | Mitigated        | Trigger profile clamp + `onApprovalRequired`                                                                               |
+| 10  | User cannot audit or undo what the agent wrote                                 | Mitigated        | Change ledger + `deepcode ledger rollback` through the apply ceremony                                                      |
+
+### Residual risk: the file contract is policy, not a boundary
+
+Threat #8 is **partly** mitigated, and the distinction matters more than the
+mitigation.
+
+A [file contract](file-contract.md) constrains tool calls that pass through the
+dispatcher — `Read`, `Grep`, `Glob`, `Write`, `Edit`, `NotebookEdit`. It has no
+effect on what a shell command does once `Bash` has started. `cat .env` is a
+string; statically parsing shell to decide otherwise would be guesswork
+presented as enforcement, which is worse than not trying because it reads as a
+guarantee.
+
+**Only the sandbox bounds Bash.** When a contract denies reads while the sandbox
+resolves to `danger-full-access`, DeepCode warns at REPL start, on every headless
+run, in `deepcode contract show`, and in `deepcode doctor`. Do not describe the
+contract as secret protection in any user-facing text; describe it as reducing
+the accidental-touch and prompt-injection surface.
+
+Path normalization is string math and does not call `realpath`, so a symlink
+inside the workspace pointing outside still normalizes to an inside-looking
+path. Same conclusion: the sandbox is the boundary.
 
 ## Defence layers
 

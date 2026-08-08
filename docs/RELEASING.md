@@ -52,12 +52,15 @@ new token → **Automation** (CI-friendly) → save as `NPM_TOKEN`.
 
 ```bash
 # 1. Make sure main is green and CHANGELOG.md has an entry for the new version.
-# 2. Bump versions everywhere in lockstep:
-#    - apps/cli/package.json
+# 2. Bump versions everywhere in lockstep — all SIX places:
+#    - packages/core/src/index.ts        (VERSION — what `deepcode --version` prints)
+#    - apps/cli/package.json             (what npm publishes)
 #    - apps/desktop/package.json
 #    - apps/desktop/src-tauri/tauri.conf.json
 #    - apps/desktop/src-tauri/Cargo.toml
-#    (The CI workflow also re-syncs these from the tag.)
+#    - apps/desktop/src-tauri/Cargo.lock (CI runs `cargo check --locked`)
+#    (The CI workflow also re-syncs some of these from the tag.)
+#    `pnpm test` fails if any of them disagree — see scripts/version-consistency.test.ts.
 # 3. Tag + push:
 
 git tag v0.1.3
