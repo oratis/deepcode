@@ -10,6 +10,7 @@ import {
   listCronJobs,
   loadCronStore,
   removeCronJob,
+  resolveUnattendedApproval,
   validateCronExpr,
 } from './index.js';
 
@@ -145,5 +146,51 @@ describe('cron store CRUD', () => {
     await expect(addCronJob({ schedule: 'bad', prompt: 'x', cwd: '/' }, home)).rejects.toThrow(
       /5 fields/,
     );
+  });
+});
+
+describe('resolveUnattendedApproval', () => {
+  it('defaults to deny — jobs stored before the field existed keep old behaviour', () => {
+    expect(resolveUnattendedApproval({})).toBe('deny');
+    expect(resolveUnattendedApproval({ onApprovalRequired: undefined })).toBe('deny');
+  });
+
+  it('honours an explicit abort', () => {
+    expect(resolveUnattendedApproval({ onApprovalRequired: 'abort' })).toBe('abort');
+  });
+
+  it('treats an unrecognised stored value as deny rather than trusting it', () => {
+    // The store is a plain JSON file a user can hand-edit; a typo must not
+    // silently widen behaviour.
+    expect(
+      resolveUnattendedApproval({
+        onApprovalRequired: 'ABORT' as unknown as 'abort',
+      }),
+    ).toBe('deny');
+  });
+});
+
+describe('addCronJob — unattended policy', () => {
+  let home: string;
+  beforeEach(async () => {
+    home = await mkdtemp(join(tmpdir(), 'dc-cron-policy-'));
+  });
+  afterEach(async () => {
+    await rm(home, { recursive: true, force: true });
+  });
+
+  it('omits the field when unspecified, so the default stays implicit', async () => {
+    const job = await addCronJob({ schedule: '* * * * *', prompt: 'x', cwd: '/' }, home);
+    expect(job.onApprovalRequired).toBeUndefined();
+    expect(resolveUnattendedApproval(job)).toBe('deny');
+  });
+
+  it('persists an explicit abort across a store round-trip', async () => {
+    await addCronJob(
+      { schedule: '* * * * *', prompt: 'x', cwd: '/', onApprovalRequired: 'abort' },
+      home,
+    );
+    const [stored] = await listCronJobs(home);
+    expect(resolveUnattendedApproval(stored!)).toBe('abort');
   });
 });

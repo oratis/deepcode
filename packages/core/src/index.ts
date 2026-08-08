@@ -138,6 +138,7 @@ export {
 // Mode policy (M3)
 export {
   evaluateMode,
+  isPermissiveMode,
   modeVerdictReason,
   type ModeRequest,
   type ModeVerdict,
@@ -424,8 +425,10 @@ export {
   validateCronExpr,
   isCronDue,
   dueJobs,
+  resolveUnattendedApproval,
   type CronJob,
   type CronStore,
+  type UnattendedApprovalPolicy,
 } from './cron/index.js';
 
 // Keybindings (M8 — ~/.deepcode/keybindings.json + Vim mode state machine)

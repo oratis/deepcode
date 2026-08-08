@@ -848,4 +848,95 @@ describe('runAgent', () => {
     expect(events).toContain('PreCompact');
     expect(events).toContain('PostCompact');
   });
+  // ── unattended approval policy ───────────────────────────────────────
+  // Scheduled/CI runs have no approver. These lock in that the loop says so
+  // explicitly rather than reporting the generic "requires approval", and that
+  // `abort` stops the run instead of letting it grind on against a wall.
+  describe('unattended runs', () => {
+    const writeCall: ToolUseBlock = {
+      type: 'tool_use',
+      id: 't-unattended',
+      name: 'Write',
+      input: { file_path: 'out.txt', content: 'x' },
+    };
+
+    it('deny (the default) refuses the call and keeps running', async () => {
+      const provider = new MockProvider([
+        toolUse('writing', writeCall),
+        endTurn('carried on without it'),
+      ]);
+      const result = await runAgent({
+        provider,
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        unattended: true,
+      });
+      expect(result.stopReason).toBe('end_turn');
+      const blocked = result.history
+        .flatMap((m) => m.content)
+        .find((b) => b.type === 'tool_result' && b.tool_use_id === 't-unattended');
+      expect((blocked as { content: string }).content).toContain('unattended');
+    });
+
+    it('abort stops the run with stopReason=blocked', async () => {
+      const provider = new MockProvider([toolUse('writing', writeCall)]);
+      const result = await runAgent({
+        provider,
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        unattended: true,
+        onApprovalRequired: 'abort',
+      });
+      expect(result.stopReason).toBe('blocked');
+      // The refusal is still recorded, so a transcript shows why it stopped.
+      const blocked = result.history
+        .flatMap((m) => m.content)
+        .find((b) => b.type === 'tool_result' && b.tool_use_id === 't-unattended');
+      expect(blocked).toBeDefined();
+    });
+
+    it('abort does not fire when nothing needs approval', async () => {
+      const provider = new MockProvider([endTurn('nothing to approve')]);
+      const result = await runAgent({
+        provider,
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        unattended: true,
+        onApprovalRequired: 'abort',
+      });
+      expect(result.stopReason).toBe('end_turn');
+    });
+
+    it('an attended run is untouched: the approval callback still decides', async () => {
+      const provider = new MockProvider([toolUse('writing', writeCall), endTurn('done')]);
+      const asked: string[] = [];
+      const result = await runAgent({
+        provider,
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        approval: async (tool) => {
+          asked.push(tool);
+          return false;
+        },
+      });
+      expect(asked).toEqual(['Write']);
+      expect(result.stopReason).toBe('end_turn');
+    });
+  });
 });

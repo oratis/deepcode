@@ -15,6 +15,7 @@ import {
   listCronJobs,
   loadCronStore,
   saveCronStore,
+  resolveUnattendedApproval,
   uninstallPlist,
   type CronJob,
 } from '@deepcode/core';
@@ -71,15 +72,23 @@ async function defaultRunJob(job: CronJob, home: string): Promise<void> {
   await fs.mkdir(dirname(logPath), { recursive: true });
   const log = createWriteStream(logPath, { flags: 'a' });
   try {
+    const onApprovalRequired = resolveUnattendedApproval(job);
     log.write(`\n===== ${new Date().toISOString()} =====\n`);
-    await runHeadless({
+    log.write(`[job] onApprovalRequired=${onApprovalRequired}\n`);
+    const code = await runHeadless({
       output: log,
       errOutput: log,
       cwd: job.cwd,
       home,
       prompt: job.prompt,
       outputFormat: 'text',
+      onApprovalRequired,
     });
+    // Exit 6 means the run stopped because a call needed an approver. Surface it
+    // as a failure so the scheduler log does not read like a clean run.
+    if (code === 6) {
+      throw new Error('stopped: a tool call required approval and onApprovalRequired=abort');
+    }
   } finally {
     log.end();
   }

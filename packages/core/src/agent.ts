@@ -3,6 +3,7 @@
 
 import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
+import type { UnattendedApprovalPolicy } from './cron/index.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -70,6 +71,19 @@ export interface RunAgentOptions {
   permissions?: PermissionRules;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
+  /**
+   * Declares that no human can answer an approval prompt for this run (cron,
+   * headless CI). Hosts state it rather than letting the loop infer it from a
+   * missing callback: headless installs an auto-deny `approval`, so absence of
+   * a callback is not the same question as absence of a human.
+   */
+  unattended?: boolean;
+  /**
+   * What an unattended run does when a call resolves to `ask`. Defaults to
+   * `deny` — refuse that call, continue the run — which is what every host did
+   * before this option existed. `abort` ends the run instead.
+   */
+  onApprovalRequired?: UnattendedApprovalPolicy;
   /** AutoModeConfig from settings.autoMode — used when mode === 'auto'. */
   autoMode?: import('./config/types.js').AutoModeConfig;
   /** M3.5: passed through to Bash tool ctx for sandbox wrapping. */
@@ -139,8 +153,11 @@ export interface RunAgentResult {
     reasoningTokens: number;
     cacheReadTokens: number;
   };
-  /** Reason the loop terminated. */
-  stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
+  /**
+   * Reason the loop terminated. `blocked` means an unattended run hit a call
+   * needing approval while configured with `onApprovalRequired: 'abort'`.
+   */
+  stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error' | 'blocked';
   /** Mode-control signals flipped by tools during this run (M3c-rest). */
   modeSignal?: { exitPlanMode?: boolean; enterPlanMode?: boolean };
 }
@@ -576,6 +593,59 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
     const ready: Ready[] = [];
 
+    /**
+     * Append this batch's tool results to history, in the model's original call
+     * order, and persist them.
+     *
+     * Any `tool_use` still without a result gets a synthetic one. That happens
+     * when the loop stops mid-batch (unattended abort): leaving a `tool_use`
+     * unanswered produces a message sequence the provider rejects on resume,
+     * so an explicit "never ran" beats a silent hole.
+     */
+    const flushToolResults = async (): Promise<void> => {
+      const toolResults: ToolResultBlock[] = toolBlocks.map(
+        (b) =>
+          resultsById.get(b.id) ?? {
+            type: 'tool_result',
+            tool_use_id: b.id,
+            content: 'Tool call not executed: the run stopped before reaching it.',
+            is_error: true,
+          },
+      );
+      const resultMsg: StoredMessage = {
+        role: 'user',
+        content: toolResults as ContentBlock[],
+        timestamp: new Date().toISOString(),
+      };
+      history.push(resultMsg);
+      if (opts.session && opts.persistSessionMessages !== false) {
+        await opts.session.manager.append(opts.session.id, resultMsg);
+      }
+    };
+
+    /** Record a gate refusal as both a tool result (the model sees it) and an event (the host does). */
+    const recordBlocked = (
+      toolUse: ToolUseBlock,
+      reason: string,
+      verdict: DispatchVerdict,
+    ): void => {
+      resultsById.set(toolUse.id, {
+        type: 'tool_result',
+        tool_use_id: toolUse.id,
+        content: `Tool call blocked: ${reason}`,
+        is_error: true,
+      });
+      opts.onEvent?.({
+        type: 'tool_result',
+        id: toolUse.id,
+        result: {
+          content: reason,
+          isError: true,
+          data: { dispatchSource: verdict.source, decision: verdict.decision },
+        },
+      });
+    };
+
     // Phase 1 — sequential gate + approval.
     for (const toolUse of toolBlocks) {
       const handler =
@@ -606,7 +676,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         autoModeProvider: opts.provider,
       });
       let allowed = verdict.decision === 'allow';
-      if (verdict.decision === 'ask' && opts.approval) {
+      let blockReason = verdict.reason;
+      if (verdict.decision === 'ask' && opts.unattended) {
+        // No human can answer, so don't pretend to ask. Say so explicitly —
+        // "requires approval" in an unattended log reads like a transient
+        // condition when it is in fact terminal for this call.
+        blockReason = `approval required for ${toolUse.name}, but this run is unattended (no approver attached)`;
+        if (opts.onApprovalRequired === 'abort') {
+          recordBlocked(toolUse, blockReason, verdict);
+          await flushToolResults();
+          return finish('blocked');
+        }
+      } else if (verdict.decision === 'ask' && opts.approval) {
         const decision = await waitForApproval(
           opts.approval,
           toolUse.name,
@@ -621,21 +702,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         allowed = decision === true || decision === 'always';
       }
       if (!allowed) {
-        resultsById.set(toolUse.id, {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: `Tool call blocked: ${verdict.reason}`,
-          is_error: true,
-        });
-        opts.onEvent?.({
-          type: 'tool_result',
-          id: toolUse.id,
-          result: {
-            content: verdict.reason,
-            isError: true,
-            data: { dispatchSource: verdict.source, decision: verdict.decision },
-          },
-        });
+        recordBlocked(toolUse, blockReason, verdict);
         continue;
       }
 
@@ -728,20 +795,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     await Promise.all(parallel.map(execOne));
     for (const r of serial) await execOne(r);
 
-    // Re-assemble in the model's original tool-call order.
-    const toolResults: ToolResultBlock[] = toolBlocks
-      .map((b) => resultsById.get(b.id))
-      .filter((r): r is ToolResultBlock => r !== undefined);
-
-    const resultMsg: StoredMessage = {
-      role: 'user',
-      content: toolResults as ContentBlock[],
-      timestamp: new Date().toISOString(),
-    };
-    history.push(resultMsg);
-    if (opts.session && opts.persistSessionMessages !== false) {
-      await opts.session.manager.append(opts.session.id, resultMsg);
-    }
+    await flushToolResults();
 
     // M3c: auto-compact if the *current* context crossed the threshold.
     //

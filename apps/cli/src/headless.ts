@@ -13,6 +13,7 @@
 //   3  API / provider error (network, auth)
 //   4  max turns reached without completion
 //   5  aborted by signal (SIGINT / SIGTERM)
+//   6  unattended run stopped: a call needed approval and onApprovalRequired='abort'
 
 import {
   BashTool,
@@ -48,8 +49,10 @@ import {
   collectPluginContributions,
   type AgentEvent,
   type Effort,
+  isPermissiveMode,
   type McpClientHandle,
   type Mode,
+  type UnattendedApprovalPolicy,
   type WireResult,
 } from '@deepcode/core';
 import type { Writable } from 'node:stream';
@@ -84,6 +87,13 @@ export interface HeadlessOpts {
   /** In stream-json mode, also emit text_delta and thinking_delta events.
    *  Default is to drop those for compact streams. */
   includePartialMessages?: boolean;
+  /**
+   * What to do when a call needs approval and nobody is there to give it.
+   * `deny` (default) refuses that call and keeps going; `abort` ends the run
+   * with exit code 6, which scheduled jobs generally want — a job that got
+   * half its tool calls refused has usually produced a misleading result.
+   */
+  onApprovalRequired?: UnattendedApprovalPolicy;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools. Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -135,6 +145,16 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
 
   const model = opts.model ?? settings.model ?? 'deepseek-chat';
   const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
+  // A permissive mode chosen for the REPL is inherited by every unattended run
+  // that reads the same settings file — including scheduled jobs firing at 3am.
+  // Passing `--mode` explicitly is a deliberate choice for this run, so only the
+  // inherited case is worth a warning.
+  if (!opts.mode && isPermissiveMode(mode)) {
+    errOutput.write(
+      `Warning: this unattended run inherits permissions.defaultMode="${mode}" from settings, ` +
+        `so tool calls execute without approval. Pass --mode default to override.\n`,
+    );
+  }
   const effort = opts.effort ?? settings.effortLevel ?? 'medium';
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
   const maxTurns = opts.maxTurns ?? DEFAULT_HEADLESS_MAX_TURNS;
@@ -325,6 +345,8 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       // would normally need approval. Users wanting auto-yes should pass
       // --mode dontAsk or --mode bypassPermissions (gated by trust).
       approval: async () => false,
+      unattended: true,
+      onApprovalRequired: opts.onApprovalRequired ?? 'deny',
       onEvent,
     });
 
@@ -334,6 +356,8 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       exitCode = 4;
     } else if (result.stopReason === 'error') {
       exitCode = 3;
+    } else if (result.stopReason === 'blocked') {
+      exitCode = 6;
     } else {
       exitCode = 0;
     }
