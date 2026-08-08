@@ -50,7 +50,7 @@ deepcode --model deepseek-reasoner --effort high   # deeper reasoning
 
 `-p`/`--print` runs a single prompt and exits. Combine with `--output-format json`
 for machine-readable output. Exit codes: `0` ok · `1` generic · `2` bad-input ·
-`3` api/auth · `4` max-turns · `5` aborted.
+`3` api/auth · `4` max-turns · `5` aborted · `6` blocked (see below).
 
 ```bash
 deepcode -p "summarize the architecture" --output-format json
@@ -58,6 +58,26 @@ deepcode -p "summarize the architecture" --output-format json
 
 For long-lived CI tokens, run `deepcode setup-token` once and store the printed
 token as `DEEPSEEK_AUTH_TOKEN` in your CI secrets.
+
+### Scheduled jobs
+
+`CronCreate` (or `deepcode cron`) schedules a prompt to run headlessly on a cron
+expression. Nobody is watching when it fires, so approval-requiring tool calls
+cannot be answered. Each job chooses what happens then:
+
+| `onApprovalRequired` | Behaviour                                                              |
+| -------------------- | ---------------------------------------------------------------------- |
+| `deny` (default)     | Refuse that one call, let the run continue                             |
+| `abort`              | Stop the run, exit `6`, and log the reason to `~/.deepcode/cron-logs/` |
+
+Pick `abort` when a partially-executed job is worse than no job — a run whose
+first write was refused usually produces a confidently wrong summary otherwise.
+
+One thing to check before relying on a scheduled job: it reads the same
+`settings.json` you use interactively, so `permissions.defaultMode` carries over.
+If you set `bypassPermissions` for your own convenience, every scheduled job
+inherits it and executes without approval. DeepCode prints a warning to the job
+log when that happens; pass `--mode default` to opt a run out.
 
 ---
 

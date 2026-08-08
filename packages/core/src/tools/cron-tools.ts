@@ -4,12 +4,20 @@
 // These CRUD the cron store (~/.deepcode/cron.json). Execution is handled
 // separately by `deepcode scheduler run` (fired by the launchd/systemd timer).
 
-import { addCronJob, listCronJobs, removeCronJob, validateCronExpr } from '../cron/index.js';
+import {
+  addCronJob,
+  listCronJobs,
+  removeCronJob,
+  resolveUnattendedApproval,
+  validateCronExpr,
+  type UnattendedApprovalPolicy,
+} from '../cron/index.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface CreateInput {
   schedule?: string;
   prompt?: string;
+  onApprovalRequired?: UnattendedApprovalPolicy;
 }
 interface DeleteInput {
   id?: string;
@@ -29,6 +37,12 @@ export const CronCreateTool: ToolHandler = {
           description: '5-field cron: min hour day-of-month month day-of-week.',
         },
         prompt: { type: 'string', description: 'What the agent should do each run.' },
+        onApprovalRequired: {
+          type: 'string',
+          enum: ['deny', 'abort'],
+          description:
+            'What the unattended run does when a tool call needs approval and nobody is there: "deny" (default) refuses that call and continues; "abort" stops the run. Prefer "abort" when a partially-executed job is worse than no job.',
+        },
       },
       required: ['schedule', 'prompt'],
     },
@@ -40,15 +54,26 @@ export const CronCreateTool: ToolHandler = {
     }
     const invalid = validateCronExpr(input.schedule);
     if (invalid) return { content: `Error: ${invalid}`, isError: true };
+    if (input.onApprovalRequired && !['deny', 'abort'].includes(input.onApprovalRequired)) {
+      return { content: 'Error: onApprovalRequired must be "deny" or "abort".', isError: true };
+    }
     try {
       const job = await addCronJob({
         schedule: input.schedule,
         prompt: input.prompt,
         cwd: ctx.cwd,
+        ...(input.onApprovalRequired ? { onApprovalRequired: input.onApprovalRequired } : {}),
       });
       return {
-        content: `Scheduled "${job.id}" — \`${job.schedule}\` in ${job.cwd}.\nIt fires once the scheduler is installed (deepcode cron install).`,
-        data: { id: job.id, schedule: job.schedule },
+        content:
+          `Scheduled "${job.id}" — \`${job.schedule}\` in ${job.cwd}.\n` +
+          `Unattended approval policy: ${resolveUnattendedApproval(job)}.\n` +
+          `It fires once the scheduler is installed (deepcode cron install).`,
+        data: {
+          id: job.id,
+          schedule: job.schedule,
+          onApprovalRequired: resolveUnattendedApproval(job),
+        },
       };
     } catch (err) {
       return { content: `Error scheduling job: ${(err as Error).message}`, isError: true };
@@ -68,7 +93,8 @@ export const CronListTool: ToolHandler = {
     if (jobs.length === 0) return { content: 'No scheduled jobs.', data: { jobs: [] } };
     const lines = jobs.map(
       (j) =>
-        `${j.id}  [${j.schedule}]${j.enabled ? '' : ' (disabled)'}  ${j.prompt.slice(0, 60)}` +
+        `${j.id}  [${j.schedule}]${j.enabled ? '' : ' (disabled)'}  ` +
+        `approval=${resolveUnattendedApproval(j)}  ${j.prompt.slice(0, 60)}` +
         (j.lastRunAt ? `  (last: ${j.lastRunAt})` : ''),
     );
     return { content: lines.join('\n'), data: { jobs } };

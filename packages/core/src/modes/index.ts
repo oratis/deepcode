@@ -36,6 +36,20 @@ const PLAN_READONLY_TOOLS = new Set([
   'ToolSearch',
 ]);
 
+/**
+ * Modes that let a tool call through without a human seeing it.
+ *
+ * These are fine interactively — the user chose them and is sitting there — but
+ * an unattended run inherits `permissions.defaultMode` from the same settings
+ * file, so a convenience choice made for the REPL silently becomes the posture
+ * of every scheduled job. Callers that run without a human use this to warn.
+ */
+const PERMISSIVE_MODES = new Set<Mode>(['bypassPermissions', 'acceptEdits']);
+
+export function isPermissiveMode(mode: Mode): boolean {
+  return PERMISSIVE_MODES.has(mode);
+}
+
 export function evaluateMode(mode: Mode, req: ModeRequest): ModeVerdict {
   switch (mode) {
     case 'plan': {

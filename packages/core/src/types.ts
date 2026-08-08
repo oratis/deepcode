@@ -190,7 +190,7 @@ export type AgentEvent =
   /** The whole user turn reached one terminal state. Emitted exactly once. */
   | {
       type: 'turn_complete';
-      stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error';
+      stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error' | 'blocked';
       message?: StoredMessage;
     }
   | {

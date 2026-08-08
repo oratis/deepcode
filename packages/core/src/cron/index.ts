@@ -7,6 +7,16 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+/**
+ * What an unattended run does when a tool call resolves to `ask`.
+ *
+ * `deny` (default, and the pre-existing behaviour) refuses that one call and
+ * lets the run continue. `abort` stops the whole run instead — the right choice
+ * when a half-executed job is worse than no job, since a denied first call
+ * otherwise leaves the agent looping against a wall while it burns tokens.
+ */
+export type UnattendedApprovalPolicy = 'deny' | 'abort';
+
 export interface CronJob {
   id: string;
   /** 5-field cron expression: "min hour day-of-month month day-of-week". */
@@ -18,6 +28,19 @@ export interface CronJob {
   createdAt: string;
   lastRunAt?: string;
   enabled: boolean;
+  /**
+   * Unattended approval policy for this job. Absent on jobs created before this
+   * field existed, which is why every read goes through
+   * `resolveUnattendedApproval` instead of touching the field directly.
+   */
+  onApprovalRequired?: UnattendedApprovalPolicy;
+}
+
+/** The effective policy for a job, defaulting to the historical `deny`. */
+export function resolveUnattendedApproval(
+  job: Pick<CronJob, 'onApprovalRequired'>,
+): UnattendedApprovalPolicy {
+  return job.onApprovalRequired === 'abort' ? 'abort' : 'deny';
 }
 
 export interface CronStore {
@@ -51,7 +74,12 @@ function newCronId(): string {
 }
 
 export async function addCronJob(
-  job: { schedule: string; prompt: string; cwd: string },
+  job: {
+    schedule: string;
+    prompt: string;
+    cwd: string;
+    onApprovalRequired?: UnattendedApprovalPolicy;
+  },
   home: string = homedir(),
 ): Promise<CronJob> {
   const invalid = validateCronExpr(job.schedule);
@@ -64,6 +92,7 @@ export async function addCronJob(
     cwd: job.cwd,
     createdAt: new Date().toISOString(),
     enabled: true,
+    ...(job.onApprovalRequired ? { onApprovalRequired: job.onApprovalRequired } : {}),
   };
   store.jobs.push(created);
   await saveCronStore(store, home);

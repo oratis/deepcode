@@ -102,16 +102,19 @@ Later layers override earlier ones (deep-merge for objects, arrays replace).
 
 ## Exit codes
 
-| Code | Meaning                             |
-| ---- | ----------------------------------- |
-| `0`  | Success                             |
-| `1`  | General error (e.g. no credentials) |
-| `2`  | Unknown flag / bad argument         |
-| `3`  | Tool denied by permissions          |
-| `4`  | `--max-turns` reached               |
-| `5`  | API key invalid                     |
+| Code | Meaning                                                                                      |
+| ---- | -------------------------------------------------------------------------------------------- |
+| `0`  | Success                                                                                      |
+| `1`  | General error (uncaught)                                                                     |
+| `2`  | Unknown flag / bad argument                                                                  |
+| `3`  | API / provider error (network, auth, no credentials)                                         |
+| `4`  | `--max-turns` reached                                                                        |
+| `5`  | Aborted by signal (SIGINT / SIGTERM)                                                         |
+| `6`  | Unattended run stopped: a call needed approval and the job set `onApprovalRequired: "abort"` |
 
-(Codes 3-5 are reserved for M3+ enforcement.)
+These match `apps/cli/src/headless.ts`, which owns the contract. An earlier
+version of this table listed codes 3–5 as reserved with different meanings; the
+implementation and `docs/quickstart.md` were always the accurate pair.
 
 ## Environment variables
 
