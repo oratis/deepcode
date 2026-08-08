@@ -5,6 +5,8 @@ import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
 import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
+import type { LedgerSink } from './ledger/index.js';
+import { buildToolCallRecord, ledgerKindForTool } from './ledger/record-tool-call.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -72,6 +74,8 @@ export interface RunAgentOptions {
   permissions?: PermissionRules;
   /** Path-axis rules; RuntimeHost loads this so clients need not remember to. */
   contract?: FileContract;
+  /** Audit sink for completed mutations. RuntimeHost supplies one by default. */
+  ledger?: LedgerSink;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
   /**
@@ -718,16 +722,20 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     // concurrently; mutating tools call it one at a time (see partition below).
     const execOne = async ({ toolUse, handler }: Ready): Promise<void> => {
       const isFileMutation = toolUse.name === 'Edit' || toolUse.name === 'Write';
+      // Remembered so a ledger record can point at the checkpoint taken for
+      // this specific call rather than at "whatever was last captured".
+      let preSeq: number | undefined;
 
       if (opts.enableSnapshots !== false && opts.session && isFileMutation) {
         const filePath = (toolUse.input as { file_path?: string }).file_path;
         if (filePath) {
+          preSeq = ++snapshotSeq;
           await opts.session.manager.snapshot({
             sessionId: opts.session.id,
             cwd: opts.cwd,
             filePath,
             reason: `pre-${toolUse.name}`,
-            seq: ++snapshotSeq,
+            seq: preSeq,
             turnId: opts.session.turnId,
           });
         }
@@ -737,11 +745,12 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       // a git working-tree checkpoint instead (no-op outside a git repo). This
       // lets `/rewind <seq> code` revert what the command changed.
       if (opts.enableSnapshots !== false && opts.session && toolUse.name === 'Bash') {
+        preSeq = ++snapshotSeq;
         await opts.session.manager.gitCheckpoint({
           sessionId: opts.session.id,
           cwd: opts.cwd,
           reason: 'pre-Bash',
-          seq: ++snapshotSeq,
+          seq: preSeq,
           turnId: opts.session.turnId,
         });
       }
@@ -780,6 +789,27 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             turnId: opts.session.turnId,
           });
         }
+      }
+
+      // One write point for the whole loop. Per-tool writes are exactly the
+      // shape AGENTS.md rules out — a new mutating tool would silently go
+      // unrecorded if each site had to remember.
+      if (opts.ledger && !tr.isError) {
+        const kind = ledgerKindForTool(toolUse.name);
+        const record =
+          kind &&
+          buildToolCallRecord({
+            tool: toolUse.name,
+            input: toolUse.input,
+            cwd: opts.cwd,
+            intent: opts.userMessage,
+            threadId: opts.session?.id,
+            turnId: opts.session?.turnId,
+            snapshotSeq: preSeq,
+          });
+        // Never let bookkeeping fail a completed edit; FileLedger already
+        // swallows its own I/O errors, this covers a host-supplied sink.
+        if (kind && record) await opts.ledger.append(kind, record).catch(() => undefined);
       }
 
       opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result: tr });

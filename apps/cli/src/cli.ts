@@ -14,6 +14,7 @@ import { runOnboarding } from './onboarding.js';
 import { helpText, parseArgs } from './parse-args.js';
 import { startRepl } from './repl.js';
 import { runContractCommand } from './contract-cmd.js';
+import { runLedgerCommand } from './ledger-cmd.js';
 import { runCronCommand, runSchedulerRun } from './scheduler.js';
 import { runTrustCommand } from './trust-cmd.js';
 import { TrustStore } from './trust.js';
@@ -116,6 +117,14 @@ async function main(): Promise<number> {
       cwd: process.cwd(),
       output: process.stdout,
       errOutput: process.stderr,
+    });
+  }
+  if (args.positional[0] === 'ledger') {
+    return runLedgerCommand(args.positional.slice(1), {
+      cwd: process.cwd(),
+      output: process.stdout,
+      errOutput: process.stderr,
+      json: args.json,
     });
   }
   if (args.positional[0] === 'trust') {
