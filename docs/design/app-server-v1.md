@@ -33,21 +33,22 @@ by expecting partial deltas to replay.
 
 ## Methods
 
-| Method               | Required parameters             | Result                                             |
-| -------------------- | ------------------------------- | -------------------------------------------------- |
-| `initialize`         | none                            | version and capabilities                           |
-| `thread/start`       | `cwd`                           | new thread snapshot                                |
-| `thread/read`        | `threadId`                      | thread snapshot or null                            |
-| `thread/resume`      | `threadId`                      | resumable snapshot                                 |
-| `turn/start`         | `threadId`, object `input`      | in-progress turn snapshot                          |
-| `turn/interrupt`     | `threadId`, `turnId`            | whether interruption won the state race            |
-| `approval/respond`   | thread, turn, request, decision | whether the pending request accepted the response  |
-| `user-input/respond` | thread, turn, request, answer   | whether the pending request accepted the response  |
-| `config/diagnostics` | workspace cwd                   | value-free layers, provenance, trust gates, issues |
-| `diagnostics/export` | workspace cwd                   | redacted local diagnostic bundle metadata          |
-| `workspace/diff`     | `threadId`                      | bounded structured workspace diff                  |
-| `review/apply`       | `threadId`, `findingIds`        | permission-gated review action turn                |
-| `review/revert`      | `threadId`, `actionId`          | conflict-safe restore action turn                  |
+| Method                 | Required parameters             | Result                                                              |
+| ---------------------- | ------------------------------- | ------------------------------------------------------------------- |
+| `initialize`           | none                            | version and capabilities                                            |
+| `thread/start`         | `cwd`                           | new thread snapshot                                                 |
+| `thread/read`          | `threadId`                      | thread snapshot or null                                             |
+| `thread/resume`        | `threadId`                      | resumable snapshot                                                  |
+| `turn/start`           | `threadId`, object `input`      | in-progress turn snapshot                                           |
+| `turn/interrupt`       | `threadId`, `turnId`            | whether interruption won the state race                             |
+| `approval/respond`     | thread, turn, request, decision | whether the pending request accepted the response                   |
+| `user-input/respond`   | thread, turn, request, answer   | whether the pending request accepted the response                   |
+| `runtime/capabilities` | workspace cwd                   | write scope, always-confirmed actions, sandbox and contract posture |
+| `config/diagnostics`   | workspace cwd                   | value-free layers, provenance, trust gates, issues                  |
+| `diagnostics/export`   | workspace cwd                   | redacted local diagnostic bundle metadata                           |
+| `workspace/diff`       | `threadId`                      | bounded structured workspace diff                                   |
+| `review/apply`         | `threadId`, `findingIds`        | permission-gated review action turn                                 |
+| `review/revert`        | `threadId`, `actionId`          | conflict-safe restore action turn                                   |
 
 `turn/start` returns before model work finishes. The server emits transient deltas while the turn
 runs, then persists new provider-history messages as completed items before emitting exactly one
@@ -134,3 +135,50 @@ closes stdin first so the server can interrupt and persist active turns before a
 
 - thread listing, archive, fork, and search;
 - multi-client subscriptions or active-turn attachment;
+
+## `runtime/capabilities` vs `initialize`
+
+Both return something called capabilities, and the distinction is load-bearing:
+
+- `initialize` answers **which protocol methods work** — `threadResume`,
+  `workspaceDiff`, `reviewActions`. Flags about this server's feature set.
+- `runtime/capabilities` answers **what the runtime is allowed to do to the
+  machine** — where it may write, which actions always stop for a human, whether
+  the sandbox is actually in effect, whether a file contract is loaded.
+
+A client that wants to warn "this runtime can write anywhere" needs the second,
+and no amount of feature flags substitutes for it.
+
+Keeping them apart is also what stops the next field from landing in the wrong
+one. If a field describes the server's _implementation_, it belongs in
+`initialize`; if it describes the _authority_ the runtime holds, it belongs here.
+
+```json
+{
+  "writeScope": ["/work/repo"],
+  "confirmationRequired": ["ledger.rollback", "plugin.install", "contract.change", "trust.grant"],
+  "sandbox": { "mode": "workspace-write", "effective": true },
+  "permissions": {
+    "mode": "default",
+    "fileContract": "loaded",
+    "ruleCounts": { "allow": 2, "ask": 0, "deny": 1 }
+  },
+  "ledger": { "enabled": true, "path": "~/.deepcode/projects/-work-repo/ledger/changes.jsonl" },
+  "modules": { "hooks": "enabled", "plugins": "disabled" }
+}
+```
+
+Two deliberate choices in that payload:
+
+- **`writeScope` reports `["<everything: sandbox disabled>"]`** under
+  `danger-full-access`, not `[]`. An empty array reads as "writes nowhere",
+  which is the exact opposite of the truth.
+- **Permission rules are reported as counts, not contents.** The rules can hold
+  user paths; a count answers "is anything configured" without handing them to
+  every client that asks.
+
+The CLI and the app-server both build this through
+`buildRuntimeCapabilities` in `@deepcode/core`, and a test in
+`apps/server/src/capabilities.test.ts` asserts they agree field-for-field. VS
+Code and the LSP are thin protocol clients, so they receive the server's answer
+verbatim.

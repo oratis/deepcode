@@ -7,6 +7,7 @@ import {
   reviewRevertPrompt,
   type CompletedItemType,
   type ConfigDiagnosticsResult,
+  type RuntimeCapabilitiesResult,
   type DiagnosticExportResult,
   type ProtocolEvent,
   type ProtocolRequest,
@@ -66,6 +67,7 @@ export interface AppServerOptions {
   onEvent?: (event: ProtocolEvent) => void;
   onTrace?: (record: AppServerTraceRecord) => void;
   configDiagnostics?: (cwd: string) => Promise<ConfigDiagnosticsResult>;
+  runtimeCapabilities?: (cwd: string) => Promise<RuntimeCapabilitiesResult>;
   diagnosticExport?: (cwd: string) => Promise<DiagnosticExportResult>;
   workspaceDiff?: (cwd: string) => Promise<WorkspaceDiffResult>;
 }
@@ -125,6 +127,7 @@ export class AppServer {
       newTraceId: this.newTraceId,
       onEvent: options.onEvent,
       configDiagnostics: options.configDiagnostics !== undefined,
+      runtimeCapabilities: options.runtimeCapabilities !== undefined,
       diagnosticExport: options.diagnosticExport !== undefined,
       workspaceDiff: options.workspaceDiff !== undefined,
       reviewActions: true,
@@ -198,6 +201,11 @@ export class AppServer {
     switch (request.method) {
       case 'initialize':
         return this.lifecycle.initialize();
+      case 'runtime/capabilities':
+        if (!this.options.runtimeCapabilities) {
+          throw new RequestValidationError('Runtime capabilities are not available');
+        }
+        return this.options.runtimeCapabilities(requiredString(request.params, 'cwd'));
       case 'config/diagnostics':
         if (!this.options.configDiagnostics) {
           throw new RequestValidationError('Configuration diagnostics are not available');

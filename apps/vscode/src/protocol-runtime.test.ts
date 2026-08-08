@@ -44,6 +44,7 @@ class FakeClient {
         reviewActions: true,
         reasoningDeltas: true,
         threadManagement: true,
+        runtimeCapabilities: true,
         configDiagnostics: true,
         diagnosticExport: true,
         workspaceDiff: true,

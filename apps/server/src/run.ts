@@ -4,6 +4,7 @@ import type { Readable, Writable } from 'node:stream';
 import type { ProtocolNotification } from '@deepcode/protocol';
 import { diagnoseSettings, DirectoryTrustStore } from '@deepcode/core/config';
 
+import { capabilitiesFor } from './capabilities.js';
 import { createDefaultTurnExecutor } from './default-runtime.js';
 import { AppServer, type TurnExecutor } from './server.js';
 import { CanonicalThreadStore } from './store.js';
@@ -41,6 +42,7 @@ export async function runAppServer(options: RunAppServerOptions): Promise<void> 
       join(options.home, 'sessions'),
     ),
     configDiagnostics: diagnosticsFor,
+    runtimeCapabilities: (cwd) => capabilitiesFor(cwd, options.home),
     diagnosticExport: async (cwd) => {
       await logger.flush();
       return exportDiagnosticBundle({
