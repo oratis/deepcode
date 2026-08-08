@@ -69,7 +69,9 @@ git push origin v0.1.3
 
 The `release.yml` workflow fires on any `v*` tag push. Its validation and publication graph is:
 
-1. **validate** — typecheck, lint, format, tests, docs, `pnpm release:check`, and the Playwright
+1. **validate** — installs the same sandbox tooling `ci.yml` does (bubblewrap + slirp4netns; the
+   deny-all-net fallback test spawns `bwrap`), then typecheck, lint, format, tests, docs,
+   `pnpm release:check`, and the Playwright
    desktop protocol journey. The release gate starts the real bundled app-server twice and verifies
    protocol capabilities, thread persistence, thin-client boundaries, bundle budgets, and timing.
 2. **publish-cli** — bumps `apps/cli/package.json` to the tag version,
