@@ -29,10 +29,30 @@ jobs:
           node-version: '22'
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
+
+      # The release gate must validate in the same environment as CI. Without
+      # this, `pnpm test` here runs against a weaker box than ci.yml uses, so a
+      # green CI stops predicting a green release — which is exactly how the
+      # first v0.3.0 tag failed: the deny-all-net fallback test spawns `bwrap`,
+      # and this runner had no bubblewrap installed.
+      # Kept byte-for-byte in step with the "Install sandbox tools" step in
+      # ci.yml; change both together.
+      - name: Install sandbox tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bubblewrap slirp4netns curl
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
+          sudo sysctl -w net.ipv4.ip_unprivileged_port_start=53 || true
+
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm format:check
-      - run: pnpm test
+      - name: Test
+        # Matches ci.yml: opts in the selective-allowlist integration test, which
+        # self-skips when bwrap/slirp4netns are absent.
+        env:
+          DC_SANDBOX_NET_TEST: '1'
+        run: pnpm test
       - run: pnpm docs:check
       - run: pnpm release:check
 
