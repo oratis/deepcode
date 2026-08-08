@@ -50,6 +50,8 @@ import {
   type AgentEvent,
   type Effort,
   isPermissiveMode,
+  tightenPermissions,
+  type PermissionRules,
   type McpClientHandle,
   type Mode,
   type UnattendedApprovalPolicy,
@@ -94,6 +96,17 @@ export interface HeadlessOpts {
    * half its tool calls refused has usually produced a misleading result.
    */
   onApprovalRequired?: UnattendedApprovalPolicy;
+  /**
+   * Extra permission rules for this run, applied so they can only tighten the
+   * ones loaded from settings. Used by the scheduler to give a job its own
+   * bounded posture.
+   */
+  permissionsOverride?: PermissionRules;
+  /**
+   * Suppress the inherited-permissive-mode warning because the caller already
+   * resolved the mode deliberately (and says so in its own log).
+   */
+  modeResolvedByCaller?: boolean;
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools. Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
@@ -149,7 +162,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   // that reads the same settings file — including scheduled jobs firing at 3am.
   // Passing `--mode` explicitly is a deliberate choice for this run, so only the
   // inherited case is worth a warning.
-  if (!opts.mode && isPermissiveMode(mode)) {
+  if (!opts.mode && !opts.modeResolvedByCaller && isPermissiveMode(mode)) {
     errOutput.write(
       `Warning: this unattended run inherits permissions.defaultMode="${mode}" from settings, ` +
         `so tool calls execute without approval. Pass --mode default to override.\n`,
@@ -158,6 +171,10 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   const effort = opts.effort ?? settings.effortLevel ?? 'medium';
   const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
   const maxTurns = opts.maxTurns ?? DEFAULT_HEADLESS_MAX_TURNS;
+
+  // Only ever tightens — a job profile can narrow what is auto-approved but
+  // never widen it (see tightenPermissions).
+  const effectivePermissions = tightenPermissions(settings.permissions, opts.permissionsOverride);
 
   const provider = new DeepSeekProvider({
     apiKey: creds.apiKey ?? '',
@@ -320,7 +337,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       tools,
       cwd,
       mode,
-      permissions: settings.permissions,
+      permissions: effectivePermissions,
       hooks,
       pluginDirs: pluginContrib.dirs,
       autoMode: settings.autoMode,

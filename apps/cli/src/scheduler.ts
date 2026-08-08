@@ -15,7 +15,11 @@ import {
   listCronJobs,
   loadCronStore,
   saveCronStore,
+  describeClamp,
+  loadSettings,
+  resolveTriggerMode,
   resolveUnattendedApproval,
+  tightenSandbox,
   uninstallPlist,
   type CronJob,
 } from '@deepcode/core';
@@ -73,8 +77,20 @@ async function defaultRunJob(job: CronJob, home: string): Promise<void> {
   const log = createWriteStream(logPath, { flags: 'a' });
   try {
     const onApprovalRequired = resolveUnattendedApproval(job);
+    // Resolve the posture here rather than letting headless inherit it, so the
+    // job log states what it ran as instead of leaving it implied.
+    const { merged } = await loadSettings({ cwd: job.cwd, home });
+    const resolvedMode = resolveTriggerMode(
+      job.profile,
+      merged.permissions?.defaultMode ?? 'default',
+    );
+    const sandbox = tightenSandbox(merged.sandbox?.mode, job.profile?.sandbox);
+
     log.write(`\n===== ${new Date().toISOString()} =====\n`);
-    log.write(`[job] onApprovalRequired=${onApprovalRequired}\n`);
+    log.write(`[job] mode=${resolvedMode.mode} onApprovalRequired=${onApprovalRequired}\n`);
+    const clamp = describeClamp(resolvedMode);
+    if (clamp) log.write(`[job] ${clamp}\n`);
+
     const code = await runHeadless({
       output: log,
       errOutput: log,
@@ -83,6 +99,10 @@ async function defaultRunJob(job: CronJob, home: string): Promise<void> {
       prompt: job.prompt,
       outputFormat: 'text',
       onApprovalRequired,
+      mode: resolvedMode.mode,
+      modeResolvedByCaller: true,
+      ...(sandbox ? { sandbox } : {}),
+      ...(job.profile?.permissions ? { permissionsOverride: job.profile.permissions } : {}),
     });
     // Exit 6 means the run stopped because a call needed an approver. Surface it
     // as a failure so the scheduler log does not read like a clean run.

@@ -10,6 +10,7 @@ import {
   removeCronJob,
   resolveUnattendedApproval,
   validateCronExpr,
+  type TriggerProfile,
   type UnattendedApprovalPolicy,
 } from '../cron/index.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
@@ -18,6 +19,8 @@ interface CreateInput {
   schedule?: string;
   prompt?: string;
   onApprovalRequired?: UnattendedApprovalPolicy;
+  mode?: string;
+  sandbox?: string;
 }
 interface DeleteInput {
   id?: string;
@@ -43,6 +46,17 @@ export const CronCreateTool: ToolHandler = {
           description:
             'What the unattended run does when a tool call needs approval and nobody is there: "deny" (default) refuses that call and continues; "abort" stops the run. Prefer "abort" when a partially-executed job is worse than no job.',
         },
+        mode: {
+          type: 'string',
+          enum: ['default', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions'],
+          description:
+            'Permission mode for this job. Without it the job uses the ambient settings, except that a permissive defaultMode (bypassPermissions/acceptEdits) is clamped to "default" — inheriting "never ask me" into a run nobody is watching is not the same decision. Set this explicitly to opt back in.',
+        },
+        sandbox: {
+          type: 'string',
+          enum: ['read-only', 'workspace-write', 'danger-full-access'],
+          description: 'Sandbox for this job. Only applied when stricter than the ambient setting.',
+        },
       },
       required: ['schedule', 'prompt'],
     },
@@ -58,16 +72,22 @@ export const CronCreateTool: ToolHandler = {
       return { content: 'Error: onApprovalRequired must be "deny" or "abort".', isError: true };
     }
     try {
+      const profile: TriggerProfile = {
+        ...(input.mode ? { mode: input.mode as TriggerProfile['mode'] } : {}),
+        ...(input.sandbox ? { sandbox: input.sandbox as TriggerProfile['sandbox'] } : {}),
+      };
       const job = await addCronJob({
         schedule: input.schedule,
         prompt: input.prompt,
         cwd: ctx.cwd,
         ...(input.onApprovalRequired ? { onApprovalRequired: input.onApprovalRequired } : {}),
+        ...(Object.keys(profile).length > 0 ? { profile } : {}),
       });
       return {
         content:
           `Scheduled "${job.id}" — \`${job.schedule}\` in ${job.cwd}.\n` +
           `Unattended approval policy: ${resolveUnattendedApproval(job)}.\n` +
+          `Permission mode: ${job.profile?.mode ?? 'inherited from settings (permissive modes clamped)'}.\n` +
           `It fires once the scheduler is installed (deepcode cron install).`,
         data: {
           id: job.id,
