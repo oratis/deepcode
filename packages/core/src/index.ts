@@ -562,3 +562,11 @@ export {
   type BuildRuntimeCapabilitiesInput,
   type RuntimeCapabilities,
 } from './runtime/capabilities.js';
+
+// Combo — distil a finished thread into a SKILL.md draft (plan §2.D)
+export {
+  distillSkill,
+  sanitizeSkillName,
+  type DistilledSkill,
+  type DistillOpts,
+} from './skills/index.js';
