@@ -515,3 +515,29 @@ export {
   type OutputStyleFrontmatter,
   type LoadOutputStylesOpts,
 } from './output-styles/index.js';
+
+// Change ledger — append-only audit of workspace mutations (plan §2.B)
+export {
+  FileLedger,
+  DEFAULT_RETENTION,
+  LEDGER_KINDS,
+  findLedgerRecord,
+  ledgerPath,
+  newLedgerId,
+  projectLedgerDir,
+  readLedger,
+  readProjectLedger,
+  renderLedgerMarkdown,
+  type LedgerKind,
+  type LedgerRecord,
+  type LedgerRetention,
+  type LedgerSink,
+  type NewLedgerRecord,
+  type RollbackHint,
+} from './ledger/index.js';
+export {
+  buildToolCallRecord,
+  isRecordableTool,
+  ledgerKindForTool,
+  type ToolCallRecordInput,
+} from './ledger/record-tool-call.js';

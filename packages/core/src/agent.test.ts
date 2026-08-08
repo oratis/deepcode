@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAgent as runAgentCore, type RunAgentOptions } from './agent.js';
+import type { LedgerKind, LedgerSink, NewLedgerRecord } from './ledger/index.js';
 import { HookDispatcher } from './hooks/index.js';
 import { SessionManager } from './sessions/index.js';
 import { ToolRegistry } from './tools/registry.js';
@@ -936,6 +937,160 @@ describe('runAgent', () => {
         },
       });
       expect(asked).toEqual(['Write']);
+      expect(result.stopReason).toBe('end_turn');
+    });
+  });
+  // ── change ledger ────────────────────────────────────────────────────
+  describe('change ledger', () => {
+    function recordingSink(): { sink: LedgerSink; entries: Array<[LedgerKind, NewLedgerRecord]> } {
+      const entries: Array<[LedgerKind, NewLedgerRecord]> = [];
+      return {
+        entries,
+        sink: {
+          async append(kind, record) {
+            entries.push([kind, record]);
+            return null;
+          },
+        },
+      };
+    }
+
+    const writeTool: ToolHandler = {
+      name: 'Write',
+      definition: { name: 'Write', description: 'w', inputSchema: { type: 'object' } },
+      async execute() {
+        return { content: 'ok' };
+      },
+    };
+
+    const failingWrite: ToolHandler = {
+      name: 'Write',
+      definition: { name: 'Write', description: 'w', inputSchema: { type: 'object' } },
+      async execute() {
+        return { content: 'boom', isError: true };
+      },
+    };
+
+    function writeCall(): ToolUseBlock {
+      return {
+        type: 'tool_use',
+        id: 'w-1',
+        name: 'Write',
+        input: { file_path: 'out.txt', content: 'x' },
+      };
+    }
+
+    it('records a completed write, with the turn request as intent', async () => {
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([toolUse('writing', writeCall()), endTurn('done')]),
+        tools: new ToolRegistry([writeTool]),
+        systemPrompt: '',
+        userMessage: 'fix the auth bug',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: ledger.sink,
+      });
+      expect(ledger.entries).toHaveLength(1);
+      const [kind, record] = ledger.entries[0]!;
+      expect(kind).toBe('changes');
+      expect(record.tool).toBe('Write');
+      expect(record.paths).toEqual(['out.txt']);
+      expect(record.intent).toBe('fix the auth bug');
+    });
+
+    it('does not record a failed tool call', async () => {
+      // A ledger of things that did not happen is worse than no ledger.
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([toolUse('writing', writeCall()), endTurn('done')]),
+        tools: new ToolRegistry([failingWrite]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: ledger.sink,
+      });
+      expect(ledger.entries).toEqual([]);
+    });
+
+    it('does not record a blocked tool call', async () => {
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([toolUse('writing', writeCall()), endTurn('done')]),
+        tools: new ToolRegistry([writeTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        unattended: true,
+        ledger: ledger.sink,
+      });
+      expect(ledger.entries).toEqual([]);
+    });
+
+    it('does not record reads', async () => {
+      await fs.writeFile(join(cwd, 'a.txt'), 'hi');
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([
+          toolUse('reading', {
+            type: 'tool_use',
+            id: 'r-1',
+            name: 'Read',
+            input: { file_path: join(cwd, 'a.txt') },
+          }),
+          endTurn('done'),
+        ]),
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: ledger.sink,
+      });
+      expect(ledger.entries).toEqual([]);
+    });
+
+    it('a sink that throws cannot fail the tool call', async () => {
+      // Bookkeeping must never cost a completed edit.
+      let executed = 0;
+      const exploding: LedgerSink = {
+        async append() {
+          throw new Error('disk full');
+        },
+      };
+      const counting: ToolHandler = {
+        name: 'Write',
+        definition: { name: 'Write', description: 'w', inputSchema: { type: 'object' } },
+        async execute() {
+          executed++;
+          return { content: 'ok' };
+        },
+      };
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('writing', writeCall()), endTurn('done')]),
+        tools: new ToolRegistry([counting]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: exploding,
+      });
+      expect(executed).toBe(1);
+      expect(result.stopReason).toBe('end_turn');
+    });
+
+    it('records nothing when no sink is supplied', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('writing', writeCall()), endTurn('done')]),
+        tools: new ToolRegistry([writeTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
       expect(result.stopReason).toBe('end_turn');
     });
   });

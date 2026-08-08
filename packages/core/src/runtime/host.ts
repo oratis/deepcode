@@ -12,6 +12,7 @@ import type {
 } from '../config/types.js';
 import { fileContractWarnings } from '../config/contract-dispatch.js';
 import { loadFileContract, type LoadedFileContract } from '../config/file-contract-loader.js';
+import { FileLedger, type LedgerSink } from '../ledger/index.js';
 import { resolveSandboxMode } from '../sandbox/policy.js';
 import type { HookDispatcher } from '../hooks/index.js';
 import type { Provider } from '../providers/types.js';
@@ -47,6 +48,10 @@ export interface RuntimeHostOptions {
    * read it from; every real host wants the default.
    */
   disableFileContract?: boolean;
+  /** Substitute audit sink; the host builds a FileLedger when absent. */
+  ledger?: LedgerSink;
+  /** Turn off change recording entirely. */
+  disableLedger?: boolean;
 }
 
 type HostBoundOption =
@@ -60,7 +65,8 @@ type HostBoundOption =
   | 'sandboxConfig'
   | 'sandboxDefaultMode'
   | 'pluginDirs'
-  | 'contract';
+  | 'contract'
+  | 'ledger';
 
 export type RuntimeTurnOptions = Omit<RunAgentOptions, HostBoundOption | 'cwd'> & {
   cwd?: string;
@@ -79,6 +85,7 @@ export class RuntimeHost {
   readonly permissions: PermissionRules;
   /** Populated on first run; per-cwd because a turn may name its own. */
   private readonly contracts = new Map<string, LoadedFileContract>();
+  private readonly ledgers = new Map<string, LedgerSink>();
 
   constructor(private readonly options: RuntimeHostOptions) {
     const policy = resolveRuntimePolicy(options);
@@ -102,6 +109,22 @@ export class RuntimeHost {
     const loaded = await loadFileContract({ cwd: dir, home: this.options.home });
     this.contracts.set(dir, loaded);
     return loaded;
+  }
+
+  /**
+   * The audit sink for a workspace.
+   *
+   * Built here for the same reason the contract is: a client that forgets loses
+   * the audit trail silently, and nobody notices until they need it.
+   */
+  ledgerFor(cwd: string): LedgerSink | undefined {
+    if (this.options.disableLedger) return undefined;
+    if (this.options.ledger) return this.options.ledger;
+    const cached = this.ledgers.get(cwd);
+    if (cached) return cached;
+    const ledger = new FileLedger({ cwd, home: this.options.home });
+    this.ledgers.set(cwd, ledger);
+    return ledger;
   }
 
   /**
@@ -142,6 +165,7 @@ export class RuntimeHost {
       mode: modeOverride ?? this.mode,
       permissions: this.permissions,
       contract,
+      ledger: this.ledgerFor(cwd),
       hooks: this.options.hooks,
       approval: approval ?? this.options.approval,
       autoMode: this.options.autoMode,
