@@ -4,6 +4,7 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §3.15.4 / §0.1 (CronCreate family)
 
 import { promises as fs } from 'node:fs';
+import type { TriggerProfile } from './profile.js';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -34,6 +35,12 @@ export interface CronJob {
    * `resolveUnattendedApproval` instead of touching the field directly.
    */
   onApprovalRequired?: UnattendedApprovalPolicy;
+  /**
+   * Permission posture for this job, independent of the interactive settings it
+   * would otherwise inherit. Absent means "use the ambient settings, clamped" —
+   * see `resolveTriggerMode`.
+   */
+  profile?: TriggerProfile;
 }
 
 /** The effective policy for a job, defaulting to the historical `deny`. */
@@ -79,6 +86,7 @@ export async function addCronJob(
     prompt: string;
     cwd: string;
     onApprovalRequired?: UnattendedApprovalPolicy;
+    profile?: TriggerProfile;
   },
   home: string = homedir(),
 ): Promise<CronJob> {
@@ -93,6 +101,7 @@ export async function addCronJob(
     createdAt: new Date().toISOString(),
     enabled: true,
     ...(job.onApprovalRequired ? { onApprovalRequired: job.onApprovalRequired } : {}),
+    ...(job.profile ? { profile: job.profile } : {}),
   };
   store.jobs.push(created);
   await saveCronStore(store, home);
@@ -197,3 +206,12 @@ export function isCronDue(schedule: string, date: Date): boolean {
 export function dueJobs(jobs: CronJob[], now: Date): CronJob[] {
   return jobs.filter((j) => j.enabled && isCronDue(j.schedule, now));
 }
+
+export {
+  describeClamp,
+  resolveTriggerMode,
+  tightenPermissions,
+  tightenSandbox,
+  type ResolvedTriggerMode,
+  type TriggerProfile,
+} from './profile.js';

@@ -73,11 +73,26 @@ cannot be answered. Each job chooses what happens then:
 Pick `abort` when a partially-executed job is worse than no job — a run whose
 first write was refused usually produces a confidently wrong summary otherwise.
 
-One thing to check before relying on a scheduled job: it reads the same
-`settings.json` you use interactively, so `permissions.defaultMode` carries over.
-If you set `bypassPermissions` for your own convenience, every scheduled job
-inherits it and executes without approval. DeepCode prints a warning to the job
-log when that happens; pass `--mode default` to opt a run out.
+### The permission posture of a scheduled job
+
+A job reads the same `settings.json` you use interactively. A permissive
+`permissions.defaultMode` — `bypassPermissions` or `acceptEdits` — chosen for
+REPL convenience is **not** inherited by unattended runs: DeepCode clamps it to
+`default` and says so in the job log.
+
+Those are different decisions. Choosing "never ask me" while you're sitting
+there watching is not the same as choosing it for a run at 3am that nobody sees.
+
+To opt back in, say so per job:
+
+| Field     | Effect                                                                         |
+| --------- | ------------------------------------------------------------------------------ |
+| `mode`    | Permission mode for this job, honoured as written — including a permissive one |
+| `sandbox` | Sandbox for this job; applied only when **stricter** than ambient              |
+
+Any extra permission rules on a job can only tighten: denies and asks are added,
+allows are intersected. A job profile can narrow what runs without approval, and
+can never widen it.
 
 ---
 
