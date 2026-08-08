@@ -16,6 +16,14 @@ absolute, so `Read(.env*)` matches nothing at all.
 > guarantee. Only the **sandbox** bounds Bash. See
 > [security-model.md](security-model.md).
 
+## Getting started
+
+```bash
+deepcode contract init            # write the recommended contract
+deepcode contract show            # what is active, and what it governs
+deepcode contract check .env      # the verdict for one path, all three axes
+```
+
 ## Where it lives
 
 The first file found wins; there is no merging.
@@ -109,6 +117,20 @@ running under the tool rules alone and says so, naming the file and line.
 The parser is strict on purpose: unknown keys, unknown decision values, a rule
 with no `glob`, or a rule that decides nothing are all errors. A silently-ignored
 line here is a permission quietly granted.
+
+## Which tools it governs
+
+`Read`, `Grep`, `Glob`, `Write`, `Edit`, `NotebookEdit`.
+
+**`Bash` is deliberately absent.** Everything else is ungoverned too — a tool
+whose effect cannot be pinned to a single path gets no verdict rather than a
+guessed one.
+
+A contract `deny` cannot be waived, including by `bypassPermissions`. It is a
+standing statement about a path, not a per-call prompt, so the mode that exists
+to skip prompts has no business clearing it — otherwise the contract's strongest
+sentence would also be its easiest to disable. A contract `ask` is an ordinary
+approval and follows the mode and hook chain like any other.
 
 ## Interaction with `settings.json`
 

@@ -145,6 +145,10 @@ export {
   type FileContractRule,
   type FileContractStatus,
   type LoadedFileContract,
+  contractGovernedTools,
+  evaluateContract,
+  fileContractWarnings,
+  mostRestrictive,
 } from './config/index.js';
 
 // Credentials (M2; M3c adds ApiKeyHelperRefresher)

@@ -10,6 +10,8 @@ import {
   type PermissionRequest,
   type PermissionVerdict,
 } from '../config/permissions.js';
+import { evaluateContract, mostRestrictive } from '../config/contract-dispatch.js';
+import type { FileContract } from '../config/file-contract.js';
 import type { AutoModeConfig, PermissionRules } from '../config/types.js';
 import type { Mode } from '../types.js';
 import type { HookDispatcher, HookResult } from '../hooks/index.js';
@@ -20,6 +22,8 @@ export interface DispatchRequest {
   input: Record<string, unknown>;
   mode: Mode;
   rules?: PermissionRules;
+  /** Path-axis rules. Absent means the contract has no opinion on anything. */
+  contract?: FileContract;
   hooks?: HookDispatcher;
   cwd: string;
   /** AutoModeConfig from settings — required when mode === 'auto'. */
@@ -32,7 +36,7 @@ export interface DispatchVerdict {
   /** Final decision after all gates. */
   decision: 'allow' | 'ask' | 'deny' | 'plan-blocked';
   /** Where the decision came from (for UI/logging). */
-  source: 'mode' | 'permission' | 'hook';
+  source: 'mode' | 'permission' | 'hook' | 'contract';
   /** Human-readable explanation. */
   reason: string;
   /** If hook produced JSON output, surfaced here so caller can use additionalContext etc. */
@@ -44,19 +48,48 @@ export interface DispatchVerdict {
 }
 
 /**
- * Evaluate a tool call against mode + permission + PreToolUse hook.
+ * Evaluate a tool call against contract + mode + permission + PreToolUse hook.
  *
  * Decision order (per docs/design/sandbox-plan-worktree.md §5.1):
+ *   0. File contract `deny` (absolute — see below)
  *   1. Mode policy (plan-blocked / deny short-circuit immediately)
- *   2. Permission rules (mode policy can demote/upgrade to ask)
+ *   2. Permission rules, tightened by the contract's path verdict
  *   3. PreToolUse hook chain (can override the prior decision via JSON output)
+ *
+ * A contract `deny` is checked first and cannot be waived, including by
+ * `bypassPermissions`. It is a standing statement about a path ("never read
+ * .env"), not a per-call prompt, so a mode that exists to skip prompts has no
+ * business clearing it — otherwise the contract's strongest sentence would also
+ * be its easiest to disable. Contract `ask` is ordinary and follows mode.
  *
  * Sandbox (M3.5) is enforced separately at the OS layer — not here.
  */
 export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVerdict> {
-  // Step 1: Permission verdict
+  // Step 0: Contract path verdict
+  const contractVerdict = evaluateContract(req.contract, {
+    tool: req.tool,
+    input: req.input,
+    cwd: req.cwd,
+  });
+  if (contractVerdict.verdict === 'deny') {
+    return {
+      decision: 'deny',
+      source: 'contract',
+      reason: contractVerdict.reason
+        ? `denied by file contract (${contractVerdict.rule}): ${contractVerdict.reason}`
+        : `denied by file contract (${contractVerdict.rule})`,
+      permissionVerdict: 'deny',
+    };
+  }
+
+  // Step 1: Permission verdict, tightened by the contract. Most-restrictive-wins
+  // means an absent contract yields `no-match` and collapses to the tool verdict
+  // exactly, so adding this step changed nothing for anyone without a contract.
   const permReq: PermissionRequest = { tool: req.tool, input: req.input };
-  const permVerdict = evaluatePermission(permReq, req.rules);
+  const permVerdict = mostRestrictive(
+    evaluatePermission(permReq, req.rules),
+    contractVerdict.verdict,
+  );
 
   // Step 2: Mode policy (incorporates permission verdict)
   const modeReq: ModeRequest = {
@@ -152,11 +185,21 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
     }
   }
 
-  // Otherwise use mode verdict
+  // Otherwise use mode verdict. When the contract is what forced an approval,
+  // attribute it — "requires approval" alone leaves the user hunting for which
+  // of two rule sets asked, and its `reason` is the whole point of writing one.
+  const contractDroveAsk = modeVerdict === 'ask' && contractVerdict.verdict === 'ask';
   return {
     decision: modeVerdict,
-    source: modeVerdict === 'allow' && permVerdict === 'allow' ? 'permission' : 'mode',
-    reason: explain(modeVerdict, permVerdict, req.mode),
+    source: contractDroveAsk
+      ? 'contract'
+      : modeVerdict === 'allow' && permVerdict === 'allow'
+        ? 'permission'
+        : 'mode',
+    reason: contractDroveAsk
+      ? `file contract (${contractVerdict.rule}) requires approval` +
+        (contractVerdict.reason ? `: ${contractVerdict.reason}` : '')
+      : explain(modeVerdict, permVerdict, req.mode),
     hook: hookResult,
     modeVerdict,
     permissionVerdict: permVerdict,

@@ -3,6 +3,7 @@
 
 import { compact, shouldCompact } from './compaction/index.js';
 import type { PermissionRules } from './config/types.js';
+import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
@@ -69,6 +70,8 @@ export interface RunAgentOptions {
   /** Required dispatch mode. Every tool call goes through the central gate. */
   mode: Mode;
   permissions?: PermissionRules;
+  /** Path-axis rules; RuntimeHost loads this so clients need not remember to. */
+  contract?: FileContract;
   hooks?: HookDispatcher;
   approval?: ApprovalCallback;
   /**
@@ -670,6 +673,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         input: toolUse.input,
         mode: runtimePolicy.mode,
         rules: runtimePolicy.permissions,
+        contract: opts.contract,
         hooks: opts.hooks,
         cwd: opts.cwd,
         autoMode: opts.autoMode,
