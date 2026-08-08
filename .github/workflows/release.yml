@@ -182,6 +182,15 @@ jobs:
           node -e 'process.exit(require("./package.json").version === process.argv[1] ? 0 : 1)' "${{ needs.validate.outputs.version }}"
         working-directory: apps/vscode
 
+      # The VSIX bundles the app-server, which bundles core — and core's package
+      # exports point at dist/. Without a workspace build first, esbuild cannot
+      # resolve @deepcode/core/{skills,tools,dist/providers/deepseek.js} and the
+      # package step dies. `pnpm release:check` has always built first; this job
+      # was the one path that did not, and publish-cli already gets it right.
+      # Also required because the step above stamps core's VERSION into source,
+      # which only reaches the bundle once compiled.
+      - run: pnpm build
+
       - name: Package VSIX
         run: |
           mkdir -p release-artifacts
