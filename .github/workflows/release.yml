@@ -114,7 +114,7 @@ jobs:
   # Publish CLI to npm
   # ----------------------------------------------------------------------
   publish-cli:
-    name: Publish @deepcode/cli to npm
+    name: Publish @oratis/deepcode to npm
     # Avoid a partial release: do not publish npm until both installable
     # desktop/editor artifacts have built successfully.
     needs: [validate, build-vscode, build-mac]

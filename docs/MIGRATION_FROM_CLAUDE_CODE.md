@@ -25,7 +25,7 @@ The copy below is only needed if you want DeepCode to own its own copies.
 
 ```bash
 # 1. Install DeepCode CLI
-npm install -g @deepcode/cli
+npm install -g @oratis/deepcode
 
 # 2. Set your DeepSeek key
 mkdir -p ~/.deepcode

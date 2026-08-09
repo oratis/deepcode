@@ -24,7 +24,7 @@ DeepCode 让 DeepSeek 可以在本地代码库中执行读取、编辑、命令�
 
 ```bash
 # 1. 装 CLI
-npm i -g @deepcode/cli
+npm i -g @oratis/deepcode
 
 # 2. 设 DeepSeek key（首次启动会引导）
 deepcode
@@ -83,7 +83,7 @@ packages/
   core/          # @deepcode/core — agent loop, providers, tools, MCP, sandbox, hooks (UI-agnostic)
   shared-ui/     # @deepcode/shared-ui — types shared between CLI + Mac client + VS Code
 apps/
-  cli/           # @deepcode/cli — Node.js CLI (npm publishable)
+  cli/           # @oratis/deepcode — Node.js CLI (npm publishable)
   desktop/       # @deepcode/desktop — Tauri 2 + React Mac client
   vscode/        # deepcode — VS Code extension (app-server protocol client)
   lsp/           # @deepcode/lsp — LSP bridge for Neovim/Emacs/Sublime (v1.1)

@@ -37,7 +37,7 @@ if [[ -z "$BIN" ]]; then
     BIN="$ROOT/apps/cli/dist/index.js"
   else
     echo "ERROR: could not find a deepcode binary."
-    echo "Run 'pnpm --filter deepcode-cli build' or set DEEPCODE_BIN=/path/to/deepcode."
+    echo "Run 'pnpm --filter @oratis/deepcode build' or set DEEPCODE_BIN=/path/to/deepcode."
     exit 1
   fi
 fi
