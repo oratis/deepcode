@@ -23,6 +23,7 @@ jobs:
       is_mandatory: ${{ steps.version.outputs.is_mandatory }}
       has_apple: ${{ steps.credentials.outputs.has_apple }}
       has_npm: ${{ steps.credentials.outputs.has_npm }}
+      has_updater: ${{ steps.credentials.outputs.has_updater }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -69,6 +70,15 @@ jobs:
           else
             echo "has_apple=false" >> "$GITHUB_OUTPUT"
             echo "::warning::Apple signing secrets absent — skipping the Mac client build. See docs/RELEASING.md."
+          fi
+          # The updater is a third, independent credential set. Without it the
+          # DMG still builds and ships — users just download it by hand, which
+          # is exactly what they do today.
+          if [ -n "${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}" ]; then
+            echo "has_updater=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_updater=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::TAURI_SIGNING_PRIVATE_KEY absent — no update feed; users must download the DMG. See docs/RELEASING.md."
           fi
           if [ -n "${{ secrets.NPM_TOKEN }}" ]; then
             echo "has_npm=true" >> "$GITHUB_OUTPUT"
@@ -309,6 +319,26 @@ jobs:
             ));
           "
 
+      # `tauri build` FAILS outright if createUpdaterArtifacts is true and no
+      # signing key is in the environment, which is why the committed config
+      # leaves it off. Flipping it here — and only when the key exists — keeps a
+      # credential-less release building while a credentialed one produces the
+      # feed.
+      - name: Enable updater artifacts
+        if: needs.validate.outputs.has_updater == 'true'
+        run: |
+          node -e "
+            const fs=require('fs');
+            const p='apps/desktop/src-tauri/tauri.conf.json';
+            const c=JSON.parse(fs.readFileSync(p,'utf8'));
+            c.bundle.createUpdaterArtifacts = true;
+            fs.writeFileSync(p, JSON.stringify(c,null,2)+'\n');
+          "
+          node -e "
+            const c=require('./apps/desktop/src-tauri/tauri.conf.json');
+            if (c.bundle.createUpdaterArtifacts !== true) process.exit(1);
+          "
+
       - name: Import Developer ID certificate
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -338,6 +368,11 @@ jobs:
         env:
           DEEPCODE_TARGET: aarch64-apple-darwin
           DEEPCODE_NOTARY_PROFILE: DEEPCODE_NOTARY
+          # Read by `tauri build` itself. Empty when no key is configured, in
+          # which case the step above left createUpdaterArtifacts off and these
+          # are never consulted.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: bash scripts/sign-and-notarize.sh
 
       - name: Stage release artifacts
@@ -346,11 +381,48 @@ jobs:
           cp apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/DeepCode_${{ needs.validate.outputs.version }}_aarch64.dmg \
              release-artifacts/DeepCode-${{ needs.validate.outputs.version }}-arm64.dmg
 
+      # The updater downloads the .app.tar.gz, not the DMG, and verifies it
+      # against the .sig with the public key committed in tauri.conf.json.
+      # Located by glob rather than a hardcoded path: the exact bundle filename
+      # is Tauri's to choose, and a wrong guess here would produce a manifest
+      # pointing at a file that was never uploaded.
+      - name: Stage updater bundle + manifest
+        if: needs.validate.outputs.has_updater == 'true'
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          bundle_dir=apps/desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/macos
+          bundle=$(find "$bundle_dir" -name '*.app.tar.gz' -maxdepth 1 | head -n 1)
+          if [ -z "$bundle" ]; then
+            echo "::error::createUpdaterArtifacts was enabled but no .app.tar.gz was produced in $bundle_dir"
+            ls -la "$bundle_dir" || true
+            exit 1
+          fi
+          if [ ! -f "$bundle.sig" ]; then
+            echo "::error::$bundle has no .sig — the signing key did not reach tauri build"
+            exit 1
+          fi
+          cp "$bundle" "$bundle.sig" release-artifacts/
+          npx tsx scripts/gen-update-manifest.ts \
+            --version "$VERSION" \
+            --bundle "release-artifacts/$(basename "$bundle")" \
+            --repo "$GITHUB_REPOSITORY" \
+            > release-artifacts/latest.json
+          cat release-artifacts/latest.json
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
           name: mac-release
-          path: release-artifacts/DeepCode-*.dmg
+          # latest.json and the .app.tar.gz(.sig) are only present on a release
+          # that had a signing key; `if-no-files-found: ignore` keeps a
+          # credential-less release from failing here.
+          path: |
+            release-artifacts/DeepCode-*.dmg
+            release-artifacts/*.app.tar.gz
+            release-artifacts/*.app.tar.gz.sig
+            release-artifacts/latest.json
+          if-no-files-found: ignore
 
   # ----------------------------------------------------------------------
   # GitHub Release — runs after Mac build so the DMG can be attached
@@ -420,6 +492,12 @@ jobs:
           if [ "${{ needs.publish-cli.result }}" != "success" ]; then
             printf '\n> **Not published to npm.** `NPM_TOKEN` was not configured when this release was cut; install from source or the VSIX.\n' >> release-notes.md
           fi
+          # Without this the in-app updater silently keeps polling a 404, so say
+          # it on the page rather than leaving users to wonder why the banner
+          # never appears.
+          if [ "${{ needs.validate.outputs.has_updater }}" != "true" ] && [ "${{ needs.build-mac.result }}" = "success" ]; then
+            printf '\n> **No in-app update feed in this release.** The Tauri signing key was not configured when it was cut, so `latest.json` was not produced — download the DMG manually. See `docs/RELEASING.md`.\n' >> release-notes.md
+          fi
           cat release-notes.md
 
       - name: Create GitHub Release
@@ -432,3 +510,6 @@ jobs:
           files: |
             release-artifacts/*.dmg
             release-artifacts/*.vsix
+            release-artifacts/*.app.tar.gz
+            release-artifacts/*.app.tar.gz.sig
+            release-artifacts/latest.json

@@ -60,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   they name a day, not a moment. A trigger decides when, never what may happen:
   every scheduled run still goes through the unattended clamp.
 
+- **The in-app updater has a feed.** `tauri.conf.json` has had
+  `updater.active: true` and a committed public key since the desktop app
+  shipped, pointing at a `latest.json` that nothing ever produced — so the app
+  polled, 404ed, and silently never updated. The release pipeline now enables
+  updater artifacts, signs them, writes the manifest and attaches it, all gated
+  on a signing key being present so a credential-less release still builds. When
+  the key is absent the release body says the feed is missing, because an
+  updater polling a 404 forever looks identical to one that has found no update.
+  Generating the key pair remains yours — see `docs/RELEASING.md`.
+
 ### 🔒 Security
 
 - **A sub-agent did not inherit the file contract.** The `Task` delegation
