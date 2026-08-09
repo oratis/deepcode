@@ -6,9 +6,18 @@ import { promisify } from 'node:util';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { gitSpawnEnv } from '@deepcode/core';
+
 import { collectWorkspaceDiff } from './workspace-diff.js';
 
 const exec = promisify(execFile);
+
+// `git init` inherits GIT_DIR. Run the suite from a git hook — which is exactly
+// what the pre-commit gate does — and this fixture re-initialises the developer's
+// own repository as bare and writes the test identity into its config. The code
+// under test scrubs the environment; this fixture must too.
+const GIT = { env: gitSpawnEnv() };
+
 let root: string | undefined;
 
 afterEach(async () => {
@@ -18,14 +27,14 @@ afterEach(async () => {
 
 async function repository(): Promise<string> {
   root = await mkdtemp(join(tmpdir(), 'deepcode-workspace-diff-'));
-  await exec('git', ['init', '-q'], { cwd: root });
-  await exec('git', ['config', 'user.email', 'deepcode@example.invalid'], { cwd: root });
-  await exec('git', ['config', 'user.name', 'DeepCode Test'], { cwd: root });
+  await exec('git', ['init', '-q'], { cwd: root, ...GIT });
+  await exec('git', ['config', 'user.email', 'deepcode@example.invalid'], { cwd: root, ...GIT });
+  await exec('git', ['config', 'user.name', 'DeepCode Test'], { cwd: root, ...GIT });
   await writeFile(join(root, 'modify me.txt'), 'one\ntwo\nthree\n');
   await writeFile(join(root, 'delete.ts'), 'delete me\n');
   await writeFile(join(root, 'rename-old.ts'), 'rename me\n');
-  await exec('git', ['add', '.'], { cwd: root });
-  await exec('git', ['commit', '-qm', 'initial'], { cwd: root });
+  await exec('git', ['add', '.'], { cwd: root, ...GIT });
+  await exec('git', ['commit', '-qm', 'initial'], { cwd: root, ...GIT });
   return root;
 }
 
@@ -36,7 +45,7 @@ describe('collectWorkspaceDiff', () => {
     await rm(join(cwd, 'delete.ts'));
     await mkdir(join(cwd, 'new dir'));
     await writeFile(join(cwd, 'new dir', 'new.ts'), 'export const value = 1;\n');
-    await exec('git', ['mv', 'rename-old.ts', 'renamed.ts'], { cwd });
+    await exec('git', ['mv', 'rename-old.ts', 'renamed.ts'], { cwd, ...GIT });
 
     const diff = await collectWorkspaceDiff(cwd);
     expect(diff).toMatchObject({ repository: true, base: 'HEAD', truncated: false });

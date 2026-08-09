@@ -4,6 +4,7 @@ import { mkdtemp, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { gitSpawnEnv } from '../util/git-env.js';
 import { createWorktree, removeWorktree } from './index.js';
 
 /**
@@ -26,16 +27,8 @@ async function canonicalMkdtemp(prefix: string): Promise<string> {
  * and they try to operate on the outer repo's index — failing with
  * `.git/index: index file open failed: Not a directory`.
  */
-function cleanGitEnv(): NodeJS.ProcessEnv {
-  const env = { ...process.env };
-  for (const k of Object.keys(env)) {
-    if (k.startsWith('GIT_')) delete env[k];
-  }
-  return env;
-}
-
 function runOrFail(cmd: string, args: string[], cwd: string): void {
-  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: cleanGitEnv() });
+  const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', env: gitSpawnEnv() });
   if (r.status !== 0) {
     throw new Error(`${cmd} ${args.join(' ')} failed (exit ${r.status}): ${r.stderr || r.stdout}`);
   }
@@ -75,7 +68,7 @@ describe('createWorktree / removeWorktree', () => {
     await expect(fs.access(h.path)).rejects.toThrow();
     const branch = spawnSync('git', ['-C', src, 'rev-parse', '--verify', h.branch], {
       encoding: 'utf8',
-      env: cleanGitEnv(),
+      env: gitSpawnEnv(),
     });
     expect(branch.status).toBe(0);
   });
