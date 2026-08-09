@@ -8,8 +8,8 @@
 // So: every `npm i -g <pkg>` in a current document or in CLI source must name
 // the package `apps/cli/package.json` publishes.
 
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(import.meta.dirname, '..');
@@ -17,21 +17,46 @@ const read = (path: string): string => readFileSync(resolve(root, path), 'utf8')
 
 const publishedName = (): string => JSON.parse(read('apps/cli/package.json')).name as string;
 
-// Historical snapshots (MORNING_REPORT, DEVELOPMENT_PLAN, HANDOFF,
-// BEHAVIOR_PARITY, release-artifacts) deliberately keep the names that were
-// true when they were written, so they are not scanned. scripts/check-docs.mjs
-// is what keeps them marked as historical.
-const scanned = [
-  'README.md',
-  'CONTRIBUTING.md',
-  'apps/cli/README.md',
-  'docs/quickstart.md',
-  'docs/RELEASING.md',
-  'docs/MIGRATION_FROM_CLAUDE_CODE.md',
-  'docs/cli-flags.md',
-  'apps/cli/src/cli.ts',
-  'apps/cli/src/commands.ts',
-];
+// Everything is scanned unless it is listed here, rather than nothing being
+// scanned unless it is listed there.
+//
+// An allowlist has to be extended by whoever adds the next document, and the
+// failure when they forget is silent — which is the same shape as the bug this
+// file exists to catch. It is also not hypothetical: the rename this test
+// shipped with had to hand-edit install strings in
+// `packages/core/src/config/claude-compat.test.ts` and
+// `apps/cli/src/parity-commands.test.ts`, neither of which an allowlist built
+// from the documents anybody thought of would have contained.
+//
+// Historical snapshots deliberately keep the names that were true when they
+// were written; `scripts/check-docs.mjs` is what keeps them marked as such, and
+// this is the same list. CHANGELOG entries for shipped releases are history too.
+const historical = new Set([
+  'CHANGELOG.md',
+  'MORNING_REPORT.md',
+  'docs/HANDOFF.md',
+  'docs/BEHAVIOR_PARITY.md',
+  'docs/DEVELOPMENT_PLAN.md',
+]);
+const skipDirs = new Set(['node_modules', 'dist', 'target', 'out', '.git', 'release-artifacts']);
+const scannedExtensions = ['.md', '.ts', '.tsx', '.mjs', '.sh'];
+
+function scannedFiles(dir: string, found: string[] = []): string[] {
+  for (const entry of readdirSync(dir)) {
+    if (skipDirs.has(entry)) continue;
+    const path = join(dir, entry);
+    // lstat, not stat: a symlink into a skipped tree must not be followed back
+    // in, and a broken one must not throw.
+    const stats = lstatSync(path, { throwIfNoEntry: false });
+    if (!stats) continue;
+    if (stats.isDirectory()) scannedFiles(path, found);
+    else if (scannedExtensions.some((ext) => entry.endsWith(ext))) {
+      const rel = relative(root, path);
+      if (!historical.has(rel)) found.push(rel);
+    }
+  }
+  return found;
+}
 
 const installCommand = /npm (?:i|install) -g\s+(@?[\w./-]+?)(?:@latest)?(?=[\s`'"\\]|$)/g;
 
@@ -40,14 +65,24 @@ describe('published package name', () => {
     const expected = publishedName();
     const wrong: string[] = [];
 
-    for (const path of scanned) {
-      const body = read(path);
-      for (const match of body.matchAll(installCommand)) {
+    for (const path of scannedFiles(root)) {
+      for (const match of read(path).matchAll(installCommand)) {
         if (match[1] !== expected) wrong.push(`${path}: ${match[0]}`);
       }
     }
 
     expect(wrong).toEqual([]);
+  });
+
+  it('scans the files that actually carry install strings', () => {
+    // Guards the walker itself: a skip rule that quietly swallowed `docs/` or
+    // `apps/` would leave the check above passing over nothing at all.
+    const scanned = scannedFiles(root);
+    expect(scanned).toContain('README.md');
+    expect(scanned).toContain('docs/quickstart.md');
+    expect(scanned).toContain('apps/cli/src/cli.ts');
+    expect(scanned).toContain('packages/core/src/config/claude-compat.test.ts');
+    expect(scanned).not.toContain('docs/DEVELOPMENT_PLAN.md');
   });
 
   it('is not one of the names that belong to somebody else', () => {

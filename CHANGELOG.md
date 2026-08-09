@@ -100,7 +100,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes. The binary is still `deepcode`.
 - A test now asserts that every `npm i -g …` in a current document or in CLI
   source names the package `apps/cli/package.json` publishes. Both renames so far
-  moved some install strings and left others behind.
+  moved some install strings and left others behind. It scans the whole
+  repository minus an explicit list of historical snapshots, rather than an
+  allowlist of the documents somebody thought of — an allowlist has to be
+  extended by whoever adds the next document, and stays silent when they forget,
+  which is the same shape as the bug it is there to catch.
 - `apps/cli/README.md` — the npm landing page — still described the CLI as an
   "M0 骨架，命令入口存在但不能用" and pointed at milestone numbers for when
   features would arrive. It shipped in the package `files` list.
