@@ -4,6 +4,8 @@ import {
   evaluateContract,
   fileContractWarnings,
   mostRestrictive,
+  withheldNotice,
+  withholdDeniedReads,
 } from './contract-dispatch.js';
 import { parseFileContract, type FileContract } from './file-contract.js';
 import type { PermissionVerdict } from './permissions.js';
@@ -211,5 +213,71 @@ describe('fileContractWarnings', () => {
         sandboxMode: 'danger-full-access',
       }),
     ).toEqual([]);
+  });
+});
+
+// Grep and Glob take a search *root*, so the pre-call gate can only adjudicate
+// where the search starts. These cover what it finds.
+describe('withholdDeniedReads', () => {
+  const id = (p: string) => p;
+
+  it('is the identity when there is no contract', () => {
+    const paths = ['src/a.ts', '.env'];
+    expect(withholdDeniedReads(undefined, CWD, paths, id)).toEqual({
+      kept: paths,
+      withheld: 0,
+    });
+  });
+
+  it('removes paths the contract denies reading', () => {
+    expect(withholdDeniedReads(secrets, CWD, ['src/a.ts', '.env', '.env.local'], id)).toEqual({
+      kept: ['src/a.ts'],
+      withheld: 2,
+    });
+  });
+
+  it('keeps `ask` paths', () => {
+    // There is nobody to prompt mid-search, and a hit is not yet a read. One
+    // Grep turning into two hundred approvals is how a contract gets deleted.
+    const asks = contract('rules:\n  - glob: "**/*.ts"\n    read: ask\n');
+    expect(withholdDeniedReads(asks, CWD, ['src/a.ts'], id)).toEqual({
+      kept: ['src/a.ts'],
+      withheld: 0,
+    });
+  });
+
+  it('keeps paths outside the workspace, matching the pre-call gate', () => {
+    // A per-project contract has no authority over /etc, and inventing one here
+    // would make the filter disagree with the gate it is supposed to complete.
+    expect(withholdDeniedReads(secrets, CWD, ['/etc/hosts', '../sibling/.env'], id)).toEqual({
+      kept: ['/etc/hosts', '../sibling/.env'],
+      withheld: 0,
+    });
+  });
+
+  it('reads the path out of whatever shape the caller has', () => {
+    const rows = [
+      { path: 'src/a.ts', text: 'hit' },
+      { path: '.env', text: 'SECRET=hunter2' },
+    ];
+    const { kept, withheld } = withholdDeniedReads(secrets, CWD, rows, (r) => r.path);
+    expect(kept).toEqual([{ path: 'src/a.ts', text: 'hit' }]);
+    expect(withheld).toBe(1);
+    expect(JSON.stringify(kept)).not.toContain('hunter2');
+  });
+
+  it('keeps a row with no path — it cannot be attributed, so it is not judged', () => {
+    expect(withholdDeniedReads(secrets, CWD, [''], id)).toEqual({ kept: [''], withheld: 0 });
+  });
+});
+
+describe('withheldNotice', () => {
+  it('says nothing when nothing was withheld', () => {
+    expect(withheldNotice(0)).toBeUndefined();
+  });
+
+  it('reports the count and never the paths', () => {
+    expect(withheldNotice(1)).toBe('[1 result withheld by the file contract]');
+    expect(withheldNotice(3)).toBe('[3 results withheld by the file contract]');
   });
 });

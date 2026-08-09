@@ -132,6 +132,41 @@ to skip prompts has no business clearing it — otherwise the contract's stronge
 sentence would also be its easiest to disable. A contract `ask` is an ordinary
 approval and follows the mode and hook chain like any other.
 
+A sub-agent runs under its parent's contract. Delegation is not a way around it.
+
+### Search results
+
+`Grep` and `Glob` take a search **root**, so deciding before the call only
+answers where the search starts. A search rooted at the workspace is allowed and
+then returns whatever it finds — including, before this was closed, the matched
+line out of a file the contract said must never be read.
+
+So their results are filtered afterwards, through the same rules:
+
+| Contract says | Grep                                     | Glob         |
+| ------------- | ---------------------------------------- | ------------ |
+| `read: deny`  | hit removed, along with its matched line | path removed |
+| `read: ask`   | hit kept                                 | path kept    |
+| `read: allow` | hit kept                                 | path kept    |
+
+`ask` is not filtered. It means "stop and ask before reading this file", and
+mid-search there is nobody to ask — a single `Grep` turning into two hundred
+prompts is how a contract gets deleted. A path appearing in a result listing is
+not yet a read, and reading it still goes through the ordinary approval.
+
+When anything is withheld, the output ends with a count:
+
+```
+[2 results withheld by the file contract]
+```
+
+The count, never the paths. Staying silent would be worse than the count leaks:
+an agent that searches and finds nothing goes looking through `Bash`, which the
+contract does not reach at all.
+
+Note that ripgrep already skips hidden and `.gitignore`d files by default, so
+`.env` never reaches this filter — but `secrets/prod.key` does.
+
 ## Interaction with `settings.json`
 
 The two rule sets compose by **most-restrictive-wins**:

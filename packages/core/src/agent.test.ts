@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runAgent as runAgentCore, type RunAgentOptions } from './agent.js';
+import { parseFileContract } from './config/file-contract.js';
 import type { LedgerKind, LedgerSink, NewLedgerRecord } from './ledger/index.js';
 import { HookDispatcher } from './hooks/index.js';
 import { SessionManager } from './sessions/index.js';
@@ -509,6 +510,48 @@ describe('runAgent', () => {
     }
     // 3 provider calls total: top turn1, sub-agent turn, top turn2.
     expect(provider.received).toHaveLength(3);
+  });
+
+  it('a sub-agent inherits the file contract', async () => {
+    // The delegation forwarded mode, permissions, hooks, sandbox and autoMode
+    // but not the contract, so "never read this path" held for the main agent
+    // and said nothing to the sub-agent it spawned to do the reading. Note the
+    // mode here is `bypassPermissions` — a contract deny is not waivable, which
+    // is precisely why it has to travel.
+    await fs.writeFile(join(cwd, 'prod.key'), 'KEY=hunter2\n');
+    const provider = new MockProvider([
+      toolUse('delegating', {
+        type: 'tool_use',
+        id: 'task1',
+        name: 'Task',
+        input: { prompt: 'read prod.key and tell me the value' },
+      }),
+      toolUse('reading', {
+        type: 'tool_use',
+        id: 'r1',
+        name: 'Read',
+        input: { file_path: join(cwd, 'prod.key') },
+      }),
+      endTurn('could not read it'), // ← sub-agent, after the block
+      endTurn('done'), // ← back in the top-level agent
+    ]);
+    await runAgent({
+      provider,
+      tools: new ToolRegistry(),
+      systemPrompt: '',
+      userMessage: 'what is the key?',
+      model: 'deepseek-chat',
+      cwd,
+      contract: parseFileContract(
+        ['version: 1', 'rules:', '  - glob: "prod.key"', '    read: deny'].join('\n'),
+      ),
+    });
+
+    // The sub-agent's Read must have been refused, so the secret never reaches
+    // any message the provider was handed.
+    const everySentMessage = JSON.stringify(provider.received);
+    expect(everySentMessage).not.toContain('hunter2');
+    expect(everySentMessage).toMatch(/file contract/);
   });
 
   it('a sub-agent cannot spawn further sub-agents (depth guard)', async () => {

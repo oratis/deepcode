@@ -52,6 +52,20 @@ jobs:
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
           sudo sysctl -w net.ipv4.ip_unprivileged_port_start=53 || true
 
+      # The Grep tool shells out to ripgrep and parses its `--null` output, and
+      # its tests self-skip when `rg` is absent. A skipped suite reads as a
+      # passing one, so install it rather than hope the runner image has it —
+      # `DC_REQUIRE_RIPGREP` then turns the skip into a failure.
+      - name: Install ripgrep
+        run: |
+          if command -v rg >/dev/null 2>&1; then
+            rg --version
+          elif [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get install -y ripgrep
+          else
+            brew install ripgrep
+          fi
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -66,6 +80,7 @@ jobs:
         # it self-skips on non-Linux / when bwrap/slirp4netns are absent.
         env:
           DC_SANDBOX_NET_TEST: '1'
+          DC_REQUIRE_RIPGREP: '1'
         run: pnpm test
 
       - name: Build + app-server release gate

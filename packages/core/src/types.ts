@@ -118,6 +118,12 @@ export interface ToolContext {
   signal?: AbortSignal;
   /** Optional platform sandbox config — passed through to Bash tool (M3.5). */
   sandboxConfig?: import('./config/types.js').SandboxConfig;
+  /**
+   * Path-axis rules, for tools that emit paths the pre-call gate never saw.
+   * Grep and Glob adjudicate their search *root* before running and their
+   * *results* after; everything else is decided entirely by the dispatcher.
+   */
+  contract?: import('./config/file-contract.js').FileContract;
   /** Sandbox mode used when `sandboxConfig` names none (hosts: workspace-write). */
   sandboxDefaultMode?: import('./config/types.js').SandboxMode;
   /**

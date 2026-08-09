@@ -359,6 +359,10 @@ export function buildPluginCapabilityBridge(options: PluginBridgeOptions): Plugi
       cwd: options.cwd,
       signal: options.signal,
       sandboxConfig: options.sandboxConfig,
+      // Grep and Glob filter their own results against the contract, so the
+      // bridge has to hand it over — the pre-call verdict above only covers
+      // the search root.
+      contract: options.contract,
     });
     await options.hooks.dispatch({
       event: 'PostToolUse',
