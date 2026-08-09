@@ -5,6 +5,7 @@ import type { StoredMessage } from '../types.js';
 import {
   appendMessage,
   defaultSessionsDir,
+  deleteSession,
   listSessions as listSessionsLow,
   newSessionId,
   readMessages,
@@ -62,6 +63,10 @@ export class SessionManager {
 
   async list(): Promise<SessionMeta[]> {
     return listSessionsLow(this.root);
+  }
+
+  async delete(sessionId: string): Promise<void> {
+    await deleteSession(this.root, sessionId);
   }
 
   async snapshot(args: {

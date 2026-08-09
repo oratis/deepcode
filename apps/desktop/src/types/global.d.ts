@@ -58,6 +58,10 @@ export interface DeepCodeAPI {
     resume: (args: {
       id: string;
     }) => Promise<{ history: unknown[]; sessionId: string; thread?: unknown }>;
+    /** Move a thread out of the listing. Reversible on disk. */
+    archive: (args: { id: string }) => Promise<void>;
+    /** Irreversibly drop a thread and everything it owns. */
+    delete: (args: { id: string }) => Promise<void>;
   };
   plugins: {
     list: () => Promise<PluginRow[]>;

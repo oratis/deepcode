@@ -297,6 +297,13 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
       archivedThreads.add(String(request.params.threadId));
       await respond({ archived: true });
       break;
+    case 'thread/delete':
+      // The fixture cannot distinguish the two on its own storage, but the
+      // journey only needs the row to leave the list — what it is asserting is
+      // that the button reached the protocol at all.
+      archivedThreads.add(String(request.params.threadId));
+      await respond({ deleted: true });
+      break;
     case 'workspace/diff':
       await respond({
         repository: true,

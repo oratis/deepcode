@@ -68,6 +68,32 @@ export interface SessionFiles {
   snapshotsDir: string;
 }
 
+/**
+ * Irreversibly remove every file belonging to one session.
+ *
+ * Both stream formats, the metadata sidecar, the writer lock and the snapshot
+ * directory. Leaving any of them behind is not a tidy half-delete: the listing
+ * reads the meta sidecar, so a session whose stream is gone but whose sidecar
+ * remains comes back as an empty row that cannot be opened.
+ *
+ * Missing files are not an error. The caller has already established that the
+ * session exists, and a delete that fails partway through because one of five
+ * paths was already gone leaves the user unable to finish it.
+ */
+export async function deleteSession(root: string, sessionId: string): Promise<void> {
+  const files = sessionFiles(root, sessionId);
+  for (const path of [
+    files.jsonlPath,
+    files.legacyJsonlPath,
+    files.metaPath,
+    files.writerLockPath,
+  ]) {
+    await fs.rm(path, { force: true });
+  }
+  // The per-session directory holds snapshots, background-task logs and todos.
+  await fs.rm(join(root, sessionId), { recursive: true, force: true });
+}
+
 export function sessionFiles(root: string, sessionId: string): SessionFiles {
   return {
     metaPath: join(root, `${sessionId}.meta.json`),

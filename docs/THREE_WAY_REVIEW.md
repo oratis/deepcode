@@ -287,8 +287,12 @@ AskUserQuestion、模式/模型/effort 下拉、Inspector、FilePanel（Source/D
 
 ### 仍未做
 
-- 桌面侧栏的 archive / delete 仍走 Tauri。`thread/archive` 已经服务，但按钮还没改用它——
-  这是"消除第二个读取者"的后半截。
+- ~~桌面侧栏的 archive / delete 仍走 Tauri。`thread/archive` 已经服务，但按钮还没改用它——
+  这是"消除第二个读取者"的后半截。~~
+  已做。顺带发现侧栏连**列表**都还在直连 Tauri：`window.deepcode.sessions.list()` 早就优先走
+  协议了，但 `Sidebar.tsx` 绕过 shim 直接 `listSessions()`——所以"第二个读取者"其实一直是三处
+  而不是两处。delete 协议侧原本没有方法，新增 `thread/delete`：app-server 是 thread 存储的
+  单一 owner，renderer 越过它删文件可能把正在写的 writer 的地板抽掉。
 - **Linux (bwrap) 侧只共享了 sandbox 模式解析，没有在 Linux 主机上做过 #226 那样的实测。**
 - 图片输入仍是空壳（有意保留：DeepSeek 无 vision 模型）。
 

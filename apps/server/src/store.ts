@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
 
@@ -64,6 +64,13 @@ export class FileThreadStore implements ThreadStore {
     await rename(path, join(target, `${threadId}.json`));
   }
 
+  async delete(threadId: string): Promise<void> {
+    // `force` so deleting an already-archived thread is not an error: the
+    // runtime has already established the thread exists, and failing here would
+    // leave the caller unable to finish a delete it can see the reason for.
+    await rm(this.pathFor(threadId), { force: true });
+  }
+
   private pathFor(threadId: string): string {
     if (!validThreadId(threadId)) throw new Error(`Invalid thread id: ${threadId}`);
     return join(this.directory, `${threadId}.json`);
@@ -123,6 +130,18 @@ export class CanonicalThreadStore implements ThreadStore {
 
   async archive(threadId: string): Promise<void> {
     await this.snapshots.archive(threadId);
+  }
+
+  /**
+   * Drop both representations of a thread.
+   *
+   * The snapshot and the canonical session projection share an id and are two
+   * views of one thing, so removing one and leaving the other is how a deleted
+   * thread comes back in the next listing — the composite `list` reads both.
+   */
+  async delete(threadId: string): Promise<void> {
+    await this.snapshots.delete(threadId);
+    await this.sessions.delete(threadId);
   }
 }
 

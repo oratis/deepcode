@@ -27,6 +27,16 @@ export interface ThreadStore {
    */
   list?(): Promise<ThreadSnapshot[]>;
   archive?(threadId: string): Promise<void>;
+  /**
+   * Optional: irreversibly drop a thread.
+   *
+   * Separate from `archive` because the two are different promises, and a store
+   * that can move a file is not necessarily one that should be asked to destroy
+   * it. A store without this leaves the call rejected rather than silently
+   * archiving instead — quietly downgrading a delete would be the worst way to
+   * be helpful about it.
+   */
+  delete?(threadId: string): Promise<void>;
 }
 
 export class MemoryThreadStore implements ThreadStore {
@@ -50,6 +60,11 @@ export class MemoryThreadStore implements ThreadStore {
 
   async archive(threadId: string): Promise<void> {
     this.archived.add(threadId);
+  }
+
+  async delete(threadId: string): Promise<void> {
+    this.threads.delete(threadId);
+    this.archived.delete(threadId);
   }
 }
 
@@ -177,6 +192,22 @@ export class ProtocolRuntime {
     await this.requireThread(threadId); // 404 rather than silently succeeding
     await archive.call(this.options.store, threadId);
     return { archived: true };
+  }
+
+  /**
+   * Irreversibly drop a thread.
+   *
+   * Routed through the runtime rather than left to whoever holds a file handle:
+   * the app-server is the single owner of thread storage, and a client deleting
+   * files behind it can pull the ground out from under an open writer or leave
+   * the index pointing at something that is gone.
+   */
+  async deleteThread(threadId: string): Promise<{ deleted: boolean }> {
+    const remove = this.options.store.delete;
+    if (!remove) throw new ProtocolInvariantError('This store cannot delete threads');
+    await this.requireThread(threadId); // 404 rather than silently succeeding
+    await remove.call(this.options.store, threadId);
+    return { deleted: true };
   }
 
   /**

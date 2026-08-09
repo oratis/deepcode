@@ -208,6 +208,29 @@ describe('thread management', () => {
     await expect(runtime.archiveThread('nope')).rejects.toThrow(/nope/);
   });
 
+  it('deletes a thread outright', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const thread = await runtime.startThread('/a');
+    expect(await runtime.deleteThread(thread.id)).toEqual({ deleted: true });
+    expect((await runtime.listThreads()).threads).toHaveLength(0);
+    // Archive hides, delete removes. Both drop out of the listing, so the
+    // listing alone cannot tell them apart — reading can.
+    expect(await runtime.readThread(thread.id)).toBeNull();
+    await expect(runtime.deleteThread(thread.id)).rejects.toThrow(/thread-/);
+  });
+
+  it('archive keeps the thread readable, delete does not', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    const archived = await runtime.startThread('/a');
+    await runtime.archiveThread(archived.id);
+    expect(await runtime.readThread(archived.id)).not.toBeNull();
+  });
+
+  it('refuses to delete a thread that does not exist', async () => {
+    const runtime = deterministicRuntime(new MemoryThreadStore());
+    await expect(runtime.deleteThread('nope')).rejects.toThrow(/nope/);
+  });
+
   it('forks into a new thread and leaves the original alone', async () => {
     const runtime = deterministicRuntime(new MemoryThreadStore());
     const source = await runtime.startThread('/a');
@@ -241,5 +264,7 @@ describe('thread management', () => {
     expect(runtime.initialize().capabilities.threadManagement).toBe(false);
     await expect(runtime.listThreads()).rejects.toThrow(/cannot list/);
     await expect(runtime.archiveThread('x')).rejects.toThrow(/cannot archive/);
+    // A store that cannot delete says so rather than quietly archiving instead.
+    await expect(runtime.deleteThread('x')).rejects.toThrow(/cannot delete/);
   });
 });

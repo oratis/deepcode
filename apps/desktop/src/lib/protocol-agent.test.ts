@@ -318,3 +318,41 @@ describe('DesktopProtocolAgent', () => {
     });
   });
 });
+
+// The sidebar removed threads through Tauri while the protocol served
+// `thread/archive` — a second writer against storage the app-server owns.
+describe('thread removal', () => {
+  it('archives through the protocol', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    expect(await agent.archiveThread('thread-1')).toBe(true);
+    expect(transport.requests).toContainEqual({
+      method: 'thread/archive',
+      params: { threadId: 'thread-1' },
+    });
+  });
+
+  it('deletes through the protocol', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    expect(await agent.deleteThread('thread-1')).toBe(true);
+    expect(transport.requests).toContainEqual({
+      method: 'thread/delete',
+      params: { threadId: 'thread-1' },
+    });
+  });
+
+  it('reports false — not an exception — when the server cannot manage threads', async () => {
+    // The caller falls back to the local writer on false. Throwing would make a
+    // sidecar that predates the method look like a delete that failed.
+    const transport = new FakeTransport();
+    const original = transport.connect.bind(transport);
+    transport.connect = async () => {
+      const init = await original();
+      return { ...init, capabilities: { ...init.capabilities, threadManagement: false } };
+    };
+    const agent = new DesktopProtocolAgent(transport, () => undefined);
+    expect(await agent.deleteThread('thread-1')).toBe(false);
+    expect(transport.requests).toHaveLength(0);
+  });
+});
