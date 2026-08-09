@@ -59,6 +59,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **Release notes come from the CHANGELOG.** `gen-release-notes.ts` walked the
+  commit range, and with no preceding tag it fell back to the root commit — which
+  is how v0.3.0's release page came to say "0 commits." after #250 fixed the
+  shallow clone. It now takes the tagged version's CHANGELOG entry, which is
+  written for humans and groups changes by what they mean rather than by the verb
+  the commit happened to start with. Repo-relative links are rewritten to
+  absolute URLs pinned at the tag, since a release body does not render inside
+  the repository. Falling back to commits still works and says so in the body.
 - **The desktop sidebar was a second reader of the session directory.** Archive
   and delete went through Tauri while the protocol served the same threads, and
   the list did too — `window.deepcode.sessions.list()` had preferred the
