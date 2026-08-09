@@ -225,8 +225,23 @@ export function buildLinuxBwrapArgs(
   for (const p of fs.allowWrite ?? []) {
     args.push('--bind-try', p, p);
   }
-  // cwd is rw by default
-  args.push('--bind', cwd, cwd);
+  // cwd has to be visible or nothing works, but whether it is *writable* is the
+  // mode's decision — and this line used to make it unconditionally writable.
+  //
+  // bwrap applies binds in order and the last one wins, so under `read-only`
+  // the `--ro-bind-try` this loop already emitted for cwd (sandboxConfigForMode
+  // puts it in allowRead) was immediately overwritten by a read-write bind. The
+  // mode resolved correctly, the profile said the right thing, and a command
+  // could still write to the workspace.
+  //
+  // macOS never had this: buildMacOsProfile grants writes only from allowWrite,
+  // which read-only leaves empty. #226 verified the mode axis on macOS alone,
+  // and this is the half that was not looked at.
+  //
+  // An absent mode keeps the historical read-write bind, so a caller using the
+  // legacy `enabled: true` shape is unaffected.
+  if (config.mode === 'read-only') args.push('--ro-bind-try', cwd, cwd);
+  else args.push('--bind', cwd, cwd);
 
   // Network — three modes:
   //  1. allowedDomains: [] → no network at all
