@@ -37,6 +37,10 @@ const historical = new Set([
   'docs/HANDOFF.md',
   'docs/BEHAVIOR_PARITY.md',
   'docs/DEVELOPMENT_PLAN.md',
+  // A dated delivery report for one release. Its §7.1 records the rename that
+  // was decided at the time, and that record should keep saying what was
+  // decided — with a note pointing at the correction, which is what it has.
+  'docs/V0.3.0_REPORT.md',
 ]);
 const skipDirs = new Set(['node_modules', 'dist', 'target', 'out', '.git', 'release-artifacts']);
 const scannedExtensions = ['.md', '.ts', '.tsx', '.mjs', '.sh'];
