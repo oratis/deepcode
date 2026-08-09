@@ -55,6 +55,7 @@ digest wherever you like.
   "intent": "fix the expired-token branch in auth.ts",
   "paths": ["src/auth.ts"],
   "summary": "edited src/auth.ts",
+  "derivedFrom": ["schema.json"],
   "rollbackHint": { "kind": "snapshot", "ref": "7" },
 }
 ```
@@ -63,6 +64,38 @@ digest wherever you like.
 records stay readable after the repo moves. `rollbackHint` points at the
 snapshot or git checkpoint already taken for that specific call — and is
 **absent when no checkpoint exists**, rather than guessing at one.
+
+## Provenance — what a change came from
+
+`derivedFrom` lists the files the turn **read** before making the change. It
+answers the third question, after "what changed" and "how do I undo it": _what
+was this derived from_ — which is what you ask when a generated file is wrong and
+you need to know which input to fix, or when something turns up in a commit and
+you need to know what the turn had open.
+
+```bash
+deepcode ledger show chg-lz4k2p-01
+#   paths    : src/client.ts
+#   from     : config/gen.yaml, schema.json
+```
+
+It is **observed, not declared**. These are the reads the turn actually
+performed, so a tool that ignored its inputs shows nothing rather than a
+plausible list. Consequences worth knowing:
+
+- **Only `Read` counts.** `Grep` and `Glob` take a search _root_ and return many
+  paths; calling the root an input would claim a derivation the turn did not
+  make, and listing every hit would drown the real inputs in whatever the search
+  swept up. Narrow and true beats wide and approximate.
+- **A failed read is not an input.** It gave the turn nothing, and crediting it
+  would send someone to fix a file that was never opened.
+- **The file being written is excluded.** `Edit` reads its own target by
+  construction, and including it would make every edit look self-derived.
+- The field is **absent**, not empty, when there is nothing to say. A field that
+  is always present is a field that stops being read.
+
+Provenance is a derivation record, not a dependency graph: it says what this one
+turn read, not what the file transitively depends on.
 
 ## What is not recorded
 

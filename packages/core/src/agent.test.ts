@@ -1023,6 +1023,74 @@ describe('runAgent', () => {
       };
     }
 
+    const readTool: ToolHandler = {
+      name: 'Read',
+      definition: { name: 'Read', description: 'r', inputSchema: { type: 'object' } },
+      async execute() {
+        return { content: 'file contents' };
+      },
+    };
+
+    it('records what the write was derived from', async () => {
+      // Observed, not declared: the reads the turn actually performed. This is
+      // the question you ask when a generated file is wrong and you need to
+      // know which input to fix.
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([
+          toolUse('reading', {
+            type: 'tool_use',
+            id: 'r-1',
+            name: 'Read',
+            input: { file_path: 'schema.json' },
+          }),
+          toolUse('writing', writeCall()),
+          endTurn('done'),
+        ]),
+        tools: new ToolRegistry([readTool, writeTool]),
+        systemPrompt: '',
+        userMessage: 'regenerate the client',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: ledger.sink,
+      });
+      const [, record] = ledger.entries[0]!;
+      expect(record.derivedFrom).toEqual(['schema.json']);
+    });
+
+    it('does not credit a read that failed', async () => {
+      // A read that errored gave the turn nothing, so claiming the output came
+      // from it would send someone to fix a file that was never opened.
+      const failingRead: ToolHandler = {
+        name: 'Read',
+        definition: { name: 'Read', description: 'r', inputSchema: { type: 'object' } },
+        async execute() {
+          return { content: 'ENOENT', isError: true };
+        },
+      };
+      const ledger = recordingSink();
+      await runAgent({
+        provider: new MockProvider([
+          toolUse('reading', {
+            type: 'tool_use',
+            id: 'r-1',
+            name: 'Read',
+            input: { file_path: 'missing.json' },
+          }),
+          toolUse('writing', writeCall()),
+          endTurn('done'),
+        ]),
+        tools: new ToolRegistry([failingRead, writeTool]),
+        systemPrompt: '',
+        userMessage: 'regenerate',
+        model: 'deepseek-chat',
+        cwd,
+        ledger: ledger.sink,
+      });
+      const [, record] = ledger.entries[0]!;
+      expect(record.derivedFrom).toBeUndefined();
+    });
+
     it('records a completed write, with the turn request as intent', async () => {
       const ledger = recordingSink();
       await runAgent({

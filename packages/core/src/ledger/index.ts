@@ -51,6 +51,20 @@ export interface LedgerRecord {
   intent?: string;
   /** Workspace-relative paths. Empty when the effect cannot be pinned to files. */
   paths: string[];
+  /**
+   * Workspace-relative paths this turn read before making this change.
+   *
+   * The ledger already answers "what changed" and "how do I undo it". This
+   * answers "what was it derived from" — the question you ask when a generated
+   * file is wrong and you need to know which input to fix, or when a secret
+   * turns up somewhere and you need to know what the turn had open.
+   *
+   * Observed, not declared: these are the reads the turn actually performed, so
+   * a tool that ignored its inputs shows an empty list rather than a plausible
+   * one. Absent on records written before this existed, and on turns that read
+   * nothing.
+   */
+  derivedFrom?: string[];
   summary: string;
   rollbackHint?: RollbackHint;
 }

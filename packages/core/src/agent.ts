@@ -6,7 +6,7 @@ import type { PermissionRules } from './config/types.js';
 import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import type { LedgerSink } from './ledger/index.js';
-import { buildToolCallRecord, ledgerKindForTool } from './ledger/record-tool-call.js';
+import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -285,6 +285,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   // modeSignal is mutable — EnterPlanMode / ExitPlanMode flip these; the agent
   // loop owner reads them after the run to switch mode (default ⇄ plan).
   const modeSignal: { exitPlanMode?: boolean; enterPlanMode?: boolean } = {};
+
+  // Inputs this run has read, in call order, deduped. Provenance for every
+  // change it goes on to make: the question "which input do I fix" is only
+  // answerable if somebody wrote down what was open at the time.
+  const readsThisTurn = new Set<string>();
   const toolCtx: ToolContext = {
     cwd: opts.cwd,
     signal: opts.signal,
@@ -797,6 +802,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         }
       }
 
+      // Reads observed so far in this run become the provenance of whatever
+      // this turn writes next. Recorded here, at the one place every completed
+      // tool call passes through, for the same reason the ledger append is
+      // here: a per-tool hook is a hook a new tool forgets.
+      if (!tr.isError) {
+        const readPath = readPathFor(toolUse.name, toolUse.input);
+        if (readPath) readsThisTurn.add(readPath);
+      }
+
       // One write point for the whole loop. Per-tool writes are exactly the
       // shape AGENTS.md rules out — a new mutating tool would silently go
       // unrecorded if each site had to remember.
@@ -812,6 +826,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
             threadId: opts.session?.id,
             turnId: opts.session?.turnId,
             snapshotSeq: preSeq,
+            readPaths: [...readsThisTurn],
           });
         // Never let bookkeeping fail a completed edit; FileLedger already
         // swallows its own I/O errors, this covers a host-supplied sink.

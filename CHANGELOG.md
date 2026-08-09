@@ -29,6 +29,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   existing `threadManagement` capability, with the local writer kept as the
   fallback for a sidecar too old to know the method.
 
+- **Change ledger records provenance.** Each entry now carries `derivedFrom` —
+  the files the turn read before making that change — answering the question
+  after "what changed" and "how do I undo it": _what was it derived from_. That
+  is what you ask when a generated file is wrong and you need to know which
+  input to fix. Shown by `deepcode ledger show`. Built on the existing ledger
+  rather than a second store.
+
+  It is observed, not declared: only `Read` counts (`Grep`/`Glob` take a search
+  root and return many paths — calling the root an input claims a derivation the
+  turn did not make), a failed read is not an input, and the file being written
+  is excluded so an `Edit` does not look self-derived. Absent rather than empty
+  when there is nothing to say.
+
 ### 🔒 Security
 
 - **A sub-agent did not inherit the file contract.** The `Task` delegation

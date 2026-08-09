@@ -140,6 +140,11 @@ async function show(
   out.write(`  actor    : ${r.actor}${r.tool ? ` (${r.tool})` : ''}\n`);
   if (r.intent) out.write(`  intent   : ${r.intent}\n`);
   out.write(`  paths    : ${r.paths.length > 0 ? r.paths.join(', ') : '—'}\n`);
+  // Only shown when there is something to show. A "derived from: —" line on
+  // every Bash record would train people to stop reading the field.
+  if (r.derivedFrom && r.derivedFrom.length > 0) {
+    out.write(`  from     : ${r.derivedFrom.join(', ')}\n`);
+  }
   out.write(`  summary  : ${r.summary}\n`);
   if (r.rollbackHint) {
     out.write(`  rollback : ${r.rollbackHint.kind}`);
