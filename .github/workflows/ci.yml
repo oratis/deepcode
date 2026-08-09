@@ -73,7 +73,7 @@ jobs:
 
       - name: Upload release-gate diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-gate-${{ matrix.os }}
           path: apps/vscode/dist/release-gate-report.json
@@ -108,7 +108,7 @@ jobs:
         run: pnpm --filter @deepcode/desktop test:e2e
       - name: Upload browser diagnostics
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: desktop-playwright-report
           path: |
