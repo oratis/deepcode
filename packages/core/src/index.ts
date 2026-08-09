@@ -276,6 +276,7 @@ export {
   connectAllMcpServers,
   closeAllMcpServers,
   buildMcpServer,
+  buildMcpGate,
   serveMcpOverStdio,
   mcpServableTools,
   MCP_SERVE_EXCLUDE,

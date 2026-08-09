@@ -33,10 +33,14 @@ export {
 
 export {
   buildMcpServer,
+  buildMcpGate,
   serveMcpOverStdio,
   mcpServableTools,
   MCP_SERVE_EXCLUDE,
   type BuildMcpServerOpts,
+  type McpGateOptions,
+  type McpGateVerdict,
+  type McpToolGate,
   type ServeMcpStdioOpts,
 } from './serve.js';
 

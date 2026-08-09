@@ -24,6 +24,32 @@ decreasing order of operator severity:
 | 8   | Model reads an in-project secret (`.env`, `*.pem`) through a read tool         | Partly mitigated | File contract `read: deny` — covers Read/Grep/Glob, **not Bash** (see below)                                               |
 | 9   | Unattended job runs with a permissive mode inherited from interactive settings | Mitigated        | Trigger profile clamp + `onApprovalRequired`                                                                               |
 | 10  | User cannot audit or undo what the agent wrote                                 | Mitigated        | Change ledger + `deepcode ledger rollback` through the apply ceremony                                                      |
+| 11  | An MCP peer calls DeepCode's own tools without any policy                      | Mitigated        | `mcp serve` routes every call through `dispatchToolCall`; `ask` is refused (see below)                                     |
+
+### `deepcode mcp serve` runs with nobody attached
+
+`mcp serve` exposes Read / Write / Edit / Bash / Grep / Glob to whatever MCP
+client connects — typically another agent. It executed them directly, with no
+mode, no permission rules, no file contract and no `PreToolUse` hooks: the same
+shape as the `runAgent` bypass fixed in #181, in a different entry point. The
+original plan listed the missing permission model as a known risk and deferred
+the design document; the feature shipped without either.
+
+Every call now goes through `dispatchToolCall`, and:
+
+- **`ask` is refused, not granted.** There is no user on that pipe. Granting
+  would make "whoever connected" the authority on what may run.
+- **A permissive `permissions.defaultMode` is clamped** to `default`, exactly as
+  a scheduled job's is. `bypassPermissions` is a decision about sitting at a
+  REPL; inheriting it here hands "never ask me" to a peer.
+- **`--mode` is the explicit opt-in** back out of that clamp, and `--sandbox`
+  tightens the sandbox for served commands.
+- Directory trust still gates project settings, so an untrusted checkout cannot
+  widen the posture the server runs under.
+
+The practical consequence: a peer can do what `permissions.allow` says it can,
+and nothing else. That is a real reduction in capability for anyone who was
+relying on the old behaviour, and it is the point.
 
 ### Residual risk: the file contract is policy, not a boundary
 
