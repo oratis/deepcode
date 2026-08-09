@@ -26,6 +26,21 @@ const RECORDABLE: Record<string, { field?: string; kind: LedgerKind }> = {
   Bash: { kind: 'changes' },
 };
 
+/**
+ * The path a read tool opened, or undefined for anything else.
+ *
+ * Only `Read` and `NotebookEdit`-adjacent single-file reads count. `Grep` and
+ * `Glob` take a search *root* and return many paths; calling the root an input
+ * would claim a derivation the turn did not make, and enumerating every hit
+ * would drown the real inputs in whatever the search happened to sweep up.
+ * Provenance is more useful narrow and true than wide and approximate.
+ */
+export function readPathFor(tool: string, input: Record<string, unknown>): string | undefined {
+  if (tool !== 'Read') return undefined;
+  const raw = input.file_path;
+  return typeof raw === 'string' && raw ? raw : undefined;
+}
+
 export function isRecordableTool(tool: string): boolean {
   return tool in RECORDABLE;
 }
@@ -45,6 +60,11 @@ export interface ToolCallRecordInput {
   actor?: string;
   /** Snapshot/checkpoint sequence captured before the call, if any. */
   snapshotSeq?: number;
+  /**
+   * Absolute paths this turn read before this call. Normalized and deduped
+   * here; the caller only has to observe.
+   */
+  readPaths?: string[];
 }
 
 /** Build the record for a completed tool call, or null if the tool isn't recordable. */
@@ -61,6 +81,18 @@ export function buildToolCallRecord(input: ToolCallRecordInput): NewLedgerRecord
     }
   }
 
+  const written = new Set(paths);
+  const derivedFrom = [
+    ...new Set(
+      (input.readPaths ?? [])
+        .map((raw) => normalizeContractPath(input.cwd, raw) ?? raw)
+        // A file the call is itself writing is not an input it was derived
+        // from — Edit reads its target by construction, and listing that would
+        // make every edit look self-derived.
+        .filter((path) => !written.has(path)),
+    ),
+  ].sort();
+
   return {
     actor: input.actor ?? 'agent',
     tool: input.tool,
@@ -68,6 +100,7 @@ export function buildToolCallRecord(input: ToolCallRecordInput): NewLedgerRecord
     ...(input.turnId ? { turnId: input.turnId } : {}),
     ...(input.intent ? { intent: input.intent } : {}),
     paths,
+    ...(derivedFrom.length > 0 ? { derivedFrom } : {}),
     summary: summarize(input.tool, input.input, paths),
     ...(rollbackFor(input) ? { rollbackHint: rollbackFor(input)! } : {}),
   };
