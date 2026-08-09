@@ -20,10 +20,19 @@ interface GrepInput {
   head_limit?: number;
 }
 
-/** One ripgrep output record: the path it printed, and whatever followed. */
+/**
+ * One ripgrep output record: the path it printed, and whatever followed.
+ *
+ * Both halves are nullable because rg genuinely omits either one, and `''` is a
+ * value it can also print. `path: null` means rg printed no filename — it does
+ * that when the search path is a single *file*, since there is nothing to
+ * disambiguate. `text: null` means it printed the path alone, as
+ * `files_with_matches` does. Collapsing either onto `''` loses the distinction
+ * between "absent" and "empty", and the separator is reinstated from it.
+ */
 export interface RipgrepRow {
-  path: string;
-  text: string;
+  path: string | null;
+  text: string | null;
 }
 
 /**
@@ -40,15 +49,17 @@ export interface RipgrepRow {
  * reversible: `src/od:d.ts:1:hit` has three plausible readings, and picking
  * wrong means withholding the wrong file — or failing to withhold the right one.
  *
- * A record with no NUL has no attributable path (rg's `--` context separator is
- * the only one that occurs in practice) and passes through untouched.
+ * A record with no NUL is one rg printed without a filename: either the search
+ * path was a single file, or it is rg's `--` context separator. Neither has an
+ * attributable path, so both come back as `path: null` and pass through.
  */
 export function parseRipgrepRows(stdout: string, mode: GrepInput['output_mode']): RipgrepRow[] {
   if (mode === 'files_with_matches') {
+    // NUL terminates the record and nothing follows the path.
     return stdout
       .split('\0')
       .filter(Boolean)
-      .map((path) => ({ path, text: '' }));
+      .map((path) => ({ path, text: null }));
   }
   return stdout
     .split('\n')
@@ -56,14 +67,23 @@ export function parseRipgrepRows(stdout: string, mode: GrepInput['output_mode'])
     .map((raw) => {
       const nul = raw.indexOf('\0');
       return nul === -1
-        ? { path: '', text: raw }
+        ? { path: null, text: raw }
         : { path: raw.slice(0, nul), text: raw.slice(nul + 1) };
     });
 }
 
-/** Undo `--null`, reproducing rg's default output byte for byte. */
+/**
+ * Undo `--null`, reproducing rg's default output byte for byte.
+ *
+ * The separator is written back only where rg wrote one. Give a single file as
+ * the search path and rg prints `1:hit` with no filename at all — emitting
+ * `path + ':' + text` there would prepend a colon to every line of a result set
+ * that was previously correct.
+ */
 export function formatRipgrepRow(row: RipgrepRow): string {
-  return row.text === '' ? row.path : `${row.path}:${row.text}`;
+  if (row.path === null) return row.text ?? '';
+  if (row.text === null) return row.path;
+  return `${row.path}:${row.text}`;
 }
 
 export const GrepTool: ToolHandler = {
@@ -163,7 +183,16 @@ export const GrepTool: ToolHandler = {
     // what the search found — and in content mode a hit carries the matched
     // line, so an unfiltered result set hands over the contents of a file the
     // contract says must not be read.
-    const { kept, withheld } = withholdDeniedReads(ctx.contract, ctx.cwd, rows, (row) => row.path);
+    //
+    // A row with no path came from a single-file search, so the file it came
+    // from is the search root. Attributing it there rather than skipping it
+    // keeps the filter independent of the gate having got that call right.
+    const { kept, withheld } = withholdDeniedReads(
+      ctx.contract,
+      ctx.cwd,
+      rows,
+      (row) => row.path ?? searchPath,
+    );
 
     let lines = kept.map(formatRipgrepRow);
     const matched = lines.length;

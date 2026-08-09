@@ -44,14 +44,24 @@ describe('parseRipgrepRows', () => {
     // filter would drop nothing and still look like it worked.
     const out = 'a.ts\x00secrets/prod.key\x00b.ts\x00';
     expect(parseRipgrepRows(out, 'files_with_matches')).toEqual([
-      { path: 'a.ts', text: '' },
-      { path: 'secrets/prod.key', text: '' },
-      { path: 'b.ts', text: '' },
+      { path: 'a.ts', text: null },
+      { path: 'secrets/prod.key', text: null },
+      { path: 'b.ts', text: null },
     ]);
   });
 
   it('reads count mode', () => {
     expect(parseRipgrepRows('a.ts\x003\n', 'count')).toEqual([{ path: 'a.ts', text: '3' }]);
+  });
+
+  it('distinguishes an empty match from a path printed alone', () => {
+    // `rg '^$'` in content mode without -n prints `path\0` — the path, the NUL,
+    // and nothing. That is not the same record as files_with_matches' `path\0`,
+    // and rg writes a trailing separator for one and not the other.
+    expect(formatRipgrepRow(parseRipgrepRows('blank.txt\x00\n', 'content')[0]!)).toBe('blank.txt:');
+    expect(formatRipgrepRow(parseRipgrepRows('blank.txt\x00', 'files_with_matches')[0]!)).toBe(
+      'blank.txt',
+    );
   });
 
   it('handles a path containing a colon, which is why NUL is needed', () => {
@@ -62,7 +72,18 @@ describe('parseRipgrepRows', () => {
   });
 
   it('passes through a record with no path', () => {
-    expect(parseRipgrepRows('--\n', 'content')).toEqual([{ path: '', text: '--' }]);
+    expect(parseRipgrepRows('--\n', 'content')).toEqual([{ path: null, text: '--' }]);
+  });
+
+  it('does not invent a separator rg never printed', () => {
+    // Give rg one *file* as the search path and it prints no filename at all —
+    // there is nothing to disambiguate. Rejoining `path + ':' + text` with an
+    // absent path prepends a colon to every line: `:1:alpha hit`.
+    const rows = parseRipgrepRows('1:alpha hit\n', 'content');
+    expect(rows).toEqual([{ path: null, text: '1:alpha hit' }]);
+    expect(formatRipgrepRow(rows[0]!)).toBe('1:alpha hit');
+    // count mode over a single file is the same shape: a bare number.
+    expect(formatRipgrepRow(parseRipgrepRows('1\n', 'count')[0]!)).toBe('1');
   });
 });
 
@@ -99,6 +120,18 @@ describe('GrepTool', async () => {
     expect(r.isError).toBeFalsy();
     expect(r.content).toMatch(/a\.ts/);
     expect(r.content).not.toMatch(/c\.md/);
+  });
+
+  it.skipIf(skipReason)('searching one file prints the line, not `:line`', async () => {
+    // rg omits the filename when the search path is a single file, so there is
+    // no NUL in its output. Rejoining as `path:text` with an absent path put a
+    // stray colon in front of every line of an otherwise correct result.
+    const r = await GrepTool.execute(
+      { pattern: 'verifyToken', path: join(tmp, 'a.ts'), '-n': true },
+      { cwd: tmp },
+    );
+    expect(r.isError).toBeFalsy();
+    expect(r.content).toBe('1:function verifyToken() {}');
   });
 
   it.skipIf(skipReason)('returns (no matches) on miss', async () => {

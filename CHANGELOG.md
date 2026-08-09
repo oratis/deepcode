@@ -29,6 +29,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **`Grep` over a single file no longer prefixes every line with a colon.**
+  ripgrep omits the filename when the search path is one _file_ — there is
+  nothing to disambiguate — so its `--null` output carries no NUL, and rejoining
+  the record as `path:text` with an absent path emitted `:1:hit`. Parsing now
+  distinguishes "rg printed no path" from "rg printed an empty field", and the
+  separator is written back only where rg wrote one. Such a row is attributed to
+  the search root for contract filtering, so the result filter does not depend on
+  the pre-call gate having adjudicated that call correctly.
 - CI installs ripgrep and sets `DC_REQUIRE_RIPGREP=1`. The `Grep` suite
   self-skips when `rg` is absent, so it may never have run in CI — and it now
   covers ripgrep's `--null` output format, which the tool parses byte for byte.
