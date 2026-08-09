@@ -100,6 +100,10 @@ async function main(): Promise<number> {
       cwd: process.cwd(),
       output: process.stdout,
       errOutput: process.stderr,
+      // `mcp serve` has no attached user, so a permissive ambient mode is
+      // clamped unless --mode says otherwise. Same rule as a scheduled job.
+      mode: args.mode,
+      sandbox: args.sandbox,
     });
   }
   if (args.positional[0] === 'app-server') {

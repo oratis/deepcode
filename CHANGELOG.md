@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### ⚠️ Breaking
+
+- **`deepcode mcp serve` now applies your permission settings.** It executed
+  Read/Write/Edit/Bash for any connected MCP peer with no mode, no permission
+  rules, no file contract and no `PreToolUse` hooks — the same shape as the
+  `runAgent` bypass fixed in #181, in a different entry point. Every call now
+  goes through the central gate, a call that would need approval is **refused**
+  (nobody is attached to that pipe to approve it), and a permissive
+  `permissions.defaultMode` is clamped to `default` exactly as a scheduled job's
+  is. A peer can now do what `permissions.allow` says it can and nothing else,
+  so anyone relying on the old behaviour must add rules — or start the server
+  with an explicit `--mode`. `--sandbox` also applies now; it did not before.
+
 ### 🔒 Security
 
 - **A sub-agent did not inherit the file contract.** The `Task` delegation
