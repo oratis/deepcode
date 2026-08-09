@@ -149,6 +149,8 @@ export {
   evaluateContract,
   fileContractWarnings,
   mostRestrictive,
+  withheldNotice,
+  withholdDeniedReads,
 } from './config/index.js';
 
 // Credentials (M2; M3c adds ApiKeyHelperRefresher)

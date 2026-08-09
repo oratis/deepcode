@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parseFileContract } from '../config/file-contract.js';
 import { GlobTool } from './glob.js';
 
 describe('GlobTool', () => {
@@ -47,5 +48,44 @@ describe('GlobTool', () => {
   it('rejects missing pattern', async () => {
     const r = await GlobTool.execute({}, { cwd: tmp });
     expect(r.isError).toBe(true);
+  });
+
+  describe('file contract', () => {
+    const denySecrets = parseFileContract(
+      ['version: 1', 'rules:', '  - glob: "src/nested/**"', '    read: deny'].join('\n'),
+    );
+
+    it('withholds denied paths from the listing', async () => {
+      const r = await GlobTool.execute(
+        { pattern: '**/*.ts', path: tmp },
+        { cwd: tmp, contract: denySecrets },
+      );
+      expect(r.content).toMatch(/a\.ts/);
+      expect(r.content).not.toMatch(/c\.ts/);
+      expect(r.content).toMatch(/1 result withheld by the file contract/);
+      expect(r.data?.withheld).toBe(1);
+    });
+
+    it('leaves the listing alone when nothing is denied', async () => {
+      const withContract = await GlobTool.execute(
+        { pattern: '**/*.ts', path: tmp },
+        { cwd: tmp, contract: parseFileContract('version: 1\n') },
+      );
+      const without = await GlobTool.execute({ pattern: '**/*.ts', path: tmp }, { cwd: tmp });
+      expect(withContract.content).toBe(without.content);
+      expect(withContract.data?.withheld).toBeUndefined();
+    });
+
+    it('does not count denied paths against the limit', async () => {
+      // Filtering after truncation would let denied entries eat result slots,
+      // so a search could come back empty while matches existed.
+      const r = await GlobTool.execute(
+        { pattern: '**/*.ts', path: tmp, limit: 2 },
+        { cwd: tmp, contract: denySecrets },
+      );
+      const paths = (r.content as string).split('\n').filter((l) => l.endsWith('.ts'));
+      expect(paths).toHaveLength(2);
+      expect(paths.every((p) => !p.includes('nested'))).toBe(true);
+    });
   });
 });

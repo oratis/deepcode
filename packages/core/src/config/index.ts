@@ -99,6 +99,8 @@ export {
   evaluateContract,
   fileContractWarnings,
   mostRestrictive,
+  withheldNotice,
+  withholdDeniedReads,
   type ContractDispatchRequest,
   type ContractWarningInput,
 } from './contract-dispatch.js';

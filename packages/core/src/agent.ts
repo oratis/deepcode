@@ -290,6 +290,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
     sandboxDefaultMode: opts.sandboxDefaultMode,
+    contract: opts.contract,
     sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
     turnId: opts.session?.turnId,
     askUser: opts.askUser,
@@ -377,6 +378,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
         signal: signal ?? opts.signal,
         mode: runtimePolicy.mode,
         permissions: runtimePolicy.permissions,
+        // Every gate the parent runs under has to travel with the delegation.
+        // A contract that stops at the Task boundary is one that says "never
+        // read .env" to the main agent and nothing at all to the sub-agent it
+        // spawns to do the reading.
+        contract: opts.contract,
         hooks: opts.hooks,
         sandboxConfig: opts.sandboxConfig,
         autoMode: opts.autoMode,

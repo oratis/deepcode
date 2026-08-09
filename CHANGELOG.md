@@ -7,8 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 🔒 Security
+
+- **A sub-agent did not inherit the file contract.** The `Task` delegation
+  forwarded mode, permission rules, hooks, sandbox config and auto-mode — every
+  gate except the contract. So "never read `secrets/**`" bound the main agent
+  and said nothing to the sub-agent it spawned to do the reading, and since a
+  contract `deny` is deliberately not waivable, this was the one gate that was
+  supposed to hold no matter what. A regression test asserts the secret never
+  reaches the provider.
+- **`Grep` and `Glob` returned results the contract denies reading.** Both take
+  a search _root_, so the pre-call verdict only ever covered where the search
+  started; a search rooted at the workspace was allowed and then handed back
+  matches from denied paths, with the matched line attached. Results are now
+  filtered through the same `evaluatePath` the gate uses — no second glob
+  dialect to drift — and the output ends with a count of what was withheld,
+  never with the paths. `ask` is not filtered: mid-search there is nobody to
+  ask, and a hit is not yet a read.
+- The plugin capability bridge passed no contract into the tools it executed, so
+  a plugin's `Grep` skipped the same filter.
+
 ### 🐛 Fixed
 
+- CI installs ripgrep and sets `DC_REQUIRE_RIPGREP=1`. The `Grep` suite
+  self-skips when `rg` is absent, so it may never have run in CI — and it now
+  covers ripgrep's `--null` output format, which the tool parses byte for byte.
 - **The test suite could re-initialise your own repository.** `git` reads
   `GIT_DIR` from the environment and a git hook sets it, so a fixture calling
   `git init` on a temp directory from inside the pre-commit gate did not

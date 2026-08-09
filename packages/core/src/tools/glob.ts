@@ -3,6 +3,7 @@
 
 import { glob } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
+import { withheldNotice, withholdDeniedReads } from '../config/contract-dispatch.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface GlobInput {
@@ -54,7 +55,14 @@ export const GlobTool: ToolHandler = {
     }
 
     // Convert to absolute, dedupe
-    const abs = [...new Set(matches.filter(Boolean).map((p) => resolve(searchPath, p)))];
+    const found = [...new Set(matches.filter(Boolean).map((p) => resolve(searchPath, p)))];
+
+    // The pre-call gate adjudicated the search root, not the hits. A listing
+    // exposes only names, not contents — but a contract that denies reading a
+    // path and then enumerates it has still told the agent the file is there
+    // and what it is called, which is most of what a name-based secret gives
+    // away. Filter before the mtime stat, so a denied path is not even opened.
+    const { kept: abs, withheld } = withholdDeniedReads(ctx.contract, ctx.cwd, found, (p) => p);
 
     // Sort by mtime descending (best-effort; skip stat errors)
     const { promises: fs } = await import('node:fs');
@@ -75,9 +83,12 @@ export const GlobTool: ToolHandler = {
     const lines = top.map((s) => relative(ctx.cwd, s.p) || s.p);
     if (truncated) lines.push(`... [${top.length} of ${stamped.length}]`);
 
+    const notice = withheldNotice(withheld);
+    if (notice) lines.push(notice);
+
     return {
       content: lines.join('\n') || '(no matches)',
-      data: { count: top.length, total: stamped.length },
+      data: { count: top.length, total: stamped.length, ...(withheld > 0 ? { withheld } : {}) },
     };
   },
 };

@@ -63,6 +63,62 @@ export function contractGovernedTools(): string[] {
   return Object.keys(TOOL_AXIS);
 }
 
+export interface WithheldResults<T> {
+  kept: T[];
+  /** How many entries the contract removed. Reported, never itemised. */
+  withheld: number;
+}
+
+/**
+ * Remove search results whose path the contract denies reading.
+ *
+ * Grep and Glob take a *search root*, so the pre-call gate can only adjudicate
+ * where the search starts — not what it finds. A search rooted at the workspace
+ * is allowed, and then returns `.env` among its hits, with the matched line
+ * attached. The pre-call verdict was correct and the outcome still contradicts
+ * the contract; the gap is that the tool produces paths nobody asked about.
+ *
+ * The decision runs through `evaluatePath`, the same function the gate uses, on
+ * a path normalized the same way. There is deliberately no second glob dialect
+ * and no translation into ripgrep's exclusion syntax: an approximate copy of the
+ * rules that diverges from the original is worse than the gap it closes.
+ *
+ * Only `deny` withholds. `ask` means "stop and ask before reading this file" and
+ * there is nobody to ask mid-search — turning one Grep into two hundred prompts
+ * would get the contract deleted, and a path in a result listing is not yet a
+ * read. Read the file and the ordinary `ask` still fires.
+ *
+ * A path outside the workspace is kept, matching the gate: a per-project
+ * contract has no authority over `/etc`.
+ */
+export function withholdDeniedReads<T>(
+  contract: FileContract | undefined,
+  cwd: string,
+  items: T[],
+  pathOf: (item: T) => string,
+): WithheldResults<T> {
+  if (!contract) return { kept: items, withheld: 0 };
+
+  const kept: T[] = [];
+  let withheld = 0;
+  for (const item of items) {
+    const raw = pathOf(item);
+    const path = raw ? normalizeContractPath(cwd, raw) : null;
+    if (path !== null && evaluatePath(contract, { path, action: 'read' }).verdict === 'deny') {
+      withheld++;
+      continue;
+    }
+    kept.push(item);
+  }
+  return { kept, withheld };
+}
+
+/** One line naming how much was withheld, without naming any of it. */
+export function withheldNotice(withheld: number): string | undefined {
+  if (withheld <= 0) return undefined;
+  return `[${withheld} result${withheld === 1 ? '' : 's'} withheld by the file contract]`;
+}
+
 const SEVERITY: Record<PermissionVerdict, number> = {
   'no-match': 0,
   allow: 1,
