@@ -158,9 +158,10 @@ export interface InitializeResult {
     /** Server streams `reasoning.delta` for models that emit reasoning. */
     reasoningDeltas: boolean;
     /**
-     * `thread/list`, `thread/fork` and `thread/archive` are served. Without
-     * these a client has to read the session directory itself, which is how the
-     * desktop ended up with two ways to see the same threads.
+     * `thread/list`, `thread/fork`, `thread/archive` and `thread/delete` are
+     * served. Without these a client has to read the session directory itself,
+     * which is how the desktop ended up with two ways to see the same threads —
+     * and, for delete, two ways to remove a file the app-server owns.
      */
     threadManagement: boolean;
     /**
@@ -304,6 +305,7 @@ export type ProtocolMethod =
   | 'thread/list'
   | 'thread/fork'
   | 'thread/archive'
+  | 'thread/delete'
   | 'turn/start'
   | 'turn/interrupt'
   | 'approval/respond'

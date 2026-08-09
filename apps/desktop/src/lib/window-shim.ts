@@ -8,6 +8,8 @@ import {
   abortProtocolTurn,
   answerProtocolRequest,
   approveProtocolRequest,
+  archiveProtocolThread,
+  deleteProtocolThread,
   getConfigDiagnostics,
   installProtocolAgentEmitter,
   listProtocolThreads,
@@ -23,6 +25,8 @@ import {
   loadSettingsFile,
   openUrl,
   saveCredentials,
+  sessionArchive,
+  sessionDelete,
   sessionRead,
 } from './tauri-api.js';
 
@@ -90,6 +94,27 @@ export function installTauriShim(): void {
           cwd: '',
           updatedAt: new Date(r.updated_at_secs * 1000).toISOString(),
         }));
+      },
+      // Archive and delete follow list: the app-server owns thread storage and
+      // is its single writer, so a renderer removing files through Tauri is
+      // reaching around the owner — and for delete that can pull the ground out
+      // from under an open writer. The Tauri command stays as the fallback for a
+      // sidecar too old to serve the method, same as list.
+      async archive({ id }) {
+        try {
+          if (await archiveProtocolThread(id)) return;
+        } catch {
+          /* fall through to the local writer */
+        }
+        await sessionArchive(id);
+      },
+      async delete({ id }) {
+        try {
+          if (await deleteProtocolThread(id)) return;
+        } catch {
+          /* fall through to the local writer */
+        }
+        await sessionDelete(id);
       },
       async resume({ id }) {
         // The snapshot carries every completed item — approvals, ask-user

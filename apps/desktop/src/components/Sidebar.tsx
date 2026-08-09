@@ -6,13 +6,7 @@
 
 import { useCallback, useEffect, useState, type JSX } from 'react';
 import { projectName } from '../lib/project.js';
-import {
-  listSessions,
-  sessionArchive,
-  sessionDelete,
-  sessionSetTitle,
-  type SessionMeta,
-} from '../lib/tauri-api.js';
+import { sessionSetTitle } from '../lib/tauri-api.js';
 import { BrandMark } from './BrandMark.js';
 
 interface SidebarProps {
@@ -26,6 +20,20 @@ interface SidebarProps {
   onSwitchProject: () => void;
   /** Called after the active session is archived/deleted so the parent resets. */
   onSessionRemoved?: (id: string) => void;
+}
+
+/**
+ * One row, as the app-server describes it.
+ *
+ * The sidebar used to read the session directory through Tauri while
+ * `window.deepcode.sessions.list()` read the same directory through the
+ * protocol — two readers of one directory, each with its own row shape and its
+ * own sort. This is the one the owner of that storage returns.
+ */
+interface SessionRow {
+  id: string;
+  title?: string;
+  updatedAtSecs: number;
 }
 
 type Bucket = 'Today' | 'Yesterday' | 'Earlier';
@@ -53,7 +61,7 @@ export function Sidebar({
   onSwitchProject,
   onSessionRemoved,
 }: SidebarProps): JSX.Element {
-  const [sessions, setSessions] = useState<SessionMeta[]>([]);
+  const [sessions, setSessions] = useState<SessionRow[]>([]);
   const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
   // Inline rename: which session is being edited + its draft title.
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -61,8 +69,17 @@ export function Sidebar({
   const [query, setQuery] = useState('');
 
   const reload = useCallback(() => {
-    void listSessions()
-      .then(setSessions)
+    void window.deepcode.sessions
+      .list()
+      .then((rows) =>
+        setSessions(
+          rows.map((row) => ({
+            id: row.id,
+            title: row.title,
+            updatedAtSecs: Math.floor(new Date(row.updatedAt).getTime() / 1000),
+          })),
+        ),
+      )
       .catch(() => setSessions([]));
   }, []);
 
@@ -92,7 +109,7 @@ export function Sidebar({
 
   async function handleArchive(id: string): Promise<void> {
     try {
-      await sessionArchive(id);
+      await window.deepcode.sessions.archive({ id });
       if (id === activeSessionId) onSessionRemoved?.(id);
       reload();
     } catch {
@@ -105,7 +122,7 @@ export function Sidebar({
       return;
     }
     try {
-      await sessionDelete(id);
+      await window.deepcode.sessions.delete({ id });
       if (id === activeSessionId) onSessionRemoved?.(id);
       reload();
     } catch {
@@ -119,13 +136,13 @@ export function Sidebar({
         (s) => (s.title || '').toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
       )
     : sessions;
-  const grouped: Record<Bucket, SessionMeta[]> = {
+  const grouped: Record<Bucket, SessionRow[]> = {
     Today: [],
     Yesterday: [],
     Earlier: [],
   };
   for (const s of visible) {
-    grouped[bucketFor(s.updated_at_secs, now)].push(s);
+    grouped[bucketFor(s.updatedAtSecs, now)].push(s);
   }
 
   return (
@@ -227,7 +244,7 @@ export function Sidebar({
                 ) : (
                   <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
                 )}
-                <span className="meta">{relTime(s.updated_at_secs, now)}</span>
+                <span className="meta">{relTime(s.updatedAtSecs, now)}</span>
                 {editingId !== s.id && (
                   <span className="row-actions">
                     <button

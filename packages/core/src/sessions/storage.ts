@@ -68,6 +68,58 @@ export interface SessionFiles {
   snapshotsDir: string;
 }
 
+/**
+ * A session id that is safe to interpolate into a path.
+ *
+ * `deleteSession` removes a whole directory recursively, so the id has to be a
+ * single path segment and cannot be a traversal. `..` is the one that matters:
+ * it is composed entirely of characters an id may legitimately contain, so a
+ * character-class check alone lets it through — and `join(root, '..')` is the
+ * parent of the sessions root.
+ */
+function validSessionId(sessionId: string): boolean {
+  return (
+    sessionId !== '' &&
+    sessionId !== '.' &&
+    sessionId !== '..' &&
+    /^[a-zA-Z0-9._-]+$/.test(sessionId)
+  );
+}
+
+/**
+ * Irreversibly remove every file belonging to one session.
+ *
+ * Both stream formats, the metadata sidecar, the writer lock and the snapshot
+ * directory. Leaving any of them behind is not a tidy half-delete: the listing
+ * reads the meta sidecar, so a session whose stream is gone but whose sidecar
+ * remains comes back as an empty row that cannot be opened.
+ *
+ * Missing files are not an error. The caller has already established that the
+ * session exists, and a delete that fails partway through because one of five
+ * paths was already gone leaves the user unable to finish it.
+ *
+ * A malformed id *is* an error, and is refused before anything is removed. The
+ * callers in-tree all validate first, so this can only fire on a programming
+ * mistake — which is exactly when a recursive delete resolved from an untrusted
+ * string must not proceed on the strength of somebody else having checked.
+ */
+export async function deleteSession(root: string, sessionId: string): Promise<void> {
+  if (!validSessionId(sessionId)) {
+    throw new Error(`Refusing to delete session with invalid id: ${JSON.stringify(sessionId)}`);
+  }
+  const files = sessionFiles(root, sessionId);
+  for (const path of [
+    files.jsonlPath,
+    files.legacyJsonlPath,
+    files.metaPath,
+    files.writerLockPath,
+  ]) {
+    await fs.rm(path, { force: true });
+  }
+  // The per-session directory holds snapshots, background-task logs and todos.
+  await fs.rm(join(root, sessionId), { recursive: true, force: true });
+}
+
 export function sessionFiles(root: string, sessionId: string): SessionFiles {
   return {
     metaPath: join(root, `${sessionId}.meta.json`),

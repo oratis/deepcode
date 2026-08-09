@@ -92,6 +92,13 @@ export class DesktopProtocolAgent {
     return true;
   }
 
+  async deleteThread(threadId: string): Promise<boolean> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.threadManagement) return false;
+    await this.transport.request('thread/delete', { threadId });
+    return true;
+  }
+
   async resume(threadId: string): Promise<ThreadSnapshot> {
     await this.transport.connect();
     if (this.threadId && this.threadId !== threadId) {
@@ -385,6 +392,10 @@ export function listProtocolThreads() {
 
 export function archiveProtocolThread(threadId: string) {
   return defaultAgent.archiveThread(threadId);
+}
+
+export function deleteProtocolThread(threadId: string) {
+  return defaultAgent.deleteThread(threadId);
 }
 
 export function resumeProtocolThread(threadId: string) {

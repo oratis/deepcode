@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so anyone relying on the old behaviour must add rules — or start the server
   with an explicit `--mode`. `--sandbox` also applies now; it did not before.
 
+### ✨ Added
+
+- **`thread/delete`** — the protocol could list, fork and archive threads but not
+  delete one, so the desktop deleted session files through Tauri instead. The
+  app-server is the single owner of thread storage; a client removing files
+  behind it can pull the ground out from under an open writer. Served under the
+  existing `threadManagement` capability, with the local writer kept as the
+  fallback for a sidecar too old to know the method.
+
 ### 🔒 Security
 
 - **A sub-agent did not inherit the file contract.** The `Task` delegation
@@ -42,6 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **The desktop sidebar was a second reader of the session directory.** Archive
+  and delete went through Tauri while the protocol served the same threads, and
+  the list did too — `window.deepcode.sessions.list()` had preferred the
+  protocol since #231, but `Sidebar.tsx` bypassed the shim and called
+  `listSessions()` directly. All three now go through the owner, and deleting a
+  thread removes both its protocol snapshot and its canonical session
+  projection: `list` reads both, so removing one left the row reappearing on the
+  next refresh as an empty session that could not be opened.
+- `deleteSession` refuses a session id that is not a single path segment, before
+  removing anything. It ends in a recursive delete of `<root>/<id>`, and `..` —
+  the id that resolves to the directory _above_ the sessions root — is spelled
+  entirely in characters an id may legitimately contain, so the character-class
+  check both it and the thread store relied on admitted it. Every in-tree caller
+  validates first; a delete this destructive should not depend on that.
 - **`Grep` over a single file no longer prefixes every line with a colon.**
   ripgrep omits the filename when the search path is one _file_ — there is
   nothing to disambiguate — so its `--null` output carries no NUL, and rejoining

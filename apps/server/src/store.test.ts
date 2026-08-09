@@ -122,3 +122,57 @@ describe('CanonicalThreadStore', () => {
     await expect(store.load(meta.id)).resolves.toEqual(imported);
   });
 });
+
+describe('CanonicalThreadStore.delete', () => {
+  const thread = (id: string): ThreadSnapshot => ({
+    id,
+    cwd: '/workspace',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    updatedAt: '2026-08-01T00:00:02.000Z',
+    turns: [
+      {
+        id: `${id}-turn-1`,
+        threadId: id,
+        status: 'completed',
+        startedAt: '2026-08-01T00:00:01.000Z',
+        completedAt: '2026-08-01T00:00:02.000Z',
+        items: [
+          {
+            id: `${id}-item-1`,
+            type: 'user_message',
+            payload: { text: 'hello', model: 'deepseek-chat' },
+            completedAt: '2026-08-01T00:00:01.000Z',
+          },
+        ],
+      },
+    ],
+  });
+
+  it('removes both representations, so the thread cannot come back', async () => {
+    // The snapshot and the canonical session projection share an id and are two
+    // views of one thing. `list` reads both, so removing one and leaving the
+    // other means the row reappears on the next refresh — as an empty session
+    // that cannot be opened.
+    const { store, sessions } = await fixture();
+    await store.save(thread('thread-del'));
+
+    expect(await store.load('thread-del')).not.toBeNull();
+    expect(await sessions.list()).toHaveLength(1);
+
+    await store.delete('thread-del');
+
+    expect(await store.load('thread-del')).toBeNull();
+    expect(await sessions.list()).toHaveLength(0);
+    expect(await store.list()).toHaveLength(0);
+  });
+
+  it('leaves other threads alone', async () => {
+    const { store } = await fixture();
+    await store.save(thread('thread-keep'));
+    await store.save(thread('thread-drop'));
+
+    await store.delete('thread-drop');
+
+    expect((await store.list()).map((t) => t.id)).toEqual(['thread-keep']);
+  });
+});
