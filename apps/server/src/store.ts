@@ -9,6 +9,11 @@ import type { ThreadSnapshot, ThreadStore } from '@deepcode/protocol';
 import { historyFromThread } from './runtime-executor.js';
 
 function validThreadId(threadId: string): boolean {
+  // `.` and `..` are spelled entirely in characters an id may legitimately
+  // contain, so the class alone admits them. Harmless while every path built
+  // from an id had a suffix appended; not harmless now that `delete` reaches a
+  // recursive removal of `<root>/<id>`.
+  if (threadId === '.' || threadId === '..') return false;
   return /^[a-zA-Z0-9._-]+$/.test(threadId);
 }
 

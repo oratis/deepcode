@@ -1,9 +1,10 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   appendMessage,
+  deleteSession,
   listSessions,
   newSessionId,
   readMessages,
@@ -258,4 +259,57 @@ describe('session storage', () => {
     ).rejects.toBeInstanceOf(SessionWriterConflictError);
     await expect(readFile(files.jsonlPath, 'utf8')).rejects.toThrow();
   });
+});
+
+// `deleteSession` ends in a recursive `rm` of `<root>/<id>`, so the id is a path
+// segment resolved from a string the caller received. AGENTS.md asks for
+// adversarial tests where a mistake destroys user work; this is that place.
+describe('deleteSession', () => {
+  let root: string;
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'deepcode-delete-'));
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  it('removes every file the session owns', async () => {
+    const id = newSessionId();
+    await writeMeta(root, { id, cwd: '/w', createdAt: 'x', updatedAt: 'x' });
+    await appendMessage(root, id, { role: 'user', content: [{ type: 'text', text: 'hi' }] });
+    const files = sessionFiles(root, id);
+
+    await deleteSession(root, id);
+
+    await expect(readFile(files.metaPath, 'utf8')).rejects.toThrow();
+    await expect(readFile(files.jsonlPath, 'utf8')).rejects.toThrow();
+    expect(await listSessions(root)).toHaveLength(0);
+  });
+
+  it('is not an error when the files are already gone', async () => {
+    await expect(deleteSession(root, newSessionId())).resolves.toBeUndefined();
+  });
+
+  it.each(['..', '.', '', '../..', 'a/b', '../escape'])(
+    'refuses the id %j instead of resolving it into a path',
+    async (id) => {
+      // `..` is the one that matters: it is spelled entirely in characters an
+      // id may legitimately contain, so a character-class check alone admits
+      // it — and `join(sessionsRoot, '..')` is the directory above it.
+      //
+      // The sessions root is nested deep enough that every id here still
+      // resolves inside `root`. Without that, a run with the guard removed
+      // walks `rm -rf` up out of the fixture and into the system temp
+      // directory — which is how this was confirmed, and not something a test
+      // should be able to do by accident.
+      const sessionsRoot = join(root, 'deep', 'deeper', 'sessions');
+      await mkdir(sessionsRoot, { recursive: true });
+      const guarded = join(root, 'keep-me.txt');
+      await writeFile(guarded, 'not mine to delete', 'utf8');
+
+      await expect(deleteSession(sessionsRoot, id)).rejects.toThrow(/invalid id/);
+
+      expect(await readFile(guarded, 'utf8')).toBe('not mine to delete');
+    },
+  );
 });
