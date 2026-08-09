@@ -88,6 +88,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   precise failure — a convention passed by word of mouth that had stopped being
   enforced. They now share `gitSpawnEnv`, and a check fails the build if a test
   spawns `git` without it.
+- **The CLI is published as `@oratis/deepcode`.** 0.3.0 renamed it away from
+  `deepcode-cli` because that name belongs to an unrelated project — but
+  `@deepcode/cli` was not ours either. The leaf name is unpublished, which is
+  what made it look free; the `@deepcode` **scope** holds `@deepcode/tsc` and
+  `@deepcode/dcignore`, and npm rejects a publish into a scope you do not own. A
+  scope is not claimable by publishing into it, so `pnpm publish` would have
+  returned the same 403 the rename was meant to fix. The new name is the
+  repository owner's personal scope, which needs no organisation to exist first.
+  Nothing was ever published under either old name, so no installed package
+  changes. The binary is still `deepcode`.
+- A test now asserts that every `npm i -g …` in a current document or in CLI
+  source names the package `apps/cli/package.json` publishes. Both renames so far
+  moved some install strings and left others behind. It scans the whole
+  repository minus an explicit list of historical snapshots, rather than an
+  allowlist of the documents somebody thought of — an allowlist has to be
+  extended by whoever adds the next document, and stays silent when they forget,
+  which is the same shape as the bug it is there to catch.
+- `apps/cli/README.md` — the npm landing page — still described the CLI as an
+  "M0 骨架，命令入口存在但不能用" and pointed at milestone numbers for when
+  features would arrive. It shipped in the package `files` list.
 
 ## [0.3.0] — 2026-08-08
 

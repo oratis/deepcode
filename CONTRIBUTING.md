@@ -20,7 +20,7 @@ deepcode/
 │   ├── core/               # @deepcode/core — 内核（无 UI 依赖）
 │   └── shared-ui/          # CLI 与桌面客户端共享类型
 ├── apps/
-│   ├── cli/                # @deepcode/cli — npm 包，命令 `deepcode`
+│   ├── cli/                # @oratis/deepcode — npm 包，命令 `deepcode`
 │   └── desktop/            # Mac 客户端（Tauri 2 + Rust + React）
 ├── docs/
 │   ├── DEVELOPMENT_PLAN.md

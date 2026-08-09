@@ -31,7 +31,7 @@ ignore red releases. A job that actually _fails_ still blocks the release.
 | `APPLE_TEAM_ID`               | 10-character team ID (from developer.apple.com → membership)      |
 | `CSC_LINK`                    | Base64-encoded `.p12` of the Developer ID Application cert        |
 | `CSC_KEY_PASSWORD`            | Password used when exporting the `.p12`                           |
-| `NPM_TOKEN`                   | npm access token with `publish` scope for the `@deepcode` scope   |
+| `NPM_TOKEN`                   | npm access token able to publish into the `@oratis` scope         |
 
 ### 2. Export the Developer ID certificate
 
@@ -60,10 +60,22 @@ App-specific passwords → Generate. Save the 16-char password as
 [npmjs.com](https://www.npmjs.com) → account → Access Tokens → Generate
 new token → **Automation** (CI-friendly) → save as `NPM_TOKEN`.
 
-The CLI publishes as **`@deepcode/cli`**. The unscoped `deepcode-cli` on npm
-belongs to an unrelated project, so the `@deepcode` org must exist and the token
-must be able to publish into it. The workflow already passes `--access public`,
-which scoped packages need in order not to default to private.
+The CLI publishes as **`@oratis/deepcode`** — the personal scope of the account
+that owns the repository, so no organisation has to exist first. The token must
+be issued by that account. The workflow already passes `--access public`, which
+scoped packages need in order not to default to private.
+
+Two earlier names were dead ends, and both were only discovered by checking the
+registry rather than by reading our own `package.json`:
+
+| Name           | Owner                                                            |
+| -------------- | ---------------------------------------------------------------- |
+| `deepcode-cli` | an unrelated Doubao-based CLI (`guocong-bincai/deepcode-cli`)    |
+| `@deepcode/*`  | an unrelated scope holding `@deepcode/tsc`, `@deepcode/dcignore` |
+
+`@deepcode/cli` itself is unpublished, which is what made it look available —
+but npm rejects a publish into a scope you do not own regardless of whether the
+individual name is free. A scope is not claimable by publishing into it.
 
 ## Releasing
 
@@ -168,7 +180,7 @@ download manually; the "Relaunch to update" flow lights up once the feed exists.
 
 ## After a release
 
-- Verify: `npm view @deepcode/cli@<version>` shows the new version
+- Verify: `npm view @oratis/deepcode@<version>` shows the new version
 - Verify: `https://github.com/oratis/deepcode/releases/tag/v<version>`
   has the DMG and version-matched VSIX attached
 - Optional: announce in the README / homepage

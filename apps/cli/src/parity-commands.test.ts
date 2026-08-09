@@ -139,7 +139,7 @@ describe('/upgrade + /privacy-settings', () => {
   it('/upgrade shows the version + update instructions', async () => {
     const out = (await reg.match('/upgrade')!.cmd.run([], ctx())).join('\n');
     expect(out).toMatch(/DeepCode CLI v\d/);
-    expect(out).toContain('npm i -g @deepcode/cli@latest');
+    expect(out).toContain('npm i -g @oratis/deepcode@latest');
   });
 
   it('/privacy-settings shows data locations + the DeepSeek endpoint', async () => {

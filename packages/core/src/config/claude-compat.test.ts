@@ -2,7 +2,7 @@
 //
 // The migration guide asked people to `mv ~/.claude/... ~/.deepcode/...` before
 // DeepCode would see anything they had. That is five steps of grit in front of
-// `npm i -g @deepcode/cli && deepcode`, and it is the first thing a migrating
+// `npm i -g @oratis/deepcode && deepcode`, and it is the first thing a migrating
 // user hits.
 
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
