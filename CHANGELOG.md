@@ -5,6 +5,23 @@ All notable changes to DeepCode are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 🐛 Fixed
+
+- **The test suite could re-initialise your own repository.** `git` reads
+  `GIT_DIR` from the environment and a git hook sets it, so a fixture calling
+  `git init` on a temp directory from inside the pre-commit gate did not
+  initialise the temp directory — it re-initialised the developer's checkout as
+  bare and wrote the test identity into its config, after which every git
+  command there failed with "this operation must be run in a work tree".
+  `apps/server/src/workspace-diff.test.ts` was the fixture; the code it tests
+  scrubs the environment, the fixture did not. Three other fixtures had each
+  grown their own copy of the scrub, two carrying a comment describing this
+  precise failure — a convention passed by word of mouth that had stopped being
+  enforced. They now share `gitSpawnEnv`, and a check fails the build if a test
+  spawns `git` without it.
+
 ## [0.3.0] — 2026-08-08
 
 A workspace-governance layer: what the agent may touch, what it changed, and how

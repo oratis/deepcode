@@ -4,19 +4,15 @@ import { promisify } from 'node:util';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { SessionManager } from '@deepcode/core';
+import { SessionManager, gitSpawnEnv } from '@deepcode/core';
 import { CommandRegistry, type SessionContext } from './commands.js';
 
 const exec = promisify(execFile);
 
 // Strip inherited GIT_* so this test's `git init` can't be hijacked by a leaked
 // GIT_DIR when the suite runs inside a git hook (which would re-init the real
-// repo as bare). Mirrors the inline scrub in commands.ts.
-function gitEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  for (const k of Object.keys(env)) if (k.startsWith('GIT_')) delete env[k];
-  return env;
-}
+// repo as bare).
+const gitEnv = gitSpawnEnv;
 
 function makeContext(overrides: Partial<SessionContext> = {}): SessionContext {
   return {
