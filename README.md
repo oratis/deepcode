@@ -56,6 +56,7 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 | [docs/file-contract.md](docs/file-contract.md)                           | 路径维度权限契约（`deepcode contract`）         |
 | [docs/change-ledger.md](docs/change-ledger.md)                           | 变更账本与回滚（`deepcode ledger`）             |
 | [docs/combo.md](docs/combo.md)                                           | `/combo` —— 把做完的 thread 蒸馏成 skill        |
+| [docs/triggers.md](docs/triggers.md)                                     | 定时任务触发源：cron / ICS 日历 / 文件变更      |
 | [docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)                               | 5 分钟 launch 视频逐段录制脚本                  |
 
 ### 设计文档

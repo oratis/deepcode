@@ -5,6 +5,12 @@
 
 import { promises as fs } from 'node:fs';
 import type { TriggerProfile } from './profile.js';
+import {
+  isTriggerDue,
+  resolveTrigger,
+  type TriggerSource,
+  type TriggerVerdict,
+} from './triggers.js';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -20,8 +26,18 @@ export type UnattendedApprovalPolicy = 'deny' | 'abort';
 
 export interface CronJob {
   id: string;
-  /** 5-field cron expression: "min hour day-of-month month day-of-week". */
+  /**
+   * 5-field cron expression: "min hour day-of-month month day-of-week".
+   *
+   * Still the source when `trigger` is absent, which is every job written
+   * before triggers existed. Kept rather than migrated: a store nobody has to
+   * rewrite is a store that cannot be rewritten wrongly.
+   */
   schedule: string;
+  /**
+   * Where this job's events come from. Absent means the `schedule` above.
+   */
+  trigger?: TriggerSource;
   /** Prompt to run headlessly when the job fires. */
   prompt: string;
   /** Working directory to run in. */
@@ -202,10 +218,65 @@ export function isCronDue(schedule: string, date: Date): boolean {
   return true;
 }
 
-/** Enabled jobs due to run at `now`. */
+/**
+ * Enabled jobs due to run at `now`.
+ *
+ * Synchronous and cron-only. Kept because it is the shape every existing caller
+ * and test uses, and because a clock trigger needs nothing but the clock — but
+ * a job with a non-cron trigger is not decidable here, so it is skipped rather
+ * than guessed at. Use `dueJobsWithTriggers` to evaluate all of them.
+ */
 export function dueJobs(jobs: CronJob[], now: Date): CronJob[] {
-  return jobs.filter((j) => j.enabled && isCronDue(j.schedule, now));
+  return jobs.filter(
+    (j) => j.enabled && resolveTrigger(j).kind === 'cron' && isCronDue(j.schedule, now),
+  );
 }
+
+export interface DueJob {
+  job: CronJob;
+  verdict: TriggerVerdict;
+}
+
+/**
+ * Every enabled job whose trigger has fired, whatever kind it is.
+ *
+ * Async because a calendar has to be read and a watched file has to be stat'd.
+ * Diagnostics ride along on the verdict so the scheduler can log "this
+ * calendar has an RRULE I cannot express" next to the job it belongs to,
+ * instead of on nobody's behalf.
+ */
+export async function dueJobsWithTriggers(jobs: CronJob[], now: Date): Promise<DueJob[]> {
+  const out: DueJob[] = [];
+  for (const job of jobs) {
+    if (!job.enabled) continue;
+    const verdict = await isTriggerDue(
+      resolveTrigger(job),
+      { now, cwd: job.cwd, lastRunAt: job.lastRunAt },
+      isCronDue,
+    );
+    if (verdict.due) out.push({ job, verdict });
+  }
+  return out;
+}
+
+export {
+  describeTrigger,
+  isTriggerDue,
+  resolveTrigger,
+  validateTrigger,
+  type TriggerContext,
+  type TriggerSource,
+  type TriggerVerdict,
+} from './triggers.js';
+
+export {
+  matchingEvents,
+  occursAt,
+  parseIcs,
+  type IcsCalendar,
+  type IcsEvent,
+  type IcsRecurrence,
+} from './ics.js';
 
 export {
   describeClamp,

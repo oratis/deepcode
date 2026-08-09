@@ -9,7 +9,8 @@
 // so it survives `nvm`/path quirks) and best-effort `launchctl load`s it.
 
 import {
-  dueJobs,
+  dueJobsWithTriggers,
+  resolveTrigger,
   installPlist,
   launchdPlistPath,
   listCronJobs,
@@ -50,17 +51,38 @@ export async function runSchedulerRun(deps: SchedulerDeps = {}): Promise<{ ran: 
   const home = deps.home ?? homedir();
   const out = deps.output ?? process.stdout;
   const store = await loadCronStore(home);
-  const due = dueJobs(store.jobs, now);
+  const due = await dueJobsWithTriggers(store.jobs, now);
   const ran: string[] = [];
-  if (due.length === 0) return { ran };
+
+  // A file trigger compares mtimes against `lastRunAt`, so a job that has never
+  // run has nothing to compare against and deliberately does not fire. Stamp
+  // the baseline here — otherwise it has no way to ever acquire one, and the
+  // job stays silent forever while looking configured.
+  let stamped = false;
+  for (const job of store.jobs) {
+    if (!job.enabled || job.lastRunAt) continue;
+    if (resolveTrigger(job).kind !== 'file') continue;
+    job.lastRunAt = now.toISOString();
+    stamped = true;
+    out.write(`[scheduler] ${job.id}: watching from ${job.lastRunAt}\n`);
+  }
+
+  if (due.length === 0) {
+    if (stamped) await saveCronStore(store, home);
+    return { ran };
+  }
 
   out.write(`[scheduler] ${now.toISOString()} — ${due.length} job(s) due\n`);
-  for (const job of due) {
+  for (const { job, verdict } of due) {
+    // Say what the calendar could not express, next to the job it belongs to.
+    for (const note of verdict.diagnostics ?? []) {
+      out.write(`[scheduler] ${job.id}: ${note}\n`);
+    }
     try {
       await (deps.runJob ?? ((j) => defaultRunJob(j, home)))(job);
       job.lastRunAt = now.toISOString();
       ran.push(job.id);
-      out.write(`[scheduler] ran ${job.id}\n`);
+      out.write(`[scheduler] ran ${job.id}${verdict.reason ? ` — ${verdict.reason}` : ''}\n`);
     } catch (err) {
       out.write(`[scheduler] job ${job.id} failed: ${(err as Error).message}\n`);
     }

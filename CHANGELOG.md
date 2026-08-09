@@ -42,6 +42,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is excluded so an `Edit` does not look self-derived. Absent rather than empty
   when there is nothing to say.
 
+- **Trigger sources for scheduled jobs** — a job can now fire from a calendar
+  file or a file change, not only a clock. `{ "kind": "ics", "path": "team.ics",
+"match": "release" }` fires when a matching event starts;
+  `{ "kind": "file", "paths": ["schema.json"] }` fires when a watched path
+  changes. `schedule` still means cron and existing jobs need no migration.
+  Everything is **polled** by the existing `scheduler run`, so there is no
+  daemon and no way for a trigger to fire while nothing is listening. See
+  [`docs/triggers.md`](docs/triggers.md).
+
+  Standard iCalendar text is the only calendar input — no vendor SDK, no OAuth
+  to a calendar service. The reader handles `DTSTART`, folded `SUMMARY` lines and
+  `RRULE FREQ=DAILY`/`WEEKLY` with `INTERVAL`/`BYDAY`/`UNTIL`/`COUNT`, and
+  **reports** anything it cannot express rather than dropping it: a silently
+  ignored `RRULE` is a job that never fires, and that failure is
+  indistinguishable from "nothing was scheduled". All-day entries never fire —
+  they name a day, not a moment. A trigger decides when, never what may happen:
+  every scheduled run still goes through the unattended clamp.
+
 ### 🔒 Security
 
 - **A sub-agent did not inherit the file contract.** The `Task` delegation
