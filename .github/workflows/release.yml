@@ -408,7 +408,10 @@ jobs:
           else
             FROM=$(git rev-list --max-parents=0 HEAD)
           fi
-          npx tsx scripts/gen-release-notes.ts "$FROM" HEAD > release-notes.md
+          # --version makes CHANGELOG.md's entry the release body; the commit
+          # range is only the fallback when that entry does not exist.
+          npx tsx scripts/gen-release-notes.ts "$FROM" HEAD \
+            --version "${{ needs.validate.outputs.version }}" > release-notes.md
           # A release page missing an artifact reads as "there is no Mac build"
           # rather than "it was not produced this time". Say which.
           if [ "${{ needs.build-mac.result }}" != "success" ]; then

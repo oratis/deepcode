@@ -112,9 +112,19 @@ The `release.yml` workflow fires on any `v*` tag push. Its validation and public
 4. **build-mac** — macOS-14 runner, Rust + Tauri build, calls
    `scripts/sign-and-notarize.sh` end-to-end. Outputs
    `DeepCode-<version>-arm64.dmg`.
-5. **github-release** — generates release notes via
-   `scripts/gen-release-notes.ts` (groups PRs by label), creates
-   the GitHub Release, and attaches the DMG and VSIX.
+5. **github-release** — builds the release body via
+   `scripts/gen-release-notes.ts`, creates the GitHub Release, and attaches the
+   DMG and VSIX.
+
+   **The body is CHANGELOG.md's entry for the tagged version.** Repo-relative
+   links are rewritten to absolute URLs pinned at the tag — a release body does
+   not render inside the repository, so a relative link resolves against nothing,
+   and pinning at the tag keeps it pointing at this release's version of the file
+   after that file moves.
+
+   With no matching entry it falls back to the commit range and says so, in the
+   body and on stderr. That fallback is a signal that step 1 of the release
+   checklist was skipped, not a supported mode.
 
 ## Release channels
 
