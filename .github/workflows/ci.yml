@@ -81,6 +81,10 @@ jobs:
         env:
           DC_SANDBOX_NET_TEST: '1'
           DC_REQUIRE_RIPGREP: '1'
+          # Linux is the only runner with bubblewrap, and the bwrap integration
+          # tests are the only ones that check what the sandbox does rather than
+          # what arguments it builds. Make a missing binary fail there.
+          DC_REQUIRE_BWRAP: ${{ runner.os == 'Linux' && '1' || '0' }}
         run: pnpm test
 
       - name: Build + app-server release gate

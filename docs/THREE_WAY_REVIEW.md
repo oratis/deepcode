@@ -293,7 +293,13 @@ AskUserQuestion、模式/模型/effort 下拉、Inspector、FilePanel（Source/D
   协议了，但 `Sidebar.tsx` 绕过 shim 直接 `listSessions()`——所以"第二个读取者"其实一直是三处
   而不是两处。delete 协议侧原本没有方法，新增 `thread/delete`：app-server 是 thread 存储的
   单一 owner，renderer 越过它删文件可能把正在写的 writer 的地板抽掉。
-- **Linux (bwrap) 侧只共享了 sandbox 模式解析，没有在 Linux 主机上做过 #226 那样的实测。**
+- ~~**Linux (bwrap) 侧只共享了 sandbox 模式解析，没有在 Linux 主机上做过 #226 那样的实测。**~~
+  已补：bwrap 集成测试新增 mode 轴（read-only 可读不可写 / workspace-write 可读可写 /
+  danger-full-access 不包 bwrap），Linux CI 用 `DC_REQUIRE_BWRAP=1` 禁止静默跳过。
+  实测立刻抓到一个真 bug：`buildLinuxBwrapArgs` 末尾无条件 `--bind cwd cwd`，
+  bwrap 后绑定覆盖先绑定，所以 **`--sandbox read-only` 在 Linux 上根本不只读**。
+  macOS 侧没有这个问题（写权限只来自 `allowWrite`）—— 正是"只在一个平台上实测过"
+  的代价。
 - 图片输入仍是空壳（有意保留：DeepSeek 无 vision 模型）。
 
 ## 附：Codex 侧信息的可信度声明

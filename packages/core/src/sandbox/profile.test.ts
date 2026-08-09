@@ -109,6 +109,25 @@ describe('buildLinuxBwrapArgs', () => {
     expect(args[idx + 2]).toBe('/my/project');
   });
 
+  it('does not bind cwd read-write under read-only', () => {
+    // bwrap applies binds in order and the last wins, so an unconditional
+    // `--bind cwd` at the end silently overrode the read-only bind that
+    // sandboxConfigForMode had asked for. The mode resolved correctly and the
+    // workspace was writable anyway.
+    const args = buildLinuxBwrapArgs(
+      { enabled: true, mode: 'read-only', filesystem: { allowRead: ['/my/project'] } },
+      '/my/project',
+    );
+    expect(args).not.toContain('--bind');
+    const last = args.lastIndexOf('/my/project');
+    expect(args[last - 2]).toBe('--ro-bind-try');
+  });
+
+  it('still binds cwd read-write under workspace-write', () => {
+    const args = buildLinuxBwrapArgs({ enabled: true, mode: 'workspace-write' }, '/my/project');
+    expect(args).toContain('--bind');
+  });
+
   it('unshares pid/ipc/uts', () => {
     const args = buildLinuxBwrapArgs({ enabled: true }, '/x');
     expect(args).toContain('--unshare-pid');

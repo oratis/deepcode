@@ -48,6 +48,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ask, and a hit is not yet a read.
 - The plugin capability bridge passed no contract into the tools it executed, so
   a plugin's `Grep` skipped the same filter.
+- **`--sandbox read-only` was not read-only on Linux.** `buildLinuxBwrapArgs`
+  ended with an unconditional `--bind <cwd> <cwd>`, and bwrap applies binds in
+  order with the last one winning — so the read-only bind that the mode had
+  correctly asked for was overwritten a few arguments later, and a command could
+  write to the workspace. macOS never had this: its profile grants writes only
+  from `allowWrite`, which read-only leaves empty. #226 introduced the mode axis
+  and verified it on macOS; this is the half nobody looked at. Callers using the
+  legacy `enabled: true` shape are unaffected.
 
 ### 🐛 Fixed
 
