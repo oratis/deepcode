@@ -107,7 +107,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "openai": "^6.39.1"
+    "openai": "^7.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
