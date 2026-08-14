@@ -40,6 +40,7 @@ export {
   TodoWriteTool,
   SessionSearchTool,
   SessionReadTool,
+  SHELL_TOOLS,
   WebFetchTool,
   WebSearchTool,
   AskUserQuestionTool,
@@ -252,6 +253,15 @@ export {
   type RepeatReminderKind,
   type ToolDeadlineConfig,
 } from './guard/index.js';
+// Persistent shells
+export {
+  PersistentShell,
+  ShellRegistry,
+  type ShellInfo,
+  type ShellRegistryOptions,
+  type ShellRunResult,
+  type ShellSessionOptions,
+} from './shell/index.js';
 
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback, ApprovalDecision } from './agent.js';

@@ -123,6 +123,11 @@ export interface ToolContext {
    * user's behalf.
    */
   sessionSearchScope?: import('./sessions/search.js').SessionSearchScope;
+  /**
+   * Shells that outlive one tool call. Absent when the host owns no registry,
+   * in which case the shell tools say so instead of silently doing nothing.
+   */
+  shells?: import('./shell/registry.js').ShellRegistry;
   /** Canonical app-server turn associated with session-scoped mutations. */
   turnId?: string;
   /** Abort signal propagated from the agent loop. */
