@@ -13,6 +13,7 @@ import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { resolveRuntimePolicy } from './runtime/policy.js';
+import { applySpillPolicy, type SpillStore } from './spill/index.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
 // module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
@@ -109,6 +110,14 @@ export interface RunAgentOptions {
   /** Inject system reminders before the user message (date, todos, etc).
    *  Pass `false` to disable; pass a partial list to limit which builders run. */
   systemReminders?: false | { enabled?: ReminderType[] };
+  /** Model-visible ceiling per tool result, in code units. See `spill/policy.ts`. */
+  spillThresholdChars?: number;
+  /**
+   * Where oversized tool output is persisted. Hosts with a session directory
+   * get the local file store by default; supplying one here overrides that,
+   * and it is the seam tests use.
+   */
+  spillStore?: SpillStore;
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
@@ -301,6 +310,29 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     askUser: opts.askUser,
     modeSignal,
   };
+
+  // Spill storage is resolved once, lazily: the local backend imports node:fs,
+  // which a renderer build has no answer for. A host without one still gets the
+  // bounded preview — it just cannot offer retrieval.
+  const resolveSpillStore = async (): Promise<SpillStore | undefined> => {
+    if (opts.spillStore) return opts.spillStore;
+    const dir = toolCtx.sessionDir;
+    if (dir === undefined) return undefined;
+    try {
+      const mod = /* @vite-ignore */ './spill/local.js';
+      const { createLocalSpillStore } = (await import(mod)) as typeof import('./spill/local.js');
+      return createLocalSpillStore(dir);
+    } catch {
+      // No filesystem in this build — preview-only is the documented fallback.
+      return undefined;
+    }
+  };
+  // Memoized on the promise, not its result: tools run concurrently, and a
+  // second caller arriving mid-import must wait for the same answer rather than
+  // observe "not resolved yet" as "no store".
+  let spillStorePending: Promise<SpillStore | undefined> | undefined;
+  const spillStore = (): Promise<SpillStore | undefined> =>
+    (spillStorePending ??= resolveSpillStore());
 
   // Wire the Task tool's sub-agent runner — but only below the recursion cap,
   // so a sub-agent can't spawn further sub-agents (it also never gets the Task
@@ -772,6 +804,14 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };
       }
+
+      // Every result passes the spill policy on its way to the model, so no
+      // single tool can flood the context regardless of what it returns.
+      tr = await applySpillPolicy(tr, {
+        source: { toolName: toolUse.name, callId: toolUse.id, label: 'result' },
+        store: await spillStore(),
+        thresholdChars: opts.spillThresholdChars,
+      });
 
       // PostToolUse hook (M3) — observation only; can inject additionalContext
       if (opts.hooks) {

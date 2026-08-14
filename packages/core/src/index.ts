@@ -216,6 +216,21 @@ export {
   type CompactionResult,
 } from './compaction/index.js';
 
+// Tool-output spill — the central bound on model-visible tool output.
+export {
+  applySpillPolicy,
+  boundText,
+  BoundedCapture,
+  DEFAULT_SPILL_THRESHOLD_CHARS,
+  type BoundedText,
+  type SaveTextRequest,
+  type SpillOutcome,
+  type SpillPolicyOptions,
+  type SpillRef,
+  type SpillSource,
+  type SpillStore,
+} from './spill/index.js';
+
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback, ApprovalDecision } from './agent.js';
 
