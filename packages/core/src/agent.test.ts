@@ -1499,4 +1499,81 @@ describe('runAgent', () => {
       expect(resultText(result.history)).toBe('fast enough');
     });
   });
+
+  describe('persistent shells', () => {
+    it('closes every shell it opened, even when the loop throws', async () => {
+      // A crashed run leaving live shell processes on the machine is the
+      // objection this capability has to answer, so the guarantee cannot rest
+      // on the loop reaching its normal exit.
+      let seen: import('./shell/registry.js').ShellRegistry | undefined;
+      const grab: ToolHandler = {
+        name: 'Grab',
+        definition: {
+          name: 'Grab',
+          description: 'captures the registry then explodes the run',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        async execute(_input, toolCtx) {
+          seen = toolCtx.shells;
+          await toolCtx.shells?.open({ cwd });
+          return { content: 'grabbed' };
+        },
+      };
+
+      const exploding: Provider = {
+        name: 'exploding',
+        runTurn: (() => {
+          let first = true;
+          return () => {
+            if (first) {
+              first = false;
+              return Promise.resolve(
+                toolUse('grabbing', {
+                  type: 'tool_use',
+                  id: 'c1',
+                  name: 'Grab',
+                  input: {},
+                }),
+              );
+            }
+            // Not an AbortError, so the loop does not treat it as cancellation.
+            throw Object.assign(new Error('provider exploded'), { fatal: true });
+          };
+        })(),
+      };
+
+      await runAgent({
+        provider: exploding,
+        tools: new ToolRegistry([grab]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      expect(seen).toBeDefined();
+      expect(seen?.list()).toEqual([]);
+    });
+
+    it('leaves a host-owned registry alone', async () => {
+      // The host closes what the host owns; shells must survive between runs
+      // for a REPL session to be worth anything.
+      const { ShellRegistry } = await import('./shell/registry.js');
+      const shells = new ShellRegistry();
+      await shells.open({ cwd });
+
+      await runAgent({
+        provider: new MockProvider([endTurn('done')]),
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        shells,
+      });
+
+      expect(shells.list()).toHaveLength(1);
+      await shells.closeAll();
+    });
+  });
 });

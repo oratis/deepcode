@@ -21,6 +21,7 @@ import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { resolveRuntimePolicy } from './runtime/policy.js';
 import { applySpillPolicy, type SpillStore } from './spill/index.js';
+import { ShellRegistry } from './shell/registry.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
 // module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
@@ -141,6 +142,13 @@ export interface RunAgentOptions {
   /** Installed-plugin directories — so the Task tool can resolve plugin-bundled
    *  sub-agents (`<dir>/agents/*.md`) in addition to user/project ones. */
   pluginDirs?: string[];
+  /**
+   * Host-owned registry for shells that outlive one tool call. When set, shells
+   * survive across runs and the host is responsible for closing them. When
+   * absent, this run owns one and closes every shell before it returns, so no
+   * shell can outlive the run that opened it.
+   */
+  shells?: ShellRegistry;
   /** Optional host-owned background-task manager (e.g. the REPL's session-scoped
    *  one). When set, this run attaches its sub-agent runner to it and exposes it
    *  on the tool context, so background tasks persist across runAgent calls and
@@ -241,7 +249,28 @@ const READ_ONLY_TOOLS = new Set([
  * Runs the agent loop until the model produces an end_turn (no tool calls),
  * or `maxTurns` is reached, or the abort signal fires.
  */
+/**
+ * Run the agent loop.
+ *
+ * When the caller supplies no {@link RunAgentOptions.shells}, this run owns a
+ * registry and closes every shell it opened before returning — including when
+ * the loop throws. Leaving live shell processes behind after a crashed run is
+ * the failure this wrapper exists to make impossible.
+ *
+ * @param opts Everything the loop needs.
+ * @returns The final history, usage, and stop reason.
+ */
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
+  if (opts.shells) return runAgentInner(opts);
+  const shells = new ShellRegistry();
+  try {
+    return await runAgentInner({ ...opts, shells });
+  } finally {
+    await shells.closeAll();
+  }
+}
+
+async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const runtimePolicy = resolveRuntimePolicy(opts);
   const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
@@ -543,6 +572,8 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       toolCtx.tasks = new TaskManager(runner);
     }
   }
+
+  toolCtx.shells = opts.shells;
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
   let turnsUsed = 0;
