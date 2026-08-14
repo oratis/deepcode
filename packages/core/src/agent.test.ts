@@ -1205,4 +1205,85 @@ describe('runAgent', () => {
       expect(result.stopReason).toBe('end_turn');
     });
   });
+
+  describe('tool-output spill', () => {
+    const floodTool: ToolHandler = {
+      name: 'Flood',
+      definition: {
+        name: 'Flood',
+        description: 'returns a lot of text',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: () => Promise.resolve({ content: `HEAD${'.'.repeat(200_000)}TAIL` }),
+    };
+    const floodCall = (): ToolUseBlock => ({
+      type: 'tool_use',
+      id: 'call_flood',
+      name: 'Flood',
+      input: {},
+    });
+
+    /** The tool result the loop actually handed back to the provider. */
+    function resultText(history: StoredMessage[]): string {
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') return block.content;
+        }
+      }
+      expect.fail('no tool result in history');
+    }
+
+    it('bounds what a tool can put into the model context', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        spillThresholdChars: 1_000,
+      });
+
+      const text = resultText(result.history);
+      expect(text.length).toBeLessThan(2_000);
+      expect(text.startsWith('HEAD')).toBe(true);
+      expect(text.trimEnd().endsWith('TAIL')).toBe(true);
+    });
+
+    it('saves the omitted output where the model can read it back', async () => {
+      const manager = new SessionManager({ root: sessionsRoot });
+      const session = await manager.create(cwd);
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        session: { manager, id: session.id },
+        spillThresholdChars: 1_000,
+      });
+
+      const text = resultText(result.history);
+      const match = /Full output saved to:\n(.+)\n/.exec(text);
+      expect(match).not.toBeNull();
+      const saved = await fs.readFile((match as RegExpExecArray)[1], 'utf8');
+      expect(saved.length).toBe(200_008);
+      expect(saved.startsWith('HEAD')).toBe(true);
+      expect(saved.endsWith('TAIL')).toBe(true);
+    });
+
+    it('says so plainly when there is nowhere to save it', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        spillThresholdChars: 1_000,
+      });
+      expect(resultText(result.history)).toContain('was not saved');
+    });
+  });
 });
