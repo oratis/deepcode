@@ -1405,4 +1405,98 @@ describe('runAgent', () => {
       expect(fired[0]).toContain('called Spin 3 times in a row');
     });
   });
+
+  describe('tool deadline', () => {
+    const hangTool: ToolHandler = {
+      name: 'Hang',
+      definition: {
+        name: 'Hang',
+        description: 'never returns on its own',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: (_input, ctx) =>
+        new Promise((resolve) => {
+          // Well-behaved: stops when asked. The point of the test is that the
+          // asking happens at all.
+          ctx.signal?.addEventListener('abort', () => resolve({ content: 'stopped' }), {
+            once: true,
+          });
+        }),
+    };
+    const hangCall = (): ToolUseBlock => ({
+      type: 'tool_use',
+      id: 'call_hang',
+      name: 'Hang',
+      input: {},
+    });
+
+    function resultText(history: StoredMessage[]): string {
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') return block.content;
+        }
+      }
+      expect.fail('no tool result in history');
+    }
+
+    it('abandons a tool that never returns, instead of hanging the turn', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('hanging', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([hangTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 50 },
+      });
+
+      expect(result.stopReason).toBe('end_turn');
+      expect(resultText(result.history)).toContain('did not return within');
+    });
+
+    it('signals the tool so a well-behaved one can stop', async () => {
+      let aborted = false;
+      const watcher: ToolHandler = {
+        ...hangTool,
+        execute: (_input, ctx) =>
+          new Promise((resolve) => {
+            ctx.signal?.addEventListener(
+              'abort',
+              () => {
+                aborted = true;
+                resolve({ content: 'stopped' });
+              },
+              { once: true },
+            );
+          }),
+      };
+      await runAgent({
+        provider: new MockProvider([toolUse('hanging', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([watcher]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 50 },
+      });
+      expect(aborted).toBe(true);
+    });
+
+    it('leaves a tool that returns in time completely alone', async () => {
+      const quick: ToolHandler = {
+        ...hangTool,
+        execute: () => Promise.resolve({ content: 'fast enough' }),
+      };
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('quick', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([quick]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 10_000 },
+      });
+      expect(resultText(result.history)).toBe('fast enough');
+    });
+  });
 });

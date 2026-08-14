@@ -234,9 +234,14 @@ export {
 export {
   RepeatToolGuard,
   DEFAULT_REPEAT_EXCLUDE,
+  resolveToolDeadlineMs,
+  deadlineMessage,
+  DEFAULT_TOOL_DEADLINE_MS,
+  SIDE_EFFECTING_TOOLS,
   type RepeatGuardOptions,
   type RepeatReminder,
   type RepeatReminderKind,
+  type ToolDeadlineConfig,
 } from './guard/index.js';
 
 // Agent loop's approval callback type (M3b)
