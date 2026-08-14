@@ -7,7 +7,13 @@ import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import type { LedgerSink } from './ledger/index.js';
 import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
-import { RepeatToolGuard, type RepeatGuardOptions } from './guard/index.js';
+import {
+  deadlineMessage,
+  RepeatToolGuard,
+  resolveToolDeadlineMs,
+  type RepeatGuardOptions,
+  type ToolDeadlineConfig,
+} from './guard/index.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -121,6 +127,8 @@ export interface RunAgentOptions {
   spillStore?: SpillStore;
   /** Nudge the model when it repeats an identical tool call. `false` disables it. */
   repeatGuard?: false | RepeatGuardOptions;
+  /** Backstop deadline for a tool call that never returns. See `guard/tool-deadline.ts`. */
+  toolDeadlines?: ToolDeadlineConfig;
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
@@ -801,6 +809,50 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       ready.push({ toolUse, handler });
     }
 
+    /**
+     * Run a tool, abandoning the wait if it blows past its backstop deadline.
+     *
+     * Abandoning the wait is not the same as stopping the work: the signal asks
+     * the tool to stop, but a tool that ignores it keeps running. That is why
+     * the message for a side-effecting tool says the effect is unknown rather
+     * than claiming nothing happened.
+     */
+    const withDeadline = async (
+      toolUse: ToolUseBlock,
+      handler: NonNullable<ReturnType<typeof opts.tools.get>>,
+    ): Promise<Awaited<ReturnType<typeof handler.execute>>> => {
+      const ms = resolveToolDeadlineMs(toolUse.name, toolUse.input, opts.toolDeadlines);
+      if (ms === undefined) return handler.execute(toolUse.input, toolCtx);
+
+      const deadline = new AbortController();
+      const signal = opts.signal
+        ? AbortSignal.any([opts.signal, deadline.signal])
+        : deadline.signal;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const expired = new Promise<'deadline'>((resolve) => {
+        timer = setTimeout(() => {
+          // Settle the race BEFORE aborting. A tool that honors its signal
+          // resolves synchronously from the abort listener, and if that landed
+          // first the race would return the tool's own "I was cancelled"
+          // result — losing the deadline message, including its warning that a
+          // side effect may be half-applied.
+          resolve('deadline');
+          deadline.abort();
+        }, ms);
+      });
+      try {
+        const outcome = await Promise.race([
+          handler.execute(toolUse.input, { ...toolCtx, signal }),
+          expired,
+        ]);
+        return outcome === 'deadline'
+          ? { content: deadlineMessage(toolUse.name, ms), isError: true }
+          : outcome;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // Runs one approved tool end-to-end: pre-snapshot, execute, PostToolUse
     // hook, post-snapshot, event + result. Side-effect-free tools call this
     // concurrently; mutating tools call it one at a time (see partition below).
@@ -841,7 +893,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
       let tr;
       try {
-        tr = await handler.execute(toolUse.input, toolCtx);
+        tr = await withDeadline(toolUse, handler);
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };
       }
