@@ -1251,8 +1251,8 @@ describe('runAgent', () => {
     });
 
     it('saves the omitted output where the model can read it back', async () => {
-      const manager = new SessionManager(sessionsRoot);
-      const session = await manager.create({ cwd });
+      const manager = new SessionManager({ root: sessionsRoot });
+      const session = await manager.create(cwd);
       const result = await runAgent({
         provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
         tools: new ToolRegistry([floodTool]),
