@@ -7,6 +7,7 @@ import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import type { LedgerSink } from './ledger/index.js';
 import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
+import { RepeatToolGuard, type RepeatGuardOptions } from './guard/index.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
@@ -118,6 +119,8 @@ export interface RunAgentOptions {
    * and it is the seam tests use.
    */
   spillStore?: SpillStore;
+  /** Nudge the model when it repeats an identical tool call. `false` disables it. */
+  repeatGuard?: false | RepeatGuardOptions;
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
@@ -531,6 +534,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
   let turnsUsed = 0;
 
+  // One chain per run. A run begins with a user message, which is exactly when
+  // a fresh line of work starts, so there is nothing to carry over.
+  const repeatGuard =
+    opts.repeatGuard === false ? undefined : new RepeatToolGuard(opts.repeatGuard ?? {});
+
   // Stop hook — fires when the TOP-LEVEL agent finishes a run (a sub-agent's
   // completion is signalled by SubagentStop instead). Observation only.
   const fireStop = async (reason: string): Promise<void> => {
@@ -640,6 +648,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     // re-assembled in the model's original order regardless of finish order.
     const toolBlocks = result.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
     const resultsById = new Map<string, ToolResultBlock>();
+    const guardReminders: string[] = [];
     type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
     const ready: Ready[] = [];
 
@@ -673,6 +682,33 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       }
     };
 
+    /**
+     * Append any guard reminders as their own user message.
+     *
+     * This has to be a separate message appended AFTER the tool results, not a
+     * text block alongside them: the provider maps a user message's text and
+     * its tool_result blocks to separate wire messages, and a `user` turn
+     * between the assistant's tool_calls and their `tool` replies is a sequence
+     * the API rejects.
+     */
+    const flushGuardReminders = async (): Promise<void> => {
+      if (guardReminders.length === 0) return;
+      const msg: StoredMessage = {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `<system-reminder>\n${guardReminders.join('\n\n')}\n</system-reminder>`,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+      history.push(msg);
+      if (opts.session && opts.persistSessionMessages !== false) {
+        await opts.session.manager.append(opts.session.id, msg);
+      }
+    };
+
     /** Record a gate refusal as both a tool result (the model sees it) and an event (the host does). */
     const recordBlocked = (
       toolUse: ToolUseBlock,
@@ -698,6 +734,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // Phase 1 — sequential gate + approval.
     for (const toolUse of toolBlocks) {
+      // Counted before the gate, so a model hammering a denied call is caught
+      // by the same chain as one hammering an allowed one.
+      const repeat = repeatGuard?.observe(toolUse.name, toolUse.input);
+      if (repeat) guardReminders.push(repeat.text);
+
       const handler =
         !allowedToolNames || allowedToolNames.has(toolUse.name)
           ? opts.tools.get(toolUse.name)
@@ -891,6 +932,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     for (const r of serial) await execOne(r);
 
     await flushToolResults();
+    await flushGuardReminders();
 
     // M3c: auto-compact if the *current* context crossed the threshold.
     //
