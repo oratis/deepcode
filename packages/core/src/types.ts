@@ -112,6 +112,17 @@ export interface ToolContext {
   cwd: string;
   /** Where to write session-scoped artifacts (snapshots, bg task logs, etc.). */
   sessionDir?: string;
+  /** Root holding every session, for tools that read past ones. */
+  sessionsRoot?: string;
+  /** Id of the running session — excluded from its own search results. */
+  sessionId?: string;
+  /**
+   * How far session search may reach. Defaults to the current workspace.
+   * Widening it is a user setting, never a tool argument: a scope parameter
+   * would let the model consent to reading another project's history on the
+   * user's behalf.
+   */
+  sessionSearchScope?: import('./sessions/search.js').SessionSearchScope;
   /** Canonical app-server turn associated with session-scoped mutations. */
   turnId?: string;
   /** Abort signal propagated from the agent loop. */

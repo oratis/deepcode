@@ -129,6 +129,8 @@ export interface RunAgentOptions {
   repeatGuard?: false | RepeatGuardOptions;
   /** Backstop deadline for a tool call that never returns. See `guard/tool-deadline.ts`. */
   toolDeadlines?: ToolDeadlineConfig;
+  /** How far SessionSearch may reach. User setting, not a tool argument. */
+  sessionSearchScope?: import('./sessions/search.js').SessionSearchScope;
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
@@ -317,6 +319,9 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     sandboxDefaultMode: opts.sandboxDefaultMode,
     contract: opts.contract,
     sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
+    sessionsRoot: opts.session?.manager.root,
+    sessionId: opts.session?.id,
+    sessionSearchScope: opts.sessionSearchScope,
     turnId: opts.session?.turnId,
     askUser: opts.askUser,
     modeSignal,

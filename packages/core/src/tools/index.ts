@@ -26,5 +26,6 @@ export {
   type DeferredToolStore,
   type ToolSearchRegistry,
 } from './tool-search.js';
+export { SessionSearchTool, SessionReadTool } from './session-search.js';
 export { ToolRegistry, BUILTIN_TOOLS } from './registry.js';
 export type { ToolDefinition, ToolContext, ToolResult, ToolHandler } from './types.js';
