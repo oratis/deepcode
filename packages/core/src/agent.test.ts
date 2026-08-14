@@ -1286,4 +1286,123 @@ describe('runAgent', () => {
       expect(resultText(result.history)).toContain('was not saved');
     });
   });
+
+  describe('repeat-call guard', () => {
+    const spinTool: ToolHandler = {
+      name: 'Spin',
+      definition: {
+        name: 'Spin',
+        description: 'always says the same thing',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: () => Promise.resolve({ content: 'nothing changed' }),
+    };
+    const spin = (i: number): ProviderResult =>
+      toolUse('again', { type: 'tool_use', id: `call_${i}`, name: 'Spin', input: { q: 1 } });
+
+    /**
+     * Guard reminders in order. Matched on the guard's own phrasing rather than
+     * the `<system-reminder>` wrapper, which the loop also uses for the date and
+     * cwd reminders it prepends to every user message.
+     */
+    function reminders(history: StoredMessage[]): string[] {
+      const out: string[] = [];
+      for (const msg of history) {
+        if (msg.role !== 'user') continue;
+        for (const block of msg.content) {
+          if (
+            typeof block !== 'string' &&
+            block.type === 'text' &&
+            block.text.includes('in a row')
+          ) {
+            out.push(block.text);
+          }
+        }
+      }
+      return out;
+    }
+
+    it('nudges the model once it starts repeating itself', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      const fired = reminders(result.history);
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toContain('called Spin 3 times in a row');
+    });
+
+    it('stays silent when the calls differ', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([
+          toolUse('a', { type: 'tool_use', id: 'c1', name: 'Spin', input: { q: 1 } }),
+          toolUse('b', { type: 'tool_use', id: 'c2', name: 'Spin', input: { q: 2 } }),
+          toolUse('c', { type: 'tool_use', id: 'c3', name: 'Spin', input: { q: 3 } }),
+          endTurn('ok'),
+        ]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+      expect(reminders(result.history)).toHaveLength(0);
+    });
+
+    it('can be turned off', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        repeatGuard: false,
+      });
+      expect(reminders(result.history)).toHaveLength(0);
+    });
+
+    it('keeps the reminder out of the tool-result message', async () => {
+      // The provider maps a user message's text and its tool_result blocks to
+      // separate wire messages, and a `user` turn between an assistant's
+      // tool_calls and their `tool` replies is a sequence the API rejects. The
+      // reminder therefore has to be its own message, after the results.
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      for (const msg of result.history) {
+        const kinds = new Set(msg.content.map((b) => (typeof b === 'string' ? 'string' : b.type)));
+        expect(kinds.has('tool_result') && kinds.has('text')).toBe(false);
+      }
+    });
+
+    it('counts calls the gate refused', async () => {
+      // A model hammering a denied call is exactly the loop worth interrupting.
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        permissions: { deny: ['Spin'] },
+      });
+
+      const fired = reminders(result.history);
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toContain('called Spin 3 times in a row');
+    });
+  });
 });
