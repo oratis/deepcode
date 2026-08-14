@@ -105,6 +105,14 @@ export interface ToolDefinition {
   description: string;
   /** JSON Schema describing the input shape. */
   inputSchema: Record<string, unknown>;
+  /**
+   * How clients should present this call. Absent means `generic`.
+   *
+   * Declared by the tool so every client — desktop, CLI, editor — reads one
+   * answer instead of each hardcoding the same tool names. See
+   * `tools/presentation.ts`.
+   */
+  render?: import('./tools/presentation.js').ToolRenderKind;
 }
 
 export interface ToolContext {

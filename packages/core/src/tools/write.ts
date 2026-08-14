@@ -15,6 +15,7 @@ export const WriteTool: ToolHandler = {
   name: 'Write',
   definition: {
     name: 'Write',
+    render: 'diff',
     description:
       'Writes content to a file. Creates parent directories if needed. Overwrites existing file.',
     inputSchema: {

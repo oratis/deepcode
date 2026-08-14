@@ -42,6 +42,8 @@ import {
   type SlashCommand,
 } from '../lib/slash-commands.js';
 import { ToolCard } from '../components/ToolCard.js';
+import { ToolBody } from '../components/ToolBody.js';
+import { presentToolCall } from '@deepcode/core/dist/tools/presentation.js';
 import { projectName } from '../lib/project.js';
 import { useVoice } from '../lib/use-voice.js';
 import { insertTranscript } from '../lib/voice.js';
@@ -1130,52 +1132,64 @@ function renderMessage(
           {m.turn.reasoning ? <ReasoningBlock text={m.turn.reasoning} /> : null}
           {m.turn.text}
           {m.turn.streaming && isActive && <span className="streaming-cursor" />}
-          {m.turn.tools.map((t) => (
-            <div key={t.toolId}>
-              <ToolCard
-                name={t.name}
-                target={t.target}
-                status={{
-                  kind: t.status === 'running' ? 'info' : t.status === 'ok' ? 'ok' : 'err',
-                  label:
-                    t.status === 'running' ? '… running' : t.status === 'ok' ? '✓ done' : '✕ error',
-                }}
-                body={t.resultText ? truncate(t.resultText, 1500) : undefined}
-                onOpen={
-                  onOpenFile && typeof t.input?.file_path === 'string'
-                    ? () => onOpenFile(String(t.input.file_path))
-                    : undefined
-                }
-              />
-              {/* Inline approval — appears right under the relevant tool card */}
-              {pendingApproval && pendingApproval.toolName === t.name && t.status === 'running' && (
-                <div className="approval-row">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => onApproval('allow')}
-                  >
-                    Approve (↵)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    onClick={() => onApproval('deny')}
-                  >
-                    Reject (esc)
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => onApproval('always')}
-                    title="Persist to ~/.deepcode/settings.json#permissions.allow"
-                  >
-                    Always allow {t.name} in this session
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+          {m.turn.tools.map((t) => {
+            const presentation = presentToolCall(t.name, t.input ?? {});
+            return (
+              <div key={t.toolId}>
+                <ToolCard
+                  name={t.name}
+                  // A terminal body opens with the command as its prompt line,
+                  // in full, so repeating it in the header is noise.
+                  target={presentation.kind === 'terminal' ? undefined : t.target}
+                  status={{
+                    kind: t.status === 'running' ? 'info' : t.status === 'ok' ? 'ok' : 'err',
+                    label:
+                      t.status === 'running'
+                        ? '… running'
+                        : t.status === 'ok'
+                          ? '✓ done'
+                          : '✕ error',
+                  }}
+                  layout={presentation.kind}
+                  body={<ToolBody presentation={presentation} resultText={t.resultText} />}
+                  onOpen={
+                    onOpenFile && typeof t.input?.file_path === 'string'
+                      ? () => onOpenFile(String(t.input.file_path))
+                      : undefined
+                  }
+                />
+                {/* Inline approval — appears right under the relevant tool card */}
+                {pendingApproval &&
+                  pendingApproval.toolName === t.name &&
+                  t.status === 'running' && (
+                    <div className="approval-row">
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        onClick={() => onApproval('allow')}
+                      >
+                        Approve (↵)
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        onClick={() => onApproval('deny')}
+                      >
+                        Reject (esc)
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => onApproval('always')}
+                        title="Persist to ~/.deepcode/settings.json#permissions.allow"
+                      >
+                        Always allow {t.name} in this session
+                      </button>
+                    </div>
+                  )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
@@ -1191,10 +1205,6 @@ function abbreviatePath(p: string): string {
   const m = p.match(/^\/Users\/[^/]+/);
   if (m) return '~' + p.slice(m[0].length);
   return p;
-}
-
-function truncate(s: string, n: number): string {
-  return s.length > n ? s.slice(0, n) + '…\n[truncated]' : s;
 }
 
 /**

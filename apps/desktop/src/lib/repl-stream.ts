@@ -9,6 +9,12 @@
 // streaming deltas must NOT orphan the open assistant turn or spawn a second
 // streaming bubble — that was the "two blinking cursors" bug.
 
+// The card header's label comes from core, so the CLI and the extension read
+// the same answer rather than each keeping their own key list.
+import { pickTarget } from '@deepcode/core/dist/tools/presentation.js';
+
+export { pickTarget };
+
 export interface ToolInvocation {
   toolId: string;
   name: string;
@@ -232,15 +238,6 @@ export function appendStoredLine(input: Msg[], m: StoredLine): Msg[] {
     }
   }
   return msgs;
-}
-
-/** Pick a human-readable target from a tool's input for the card header. */
-export function pickTarget(input: Record<string, unknown>): string | undefined {
-  for (const k of ['file_path', 'command', 'pattern', 'path', 'url', 'query']) {
-    const v = input[k];
-    if (typeof v === 'string') return v;
-  }
-  return undefined;
 }
 
 // ── Resuming from a protocol thread ──────────────────────────────────────

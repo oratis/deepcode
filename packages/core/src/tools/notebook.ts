@@ -65,6 +65,7 @@ export const NotebookEditTool: ToolHandler = {
   name: 'NotebookEdit',
   definition: {
     name: 'NotebookEdit',
+    render: 'diff',
     description:
       'Edit a single cell of a Jupyter notebook (.ipynb). edit_mode: "replace" sets the target cell\'s source; "insert" adds a new cell after the target (or at the top if cell_id omitted); "delete" removes the target cell. Identify the cell by its nbformat `cell_id` or a 0-based numeric index.',
     inputSchema: {
