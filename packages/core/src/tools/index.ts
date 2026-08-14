@@ -35,4 +35,12 @@ export {
   SHELL_TOOLS,
 } from './shell.js';
 export { ToolRegistry, BUILTIN_TOOLS } from './registry.js';
+export {
+  presentToolCall,
+  pickTarget,
+  BUILTIN_RENDER_INTENTS,
+  type ToolRenderKind,
+  type ToolPresentation,
+  type ToolDiffIntent,
+} from './presentation.js';
 export type { ToolDefinition, ToolContext, ToolResult, ToolHandler } from './types.js';

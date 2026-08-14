@@ -20,8 +20,12 @@ interface ToolCardProps {
   status?: { kind: BadgeKind; label: string };
   /** Body content — pre-formatted (mono, preserves whitespace). */
   body?: ReactNode;
-  /** If true, body is a diff (line-by-line; preserves whitespace strictly). */
-  diff?: boolean;
+  /**
+   * How the body is laid out. `diff` and `terminal` preserve columns strictly;
+   * `generic` wraps. Chosen from the tool's own declared render intent — see
+   * core's `tools/presentation.ts`.
+   */
+  layout?: 'generic' | 'diff' | 'terminal';
   /**
    * If set, the target becomes a clickable "open preview" affordance — used for
    * file tools (Read/Write/Edit) to load the file into the right-side panel.
@@ -29,7 +33,14 @@ interface ToolCardProps {
   onOpen?: () => void;
 }
 
-export function ToolCard({ name, target, status, body, diff, onOpen }: ToolCardProps): JSX.Element {
+export function ToolCard({
+  name,
+  target,
+  status,
+  body,
+  layout = 'generic',
+  onOpen,
+}: ToolCardProps): JSX.Element {
   return (
     <div className={'tool-card' + (onOpen ? ' openable' : '')}>
       <div className="tc-head">
@@ -49,7 +60,7 @@ export function ToolCard({ name, target, status, body, diff, onOpen }: ToolCardP
           ))}
         {status && <Badge kind={status.kind}>{status.label}</Badge>}
       </div>
-      {body !== undefined && <div className={diff ? 'tc-body diff' : 'tc-body'}>{body}</div>}
+      {body !== undefined && <div className={`tc-body ${layout}`}>{body}</div>}
     </div>
   );
 }

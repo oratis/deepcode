@@ -17,6 +17,7 @@ export const EditTool: ToolHandler = {
   name: 'Edit',
   definition: {
     name: 'Edit',
+    render: 'diff',
     description:
       'Replaces exact text in a file. old_string must be unique unless replace_all=true. ' +
       'old_string and new_string must differ.',

@@ -975,7 +975,9 @@ select {
   max-height: 280px;
   overflow-y: auto;
 }
-.tool-card .tc-body.diff {
+/* Columns carry meaning in a diff and in terminal output, so neither wraps. */
+.tool-card .tc-body.diff,
+.tool-card .tc-body.terminal {
   white-space: pre;
 }
 .diff-add {
@@ -983,6 +985,20 @@ select {
 }
 .diff-del {
   color: var(--error);
+}
+/* The command line, held above its output the way a shell transcript reads. */
+.tool-card .tc-body.terminal .tc-prompt {
+  color: var(--text-1);
+  padding-bottom: 6px;
+}
+.tool-card .tc-body.terminal .tc-sigil {
+  color: var(--brand);
+  user-select: none;
+}
+.tool-card .tc-body.terminal .tc-stream {
+  color: var(--text-2);
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
 }
 
 /* Inline approval — sits right under a tool card */

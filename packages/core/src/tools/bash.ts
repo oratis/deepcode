@@ -161,6 +161,7 @@ export const BashTool: ToolHandler = {
   name: 'Bash',
   definition: {
     name: 'Bash',
+    render: 'terminal',
     description:
       'Executes a shell command. Captures stdout/stderr/exitCode. Default timeout 2 min.',
     inputSchema: {
