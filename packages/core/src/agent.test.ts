@@ -1501,6 +1501,26 @@ describe('runAgent', () => {
   });
 
   describe('persistent shells', () => {
+    /** The built-in registry plus one extra tool, so `Task` is still there. */
+    function withBuiltins(extra: ToolHandler): ToolRegistry {
+      const tools = new ToolRegistry();
+      tools.register(extra);
+      return tools;
+    }
+
+    /** Tool results from a run, keyed by the call id that produced them. */
+    function toolResults(history: StoredMessage[]): Map<string, string> {
+      const out = new Map<string, string>();
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') {
+            out.set(block.tool_use_id, block.content);
+          }
+        }
+      }
+      return out;
+    }
+
     it('closes every shell it opened, even when the loop throws', async () => {
       // A crashed run leaving live shell processes on the machine is the
       // objection this capability has to answer, so the guarantee cannot rest
@@ -1553,6 +1573,59 @@ describe('runAgent', () => {
 
       expect(seen).toBeDefined();
       expect(seen?.list()).toEqual([]);
+    });
+
+    it("does not hand a sub-agent the parent session's shells", async () => {
+      // The REPL owns one registry for the whole session. A delegated agent
+      // sharing it could `cd` or close a shell the parent is mid-way through
+      // using, and each would then be wrong about its state. Sub-agents get
+      // their own, closed when their run ends.
+      const { ShellRegistry } = await import('./shell/registry.js');
+      const parentShells = new ShellRegistry();
+      let subShells: unknown = 'never ran';
+
+      const peek: ToolHandler = {
+        name: 'Peek',
+        definition: {
+          name: 'Peek',
+          description: 'reports the registry it was given',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        execute: (_input, toolCtx) => {
+          subShells = toolCtx.shells;
+          return Promise.resolve({ content: 'peeked' });
+        },
+      };
+
+      const result = await runAgent({
+        provider: new MockProvider([
+          toolUse('delegating', {
+            type: 'tool_use',
+            id: 'task1',
+            name: 'Task',
+            input: { prompt: 'peek at the shells' },
+          }),
+          toolUse('peeking', { type: 'tool_use', id: 'p1', name: 'Peek', input: {} }),
+          endTurn('peeked'),
+          endTurn('done'),
+        ]),
+        // Built-ins plus Peek: `new ToolRegistry([peek])` would replace them and
+        // there would be no Task tool to delegate through.
+        tools: withBuiltins(peek),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        shells: parentShells,
+      });
+
+      // The delegation has to have actually happened, or `Peek` ran in the
+      // parent and the assertion below would pass for the wrong reason.
+      expect(toolResults(result.history).get('task1')).not.toMatch(/tool not found/);
+
+      expect(subShells).toBeDefined();
+      expect(subShells).not.toBe(parentShells);
+      await parentShells.closeAll();
     });
 
     it('leaves a host-owned registry alone', async () => {

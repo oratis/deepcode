@@ -10,6 +10,7 @@ import type {
   SessionManager,
   SessionMeta,
   StoredMessage,
+  ShellRegistry,
   TaskManager,
   VoiceStatus,
 } from '@deepcode/core';
@@ -183,6 +184,10 @@ export interface SessionContext {
    *  /background. Same instance the agent loop uses, so tasks the agent starts
    *  are visible here and vice-versa. */
   tasks?: TaskManager;
+  /** Session-scoped persistent shells (REPL-injected) — backs /shells. Same
+   *  instance the agent loop uses, so a shell the agent opened is listed here
+   *  and closing one here really closes it. */
+  shells?: ShellRegistry;
 }
 
 export interface SlashCommand {
@@ -1220,6 +1225,40 @@ export const TasksCommand: SlashCommand = {
   },
 };
 
+export const ShellsCommand: SlashCommand = {
+  name: '/shells',
+  description: 'List persistent shells this session, or `/shells close <id>` to close one.',
+  async run(args, ctx) {
+    if (!ctx.shells) return ['(Persistent shells are unavailable here.)'];
+
+    if (args[0] === 'close') {
+      const id = args[1]?.trim();
+      if (!id) return ['Usage: /shells close <id>'];
+      return [
+        (await ctx.shells.close(id))
+          ? `Closed ${id} and anything still running in it.`
+          : `No open shell "${id}". Run /shells to list them.`,
+      ];
+    }
+    if (args[0]) return [`Unknown argument "${args[0]}". Usage: /shells [close <id>]`];
+
+    const shells = ctx.shells.list();
+    if (shells.length === 0) {
+      return [
+        'No persistent shells open.',
+        'The agent opens one with its ShellOpen tool when commands need to build on each other.',
+      ];
+    }
+    const lines = [`Persistent shells (${shells.length}):`];
+    for (const s of shells) {
+      lines.push(`  ${s.id}  ${s.cwd}  last used ${s.lastUsedAt}${s.busy ? '  [running]' : ''}`);
+    }
+    lines.push('');
+    lines.push('Close one with `/shells close <id>`. All of them close when this session ends.');
+    return lines;
+  },
+};
+
 /** "Ready" status lines for /voice (non-interactive / headless fallback). */
 export function voiceReadyLines(status: VoiceStatus): string[] {
   return [
@@ -1433,6 +1472,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   BtwCommand,
   TasksCommand,
   BackgroundCommand,
+  ShellsCommand,
   VoiceCommand,
 ];
 

@@ -22,6 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- **Persistent shells now last a whole CLI session, and `/shells` shows them.**
+  The registry landed in #273 owned by a single `runAgent` call, which meant a
+  shell opened in one turn was gone by the next — a slower `Bash` with extra
+  steps. The REPL now owns one registry for the session and threads it through
+  every turn, so `cd`, `export`, and an activated virtualenv survive from one
+  message to the next.
+
+  `/shells` lists what is open and where each started; `/shells close <id>`
+  closes one and whatever is still running in it. Worth having because the
+  change is what makes these processes outlive a turn: without a view of them,
+  the user has no way to see or stop something the agent left running.
+
+  Everything closes when the session ends, including when it ends by throwing —
+  these are real processes in their own process group, so they do not die with
+  the CLI. Background tasks and sub-agents deliberately do **not** share the
+  session's shells: two agents interleaving commands in one shell would each be
+  wrong about its state.
+
 - **A shell that survives between tool calls** (#273) — `ShellOpen` / `ShellRun` /
   `ShellClose` / `ShellList`. Every `Bash` call is a fresh process, so `cd`,
   `export`, and `source venv/bin/activate` were forgotten the moment they
