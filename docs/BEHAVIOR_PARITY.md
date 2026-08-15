@@ -148,27 +148,29 @@ Specific deviations:
 
 ## Tools
 
-| Tool                                                                           | Claude Code | DeepCode | Status                                                      |
-| ------------------------------------------------------------------------------ | ----------- | -------- | ----------------------------------------------------------- |
-| Read                                                                           | ✓           | ✓        | ✅                                                          |
-| Write                                                                          | ✓           | ✓        | ✅                                                          |
-| Edit                                                                           | ✓           | ✓        | ✅                                                          |
-| Bash                                                                           | ✓           | ✓        | ✅ + M3.5 sandbox wrap                                      |
-| Grep                                                                           | ✓           | ✓        | ✅ via ripgrep                                              |
-| Glob                                                                           | ✓           | ✓        | ✅ via fs.glob                                              |
-| Skill                                                                          | ✓           | ✓        | ✅ M5                                                       |
-| Task (subagents)                                                               | ✓           | ✅       | `TaskTool` in `BUILTIN_TOOLS` — spawns a sub-agent          |
-| NotebookEdit                                                                   | ✓           | ✅       | shipped (`tools/notebook.ts`)                               |
-| AskUserQuestion                                                                | ✓           | ✅       | shipped; returns null in headless                           |
-| EnterPlanMode / ExitPlanMode                                                   | ✓           | ✅       | shipped; also drivable via `/mode plan`                     |
-| EnterWorktree / ExitWorktree                                                   | ✓           | ✅       | shipped (`tools/worktree-tools.ts`)                         |
-| ToolSearch (deferred load)                                                     | ✓           | ✅       | installed when MCP tools opt out of eager load              |
-| TaskCreate / Monitor / TaskList / TaskGet / TaskOutput / TaskStop / TaskUpdate | ✓           | ✅       | shipped — background tasks (`TASK_TOOLS`)                   |
-| CronCreate / CronList / CronDelete                                             | ✓           | ✅       | shipped — launchd-backed scheduler                          |
-| ScheduleWakeup                                                                 | ✓           | ⚠️       | not a tool in DeepCode — use `CronCreate` / `deepcode cron` |
-| WebFetch                                                                       | ✓           | ✅       | shipped M3c-rest — 5 MiB cap + abort                        |
-| WebSearch                                                                      | ✓           | ✅       | shipped M3c-rest — DDG default + SearXNG                    |
-| TodoWrite                                                                      | ✓           | ✅       | shipped M3c-rest — persists in sessionDir                   |
+| Tool                                                                           | Claude Code | DeepCode | Status                                                                                                                         |
+| ------------------------------------------------------------------------------ | ----------- | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Read                                                                           | ✓           | ✓        | ✅                                                                                                                             |
+| Write                                                                          | ✓           | ✓        | ✅                                                                                                                             |
+| Edit                                                                           | ✓           | ✓        | ✅                                                                                                                             |
+| Bash                                                                           | ✓           | ✓        | ✅ + M3.5 sandbox wrap                                                                                                         |
+| Grep                                                                           | ✓           | ✓        | ✅ via ripgrep                                                                                                                 |
+| Glob                                                                           | ✓           | ✓        | ✅ via fs.glob                                                                                                                 |
+| Skill                                                                          | ✓           | ✓        | ✅ M5                                                                                                                          |
+| Task (subagents)                                                               | ✓           | ✅       | `TaskTool` in `BUILTIN_TOOLS` — spawns a sub-agent                                                                             |
+| NotebookEdit                                                                   | ✓           | ✅       | shipped (`tools/notebook.ts`)                                                                                                  |
+| AskUserQuestion                                                                | ✓           | ✅       | shipped; returns null in headless                                                                                              |
+| EnterPlanMode / ExitPlanMode                                                   | ✓           | ✅       | shipped; also drivable via `/mode plan`                                                                                        |
+| EnterWorktree / ExitWorktree                                                   | ✓           | ✅       | shipped (`tools/worktree-tools.ts`)                                                                                            |
+| ToolSearch (deferred load)                                                     | ✓           | ✅       | installed when MCP tools opt out of eager load                                                                                 |
+| TaskCreate / Monitor / TaskList / TaskGet / TaskOutput / TaskStop / TaskUpdate | ✓           | ✅       | shipped — background tasks (`TASK_TOOLS`)                                                                                      |
+| CronCreate / CronList / CronDelete                                             | ✓           | ✅       | shipped — launchd-backed scheduler                                                                                             |
+| ScheduleWakeup                                                                 | ✓           | ⚠️       | not a tool in DeepCode — use `CronCreate` / `deepcode cron`                                                                    |
+| WebFetch                                                                       | ✓           | ✅       | shipped M3c-rest — 5 MiB fetch cap + abort; model-visible output bounded by the spill policy (#268)                            |
+| WebSearch                                                                      | ✓           | ✅       | shipped M3c-rest — DDG default + SearXNG                                                                                       |
+| TodoWrite                                                                      | ✓           | ✅       | shipped M3c-rest — persists in sessionDir                                                                                      |
+| ShellOpen / ShellRun / ShellClose / ShellList                                  | ✗           | ✅       | 🆕 DeepCode-only — a shell that keeps cwd/env/functions across calls (pipes + sentinel, not a PTY, so no full-screen programs) |
+| SessionSearch / SessionRead                                                    | ✗           | ✅       | 🆕 DeepCode-only — search your own past sessions; workspace-scoped, no scope argument                                          |
 
 ## CLI flags
 
