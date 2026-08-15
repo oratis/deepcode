@@ -11,6 +11,7 @@ import {
   ReadTool,
   RuntimeHost,
   SessionManager,
+  ShellRegistry,
   TaskManager,
   ToolRegistry,
   WebFetchTool,
@@ -222,7 +223,29 @@ async function pickSessionId(
   return list[n - 1]!.id;
 }
 
+/**
+ * Run the interactive REPL.
+ *
+ * The persistent-shell registry is owned here, one per REPL session, so a shell
+ * the agent opens in one turn is still there in the next — which is the whole
+ * point of a shell that keeps its working directory. The wrapper closes every
+ * one of them on the way out, including when the session throws: these are real
+ * OS processes in their own process group, so they do not die with the CLI and
+ * "the loop will remember" is not a guarantee.
+ *
+ * @param opts REPL configuration.
+ * @returns Process exit code.
+ */
 export async function startRepl(opts: ReplOpts): Promise<number> {
+  const shells = new ShellRegistry();
+  try {
+    return await runReplSession(opts, shells);
+  } finally {
+    await shells.closeAll();
+  }
+}
+
+async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<number> {
   const { output, cwd } = opts;
 
   // Load config + creds. Trust-gate first: in an untrusted directory, project
@@ -547,6 +570,7 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
     return { done, abort: () => ac.abort() };
   });
   ctx.tasks = tasks;
+  ctx.shells = shells;
 
   // Colour resolves once: a --no-color flag, NO_COLOR/FORCE_COLOR, or whether
   // stdout is actually a terminal. Piped output stays plain.
@@ -730,6 +754,11 @@ export async function startRepl(opts: ReplOpts): Promise<number> {
       // Session-scoped manager: the agent's TaskCreate calls land here too, so
       // background tasks persist across turns and show up in /tasks.
       taskManager: tasks,
+      // Session-scoped too, for the same reason: a shell opened this turn has to
+      // still be there next turn or it is just a slower Bash. Deliberately NOT
+      // given to the background-task runner below — two agents interleaving
+      // commands in one shell would each be wrong about its state.
+      shells,
       approval: async (toolName, input, verdict) => {
         output.write(
           `\n  ${palette.yellow('⏸')} Approve ${palette.bold(toolName)}?  ${palette.dim(verdict.reason)}\n`,
