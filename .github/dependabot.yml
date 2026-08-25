@@ -24,6 +24,14 @@ updates:
       # decision, not a dependency update. Raise `engines.vscode` deliberately
       # and move the types with it, together.
       - dependency-name: '@types/vscode'
+      # Same rule, same reason: `@types/node` describes the OLDEST Node we
+      # support (`engines.node`, which CI pins), not the newest release. Types
+      # above that floor let a call added in a later Node compile and then throw
+      # on the version we ship for — and unlike `@types/vscode` nothing refuses
+      # the build, so it fails in a user's terminal instead. Minor and patch
+      # inside the supported major still flow through the `typescript` group.
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       typescript:
         patterns:
