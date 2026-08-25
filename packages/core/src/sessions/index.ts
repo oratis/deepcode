@@ -24,3 +24,12 @@ export {
   restoreSnapshot,
   type Snapshot,
 } from './snapshots.js';
+export {
+  searchSessions,
+  inWorkspace,
+  excerptAround,
+  type SessionSearchScope,
+  type SessionSearchOptions,
+  type SessionSearchHit,
+  type SessionSearchResult,
+} from './search.js';

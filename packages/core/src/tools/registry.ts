@@ -13,6 +13,8 @@ import { GlobTool } from './glob.js';
 import { GrepTool } from './grep.js';
 import { NotebookEditTool } from './notebook.js';
 import { ReadTool } from './read.js';
+import { SessionReadTool, SessionSearchTool } from './session-search.js';
+import { SHELL_TOOLS } from './shell.js';
 import { SubmitReviewFindingTool } from './review-finding.js';
 import { TaskTool } from './task.js';
 import { TodoWriteTool } from './todo.js';
@@ -38,6 +40,9 @@ export const BUILTIN_TOOLS: ToolHandler[] = [
   GlobTool,
   NotebookEditTool,
   TodoWriteTool,
+  SessionSearchTool,
+  SessionReadTool,
+  ...SHELL_TOOLS,
   WebFetchTool,
   WebSearchTool,
   AskUserQuestionTool,

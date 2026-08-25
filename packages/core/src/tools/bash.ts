@@ -19,6 +19,7 @@ import {
 } from '../sandbox/index.js';
 import type { NetworkSandboxHandle, SpawnNetworkSandboxOpts } from '../sandbox/index.js';
 import type { SandboxConfig, SandboxMode } from '../config/types.js';
+import { BoundedCapture } from '../spill/bound.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface BashInput {
@@ -40,29 +41,34 @@ type SandboxCtx = ToolContext & {
 };
 
 const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
-const MAX_OUTPUT_BYTES = 30_000;
+// What one stream keeps in memory. This is NOT the model-visible limit — the
+// spill policy bounds that centrally and saves the rest to a file the model can
+// read. Capture has to exceed that limit for there to be anything worth saving,
+// while staying small enough that a runaway command cannot exhaust memory.
+const CAPTURE_HEAD_CHARS = 1_000_000;
+const CAPTURE_TAIL_CHARS = 3_000_000;
 type TerminationReason = 'timeout' | 'aborted';
 
 // Monotonic suffix so two background spawns in the same millisecond from the
 // same pid don't collide on a log filename.
 let bgSeq = 0;
 
-function capStream(s: string, label: string): string {
-  return s.length > MAX_OUTPUT_BYTES
-    ? s.slice(0, MAX_OUTPUT_BYTES) + `\n... [${label} truncated]`
-    : s;
+function newCapture(): BoundedCapture {
+  return new BoundedCapture(CAPTURE_HEAD_CHARS, CAPTURE_TAIL_CHARS);
 }
 
 /** Build the standard Bash ToolResult from captured output + exit info. */
 function summarize(
-  stdout: string,
-  stderr: string,
+  out: BoundedCapture,
+  err: BoundedCapture,
   terminationReason: TerminationReason | undefined,
   code: number | null,
   timeoutMs: number,
   note?: string,
 ): ToolResult {
   const parts: string[] = [];
+  const stdout = out.text();
+  const stderr = err.text();
   if (note) parts.push(note);
   if (stdout) parts.push(`<stdout>\n${stdout}\n</stdout>`);
   if (stderr) parts.push(`<stderr>\n${stderr}\n</stderr>`);
@@ -75,8 +81,8 @@ function summarize(
       exitCode: code,
       killed: terminationReason !== undefined,
       terminationReason,
-      stdoutBytes: stdout.length,
-      stderrBytes: stderr.length,
+      stdoutBytes: out.total,
+      stderrBytes: err.total,
     },
     isError: terminationReason !== undefined || (code !== null && code !== 0),
   };
@@ -112,8 +118,8 @@ async function runForegroundNet(
 ): Promise<ToolResult> {
   const handle = await spawnFn({ userCommand: command, cwd: ctx.cwd, config });
   return new Promise<ToolResult>((resolve) => {
-    let stdout = '';
-    let stderr = '';
+    const stdout = newCapture();
+    const stderr = newCapture();
     let terminationReason: TerminationReason | undefined;
     let settled = false;
     const finish = (r: ToolResult): void => {
@@ -132,10 +138,10 @@ async function runForegroundNet(
     };
     ctx.signal?.addEventListener('abort', onAbort, { once: true });
     handle.child.stdout?.on('data', (c: Buffer) => {
-      stdout = capStream(stdout + c.toString('utf8'), 'stdout');
+      stdout.push(c.toString('utf8'));
     });
     handle.child.stderr?.on('data', (c: Buffer) => {
-      stderr = capStream(stderr + c.toString('utf8'), 'stderr');
+      stderr.push(c.toString('utf8'));
     });
     handle.exited
       .then((code) => {
@@ -155,6 +161,7 @@ export const BashTool: ToolHandler = {
   name: 'Bash',
   definition: {
     name: 'Bash',
+    render: 'terminal',
     description:
       'Executes a shell command. Captures stdout/stderr/exitCode. Default timeout 2 min.',
     inputSchema: {
@@ -277,8 +284,8 @@ export const BashTool: ToolHandler = {
         cwd: ctx.cwd,
         detached: process.platform !== 'win32',
       });
-      let stdout = '';
-      let stderr = '';
+      const stdout = newCapture();
+      const stderr = newCapture();
       let terminationReason: TerminationReason | undefined;
       let settled = false;
       const finish = (result: ToolResult): void => {
@@ -304,10 +311,10 @@ export const BashTool: ToolHandler = {
       ctx.signal?.addEventListener('abort', onAbort, { once: true });
 
       child.stdout.on('data', (chunk: Buffer) => {
-        stdout = capStream(stdout + chunk.toString('utf8'), 'stdout');
+        stdout.push(chunk.toString('utf8'));
       });
       child.stderr.on('data', (chunk: Buffer) => {
-        stderr = capStream(stderr + chunk.toString('utf8'), 'stderr');
+        stderr.push(chunk.toString('utf8'));
       });
 
       child.on('error', (err) => {

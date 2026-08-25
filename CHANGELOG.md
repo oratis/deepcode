@@ -22,6 +22,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- **Persistent shells now last a whole CLI session, and `/shells` shows them.**
+  The registry landed in #273 owned by a single `runAgent` call, which meant a
+  shell opened in one turn was gone by the next — a slower `Bash` with extra
+  steps. The REPL now owns one registry for the session and threads it through
+  every turn, so `cd`, `export`, and an activated virtualenv survive from one
+  message to the next.
+
+  `/shells` lists what is open and where each started; `/shells close <id>`
+  closes one and whatever is still running in it. Worth having because the
+  change is what makes these processes outlive a turn: without a view of them,
+  the user has no way to see or stop something the agent left running.
+
+  Everything closes when the session ends, including when it ends by throwing —
+  these are real processes in their own process group, so they do not die with
+  the CLI. Background tasks and sub-agents deliberately do **not** share the
+  session's shells: two agents interleaving commands in one shell would each be
+  wrong about its state.
+
+- **A shell that survives between tool calls** (#273) — `ShellOpen` / `ShellRun` /
+  `ShellClose` / `ShellList`. Every `Bash` call is a fresh process, so `cd`,
+  `export`, and `source venv/bin/activate` were forgotten the moment they
+  returned; the workaround was re-pasting the whole prefix into every command,
+  which still could not hold a running dev server.
+
+  Not a PTY. That would mean `node-pty`, a native dependency needing a build for
+  every platform the desktop ships to, bought for full-screen programs that are a
+  small share of the value. This runs over pipes with a per-session random
+  sentinel, and says plainly in its description that `vim` and `top` do not work.
+  Commands run with stdin closed so `cat` cannot swallow the sentinel, and stderr
+  is merged at the shell so the streams interleave in true order.
+
+  Interrupting an overrunning command signals the shell's **children**, not its
+  process group — signalling the group kills a non-interactive bash, which would
+  lose the session every time. Lifetime is guaranteed rather than remembered: a
+  run that opens its own registry closes every shell before returning, including
+  when the loop throws. Idle shells close themselves and there is a cap on how
+  many can be open.
+
+- **The agent can search its own past sessions** (#272) — `SessionSearch` finds
+  text across previous sessions and `SessionRead` follows a hit into the
+  surrounding conversation. Every session was already on disk as JSONL and
+  nothing could read it back, so "how did we fix this last month" was
+  unanswerable while the answer sat in a file the agent wrote.
+
+  Scoped to the current workspace by default, matched on a resolved path boundary
+  so `/a/project` cannot capture `/a/project-two`. **Neither tool takes a scope
+  argument**: widening the search is a privacy decision, and a parameter would let
+  the model consent to reading another project's history on the user's behalf.
+  `SessionRead` enforces the same rule, so knowing an id is not authorisation. No
+  index — a scan is fast at this volume, and an index is a second copy of the
+  truth that can disagree with it.
+
+- **Tools declare how they should be drawn** (#271). Every tool call rendered as
+  the same grey blob: an `Edit` showed its result sentence but never the change,
+  a `Bash` showed output with no sign of which command produced it. A tool now
+  declares a render intent beside its schema — `Bash` is `terminal`,
+  `Edit`/`Write`/`NotebookEdit` are `diff` — and the desktop draws real coloured
+  `+`/`-` lines and a shell transcript. The mapping lives in core so the CLI and
+  the extension read one answer instead of each hardcoding tool names.
+
+  Presentation is a pure function of the call's **arguments**, never the result or
+  the filesystem, so a replayed session renders as it did live. That is why
+  `Write` renders as wholly added: its arguments genuinely do not say what the
+  file held before.
+
+- **A backstop deadline on every tool call** (#270). Only `Bash` bounded itself;
+  a `Grep` against a stalled mount could hang the turn forever with nothing on
+  screen but a blinking cursor. Deliberately generous (10 min default) so each
+  tool's own limit fires first and produces the more specific error — this only
+  covers the case where the inner limit never fires. A caller-requested `timeout`
+  always wins when longer. On a side-effecting tool the message says the effect is
+  **unknown** rather than implying nothing happened.
+
+- **The loop notices when the model is repeating itself** (#269). The most
+  expensive agent failure is the loop that neither errors nor terminates: same
+  tool, same arguments, same answer, quietly spending the budget. At 3, 5, and 8
+  consecutive identical calls an escalating reminder is injected. It has no veto,
+  which is what makes false positives affordable. Excluded tools are transparent
+  to the chain rather than resets, so a bookkeeping call interleaved into a loop
+  cannot launder it, and calls the gate refused still count.
+
 - **`thread/delete`** — the protocol could list, fork and archive threads but not
   delete one, so the desktop deleted session files through Tauri instead. The
   app-server is the single owner of thread storage; a client removing files
@@ -100,6 +181,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **Tool output could flood the model's context, or vanish** (#268). Two defects,
+  one cause: nothing central bounded what a tool result put in front of the
+  model, so each tool improvised.
+
+  `WebFetch` improvised by not bounding at all — it returned the whole response
+  body, capped only at 5 MiB of _bytes_. A 5 MiB page is roughly 1.5M tokens; one
+  call ended the session. `Bash` improvised by destroying evidence: it sliced at
+  30 KB and wrote the remainder nowhere, and the tail of a failing test run is
+  exactly the part worth reading.
+
+  A spill policy now runs on every tool result. Anything at or under the
+  threshold passes through untouched; anything over becomes a head-and-tail
+  preview naming the file holding the full text, saved beside that session's
+  snapshots and retrievable with `Read`. Both ends, weighted toward the tail,
+  because stack traces and exit codes live at the end. A host with no filesystem
+  still gets the bound and is told the output was not saved rather than shown a
+  path that does not exist.
+
 - **Release notes come from the CHANGELOG.** `gen-release-notes.ts` walked the
   commit range, and with no preceding tag it fell back to the root commit — which
   is how v0.3.0's release page came to say "0 commits." after #250 fixed the
@@ -165,6 +264,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `apps/cli/README.md` — the npm landing page — still described the CLI as an
   "M0 骨架，命令入口存在但不能用" and pointed at milestone numbers for when
   features would arrive. It shipped in the package `files` list.
+
+### 📄 Documentation
+
+- **DeepSeek Harness research and adoption plan** (#267) —
+  [`docs/research/deepseek-harness.md`](docs/research/deepseek-harness.md) grades
+  every claim A/B/C (source read / their docs say so / hearsay, inadmissible),
+  and [`docs/DSH_ADOPTION_PLAN.md`](docs/DSH_ADOPTION_PLAN.md) argues each
+  candidate proponent / opponent / verdict so the implementation PRs execute a
+  decision rather than reopen one. dsh is the closest comparison DeepCode has:
+  another DeepSeek-powered coding agent under the same constraints.
+
+### 🚫 Deliberately not adopted
+
+A Cordis-style "everything is a plugin" rewrite: dsh spends **219 packages**
+expressing what DeepCode expresses in **4**, and that ratio is what shipping a
+third-party plugin ecosystem costs — we do not ship one, so we would pay the cost
+and collect none of the benefit. It also self-describes as a developer preview
+that _will_ break compatibility, while 0.3.0 is out with npm, VSIX, DMG and an
+update feed downstream. Take the discipline, not the framework.
+
+Also rejected: its workflow engine, which introduces model-written code executed
+behind a boundary its own docs say is not a security boundary, with no use case
+our sub-agents fail to cover. Deferred pending a product decision: the goal
+domain and the Ralph loop, which change _when an agent stops_ rather than what it
+can do. Reasoning in the adoption plan §2.
 
 ## [0.3.0] — 2026-08-08
 

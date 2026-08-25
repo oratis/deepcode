@@ -2,7 +2,7 @@
   "name": "@deepcode/core",
   "version": "0.0.0",
   "private": true,
-  "description": "DeepCode kernel — agent loop, providers, tools, MCP, sandbox, harness (UI-agnostic)",
+  "description": "DeepCode kernel \u2014 agent loop, providers, tools, MCP, sandbox, harness (UI-agnostic)",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -39,6 +39,10 @@
     "./dist/util/diff.js": {
       "types": "./dist/util/diff.d.ts",
       "import": "./dist/util/diff.js"
+    },
+    "./dist/tools/presentation.js": {
+      "types": "./dist/tools/presentation.d.ts",
+      "import": "./dist/tools/presentation.js"
     },
     "./credentials": {
       "types": "./dist/credentials/index.d.ts",
@@ -107,7 +111,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "openai": "^6.39.1"
+    "openai": "^7.4.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

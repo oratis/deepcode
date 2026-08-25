@@ -38,6 +38,9 @@ export {
   GrepTool,
   GlobTool,
   TodoWriteTool,
+  SessionSearchTool,
+  SessionReadTool,
+  SHELL_TOOLS,
   WebFetchTool,
   WebSearchTool,
   AskUserQuestionTool,
@@ -54,6 +57,12 @@ export {
   parseDuckDuckGoHtml,
   ToolRegistry,
   BUILTIN_TOOLS,
+  presentToolCall,
+  pickTarget,
+  BUILTIN_RENDER_INTENTS,
+  type ToolRenderKind,
+  type ToolPresentation,
+  type ToolDiffIntent,
   type TodoItem,
   type TodoStatus,
   type SearchHit,
@@ -72,6 +81,13 @@ export {
   captureGitCheckpoint,
   listSnapshots,
   restoreSnapshot,
+  searchSessions,
+  inWorkspace,
+  excerptAround,
+  type SessionSearchScope,
+  type SessionSearchOptions,
+  type SessionSearchHit,
+  type SessionSearchResult,
   type SessionMeta,
   type SessionFiles,
   type SessionManagerOpts,
@@ -215,6 +231,43 @@ export {
   type CompactionOpts,
   type CompactionResult,
 } from './compaction/index.js';
+
+// Tool-output spill — the central bound on model-visible tool output.
+export {
+  applySpillPolicy,
+  boundText,
+  BoundedCapture,
+  DEFAULT_SPILL_THRESHOLD_CHARS,
+  type BoundedText,
+  type SaveTextRequest,
+  type SpillOutcome,
+  type SpillPolicyOptions,
+  type SpillRef,
+  type SpillSource,
+  type SpillStore,
+} from './spill/index.js';
+// Loop-hygiene guards
+export {
+  RepeatToolGuard,
+  DEFAULT_REPEAT_EXCLUDE,
+  resolveToolDeadlineMs,
+  deadlineMessage,
+  DEFAULT_TOOL_DEADLINE_MS,
+  SIDE_EFFECTING_TOOLS,
+  type RepeatGuardOptions,
+  type RepeatReminder,
+  type RepeatReminderKind,
+  type ToolDeadlineConfig,
+} from './guard/index.js';
+// Persistent shells
+export {
+  PersistentShell,
+  ShellRegistry,
+  type ShellInfo,
+  type ShellRegistryOptions,
+  type ShellRunResult,
+  type ShellSessionOptions,
+} from './shell/index.js';
 
 // Agent loop's approval callback type (M3b)
 export type { ApprovalCallback, ApprovalDecision } from './agent.js';

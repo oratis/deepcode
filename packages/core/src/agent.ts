@@ -7,12 +7,21 @@ import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import type { LedgerSink } from './ledger/index.js';
 import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
+import {
+  deadlineMessage,
+  RepeatToolGuard,
+  resolveToolDeadlineMs,
+  type RepeatGuardOptions,
+  type ToolDeadlineConfig,
+} from './guard/index.js';
 import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { resolveRuntimePolicy } from './runtime/policy.js';
+import { applySpillPolicy, type SpillStore } from './spill/index.js';
+import { ShellRegistry } from './shell/registry.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
 // module-load time. See `loadRemindersIfEnabled` and `appendSessionIfSet`.
@@ -109,6 +118,20 @@ export interface RunAgentOptions {
   /** Inject system reminders before the user message (date, todos, etc).
    *  Pass `false` to disable; pass a partial list to limit which builders run. */
   systemReminders?: false | { enabled?: ReminderType[] };
+  /** Model-visible ceiling per tool result, in code units. See `spill/policy.ts`. */
+  spillThresholdChars?: number;
+  /**
+   * Where oversized tool output is persisted. Hosts with a session directory
+   * get the local file store by default; supplying one here overrides that,
+   * and it is the seam tests use.
+   */
+  spillStore?: SpillStore;
+  /** Nudge the model when it repeats an identical tool call. `false` disables it. */
+  repeatGuard?: false | RepeatGuardOptions;
+  /** Backstop deadline for a tool call that never returns. See `guard/tool-deadline.ts`. */
+  toolDeadlines?: ToolDeadlineConfig;
+  /** How far SessionSearch may reach. User setting, not a tool argument. */
+  sessionSearchScope?: import('./sessions/search.js').SessionSearchScope;
   /** Host callback for AskUserQuestion tool. Optional — when absent the tool
    *  errors. */
   askUser?: NonNullable<ToolContext['askUser']>;
@@ -119,6 +142,13 @@ export interface RunAgentOptions {
   /** Installed-plugin directories — so the Task tool can resolve plugin-bundled
    *  sub-agents (`<dir>/agents/*.md`) in addition to user/project ones. */
   pluginDirs?: string[];
+  /**
+   * Host-owned registry for shells that outlive one tool call. When set, shells
+   * survive across runs and the host is responsible for closing them. When
+   * absent, this run owns one and closes every shell before it returns, so no
+   * shell can outlive the run that opened it.
+   */
+  shells?: ShellRegistry;
   /** Optional host-owned background-task manager (e.g. the REPL's session-scoped
    *  one). When set, this run attaches its sub-agent runner to it and exposes it
    *  on the tool context, so background tasks persist across runAgent calls and
@@ -219,7 +249,28 @@ const READ_ONLY_TOOLS = new Set([
  * Runs the agent loop until the model produces an end_turn (no tool calls),
  * or `maxTurns` is reached, or the abort signal fires.
  */
+/**
+ * Run the agent loop.
+ *
+ * When the caller supplies no {@link RunAgentOptions.shells}, this run owns a
+ * registry and closes every shell it opened before returning — including when
+ * the loop throws. Leaving live shell processes behind after a crashed run is
+ * the failure this wrapper exists to make impossible.
+ *
+ * @param opts Everything the loop needs.
+ * @returns The final history, usage, and stop reason.
+ */
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
+  if (opts.shells) return runAgentInner(opts);
+  const shells = new ShellRegistry();
+  try {
+    return await runAgentInner({ ...opts, shells });
+  } finally {
+    await shells.closeAll();
+  }
+}
+
+async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
   const runtimePolicy = resolveRuntimePolicy(opts);
   const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
@@ -297,10 +348,36 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     sandboxDefaultMode: opts.sandboxDefaultMode,
     contract: opts.contract,
     sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
+    sessionsRoot: opts.session?.manager.root,
+    sessionId: opts.session?.id,
+    sessionSearchScope: opts.sessionSearchScope,
     turnId: opts.session?.turnId,
     askUser: opts.askUser,
     modeSignal,
   };
+
+  // Spill storage is resolved once, lazily: the local backend imports node:fs,
+  // which a renderer build has no answer for. A host without one still gets the
+  // bounded preview — it just cannot offer retrieval.
+  const resolveSpillStore = async (): Promise<SpillStore | undefined> => {
+    if (opts.spillStore) return opts.spillStore;
+    const dir = toolCtx.sessionDir;
+    if (dir === undefined) return undefined;
+    try {
+      const mod = /* @vite-ignore */ './spill/local.js';
+      const { createLocalSpillStore } = (await import(mod)) as typeof import('./spill/local.js');
+      return createLocalSpillStore(dir);
+    } catch {
+      // No filesystem in this build — preview-only is the documented fallback.
+      return undefined;
+    }
+  };
+  // Memoized on the promise, not its result: tools run concurrently, and a
+  // second caller arriving mid-import must wait for the same answer rather than
+  // observe "not resolved yet" as "no store".
+  let spillStorePending: Promise<SpillStore | undefined> | undefined;
+  const spillStore = (): Promise<SpillStore | undefined> =>
+    (spillStorePending ??= resolveSpillStore());
 
   // Wire the Task tool's sub-agent runner — but only below the recursion cap,
   // so a sub-agent can't spawn further sub-agents (it also never gets the Task
@@ -496,8 +573,15 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     }
   }
 
+  toolCtx.shells = opts.shells;
+
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
   let turnsUsed = 0;
+
+  // One chain per run. A run begins with a user message, which is exactly when
+  // a fresh line of work starts, so there is nothing to carry over.
+  const repeatGuard =
+    opts.repeatGuard === false ? undefined : new RepeatToolGuard(opts.repeatGuard ?? {});
 
   // Stop hook — fires when the TOP-LEVEL agent finishes a run (a sub-agent's
   // completion is signalled by SubagentStop instead). Observation only.
@@ -608,6 +692,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     // re-assembled in the model's original order regardless of finish order.
     const toolBlocks = result.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
     const resultsById = new Map<string, ToolResultBlock>();
+    const guardReminders: string[] = [];
     type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
     const ready: Ready[] = [];
 
@@ -641,6 +726,33 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       }
     };
 
+    /**
+     * Append any guard reminders as their own user message.
+     *
+     * This has to be a separate message appended AFTER the tool results, not a
+     * text block alongside them: the provider maps a user message's text and
+     * its tool_result blocks to separate wire messages, and a `user` turn
+     * between the assistant's tool_calls and their `tool` replies is a sequence
+     * the API rejects.
+     */
+    const flushGuardReminders = async (): Promise<void> => {
+      if (guardReminders.length === 0) return;
+      const msg: StoredMessage = {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text: `<system-reminder>\n${guardReminders.join('\n\n')}\n</system-reminder>`,
+          },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+      history.push(msg);
+      if (opts.session && opts.persistSessionMessages !== false) {
+        await opts.session.manager.append(opts.session.id, msg);
+      }
+    };
+
     /** Record a gate refusal as both a tool result (the model sees it) and an event (the host does). */
     const recordBlocked = (
       toolUse: ToolUseBlock,
@@ -666,6 +778,11 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // Phase 1 — sequential gate + approval.
     for (const toolUse of toolBlocks) {
+      // Counted before the gate, so a model hammering a denied call is caught
+      // by the same chain as one hammering an allowed one.
+      const repeat = repeatGuard?.observe(toolUse.name, toolUse.input);
+      if (repeat) guardReminders.push(repeat.text);
+
       const handler =
         !allowedToolNames || allowedToolNames.has(toolUse.name)
           ? opts.tools.get(toolUse.name)
@@ -728,6 +845,50 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
       ready.push({ toolUse, handler });
     }
 
+    /**
+     * Run a tool, abandoning the wait if it blows past its backstop deadline.
+     *
+     * Abandoning the wait is not the same as stopping the work: the signal asks
+     * the tool to stop, but a tool that ignores it keeps running. That is why
+     * the message for a side-effecting tool says the effect is unknown rather
+     * than claiming nothing happened.
+     */
+    const withDeadline = async (
+      toolUse: ToolUseBlock,
+      handler: NonNullable<ReturnType<typeof opts.tools.get>>,
+    ): Promise<Awaited<ReturnType<typeof handler.execute>>> => {
+      const ms = resolveToolDeadlineMs(toolUse.name, toolUse.input, opts.toolDeadlines);
+      if (ms === undefined) return handler.execute(toolUse.input, toolCtx);
+
+      const deadline = new AbortController();
+      const signal = opts.signal
+        ? AbortSignal.any([opts.signal, deadline.signal])
+        : deadline.signal;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const expired = new Promise<'deadline'>((resolve) => {
+        timer = setTimeout(() => {
+          // Settle the race BEFORE aborting. A tool that honors its signal
+          // resolves synchronously from the abort listener, and if that landed
+          // first the race would return the tool's own "I was cancelled"
+          // result — losing the deadline message, including its warning that a
+          // side effect may be half-applied.
+          resolve('deadline');
+          deadline.abort();
+        }, ms);
+      });
+      try {
+        const outcome = await Promise.race([
+          handler.execute(toolUse.input, { ...toolCtx, signal }),
+          expired,
+        ]);
+        return outcome === 'deadline'
+          ? { content: deadlineMessage(toolUse.name, ms), isError: true }
+          : outcome;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
     // Runs one approved tool end-to-end: pre-snapshot, execute, PostToolUse
     // hook, post-snapshot, event + result. Side-effect-free tools call this
     // concurrently; mutating tools call it one at a time (see partition below).
@@ -768,10 +929,18 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
 
       let tr;
       try {
-        tr = await handler.execute(toolUse.input, toolCtx);
+        tr = await withDeadline(toolUse, handler);
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };
       }
+
+      // Every result passes the spill policy on its way to the model, so no
+      // single tool can flood the context regardless of what it returns.
+      tr = await applySpillPolicy(tr, {
+        source: { toolName: toolUse.name, callId: toolUse.id, label: 'result' },
+        store: await spillStore(),
+        thresholdChars: opts.spillThresholdChars,
+      });
 
       // PostToolUse hook (M3) — observation only; can inject additionalContext
       if (opts.hooks) {
@@ -851,6 +1020,7 @@ export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
     for (const r of serial) await execOne(r);
 
     await flushToolResults();
+    await flushGuardReminders();
 
     // M3c: auto-compact if the *current* context crossed the threshold.
     //

@@ -1205,4 +1205,448 @@ describe('runAgent', () => {
       expect(result.stopReason).toBe('end_turn');
     });
   });
+
+  describe('tool-output spill', () => {
+    const floodTool: ToolHandler = {
+      name: 'Flood',
+      definition: {
+        name: 'Flood',
+        description: 'returns a lot of text',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: () => Promise.resolve({ content: `HEAD${'.'.repeat(200_000)}TAIL` }),
+    };
+    const floodCall = (): ToolUseBlock => ({
+      type: 'tool_use',
+      id: 'call_flood',
+      name: 'Flood',
+      input: {},
+    });
+
+    /** The tool result the loop actually handed back to the provider. */
+    function resultText(history: StoredMessage[]): string {
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') return block.content;
+        }
+      }
+      expect.fail('no tool result in history');
+    }
+
+    it('bounds what a tool can put into the model context', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        spillThresholdChars: 1_000,
+      });
+
+      const text = resultText(result.history);
+      expect(text.length).toBeLessThan(2_000);
+      expect(text.startsWith('HEAD')).toBe(true);
+      expect(text.trimEnd().endsWith('TAIL')).toBe(true);
+    });
+
+    it('saves the omitted output where the model can read it back', async () => {
+      const manager = new SessionManager({ root: sessionsRoot });
+      const session = await manager.create(cwd);
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        session: { manager, id: session.id },
+        spillThresholdChars: 1_000,
+      });
+
+      const text = resultText(result.history);
+      const match = /Full output saved to:\n(.+)\n/.exec(text);
+      expect(match).not.toBeNull();
+      const saved = await fs.readFile((match as RegExpExecArray)[1], 'utf8');
+      expect(saved.length).toBe(200_008);
+      expect(saved.startsWith('HEAD')).toBe(true);
+      expect(saved.endsWith('TAIL')).toBe(true);
+    });
+
+    it('says so plainly when there is nowhere to save it', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('flooding', floodCall()), endTurn('done')]),
+        tools: new ToolRegistry([floodTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        spillThresholdChars: 1_000,
+      });
+      expect(resultText(result.history)).toContain('was not saved');
+    });
+  });
+
+  describe('repeat-call guard', () => {
+    const spinTool: ToolHandler = {
+      name: 'Spin',
+      definition: {
+        name: 'Spin',
+        description: 'always says the same thing',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: () => Promise.resolve({ content: 'nothing changed' }),
+    };
+    const spin = (i: number): ProviderResult =>
+      toolUse('again', { type: 'tool_use', id: `call_${i}`, name: 'Spin', input: { q: 1 } });
+
+    /**
+     * Guard reminders in order. Matched on the guard's own phrasing rather than
+     * the `<system-reminder>` wrapper, which the loop also uses for the date and
+     * cwd reminders it prepends to every user message.
+     */
+    function reminders(history: StoredMessage[]): string[] {
+      const out: string[] = [];
+      for (const msg of history) {
+        if (msg.role !== 'user') continue;
+        for (const block of msg.content) {
+          if (
+            typeof block !== 'string' &&
+            block.type === 'text' &&
+            block.text.includes('in a row')
+          ) {
+            out.push(block.text);
+          }
+        }
+      }
+      return out;
+    }
+
+    it('nudges the model once it starts repeating itself', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      const fired = reminders(result.history);
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toContain('called Spin 3 times in a row');
+    });
+
+    it('stays silent when the calls differ', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([
+          toolUse('a', { type: 'tool_use', id: 'c1', name: 'Spin', input: { q: 1 } }),
+          toolUse('b', { type: 'tool_use', id: 'c2', name: 'Spin', input: { q: 2 } }),
+          toolUse('c', { type: 'tool_use', id: 'c3', name: 'Spin', input: { q: 3 } }),
+          endTurn('ok'),
+        ]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+      expect(reminders(result.history)).toHaveLength(0);
+    });
+
+    it('can be turned off', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        repeatGuard: false,
+      });
+      expect(reminders(result.history)).toHaveLength(0);
+    });
+
+    it('keeps the reminder out of the tool-result message', async () => {
+      // The provider maps a user message's text and its tool_result blocks to
+      // separate wire messages, and a `user` turn between an assistant's
+      // tool_calls and their `tool` replies is a sequence the API rejects. The
+      // reminder therefore has to be its own message, after the results.
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      for (const msg of result.history) {
+        const kinds = new Set(msg.content.map((b) => (typeof b === 'string' ? 'string' : b.type)));
+        expect(kinds.has('tool_result') && kinds.has('text')).toBe(false);
+      }
+    });
+
+    it('counts calls the gate refused', async () => {
+      // A model hammering a denied call is exactly the loop worth interrupting.
+      const result = await runAgent({
+        provider: new MockProvider([spin(1), spin(2), spin(3), endTurn('ok')]),
+        tools: new ToolRegistry([spinTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        mode: 'default',
+        permissions: { deny: ['Spin'] },
+      });
+
+      const fired = reminders(result.history);
+      expect(fired).toHaveLength(1);
+      expect(fired[0]).toContain('called Spin 3 times in a row');
+    });
+  });
+
+  describe('tool deadline', () => {
+    const hangTool: ToolHandler = {
+      name: 'Hang',
+      definition: {
+        name: 'Hang',
+        description: 'never returns on its own',
+        inputSchema: { type: 'object', properties: {} },
+      },
+      execute: (_input, ctx) =>
+        new Promise((resolve) => {
+          // Well-behaved: stops when asked. The point of the test is that the
+          // asking happens at all.
+          ctx.signal?.addEventListener('abort', () => resolve({ content: 'stopped' }), {
+            once: true,
+          });
+        }),
+    };
+    const hangCall = (): ToolUseBlock => ({
+      type: 'tool_use',
+      id: 'call_hang',
+      name: 'Hang',
+      input: {},
+    });
+
+    function resultText(history: StoredMessage[]): string {
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') return block.content;
+        }
+      }
+      expect.fail('no tool result in history');
+    }
+
+    it('abandons a tool that never returns, instead of hanging the turn', async () => {
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('hanging', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([hangTool]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 50 },
+      });
+
+      expect(result.stopReason).toBe('end_turn');
+      expect(resultText(result.history)).toContain('did not return within');
+    });
+
+    it('signals the tool so a well-behaved one can stop', async () => {
+      let aborted = false;
+      const watcher: ToolHandler = {
+        ...hangTool,
+        execute: (_input, ctx) =>
+          new Promise((resolve) => {
+            ctx.signal?.addEventListener(
+              'abort',
+              () => {
+                aborted = true;
+                resolve({ content: 'stopped' });
+              },
+              { once: true },
+            );
+          }),
+      };
+      await runAgent({
+        provider: new MockProvider([toolUse('hanging', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([watcher]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 50 },
+      });
+      expect(aborted).toBe(true);
+    });
+
+    it('leaves a tool that returns in time completely alone', async () => {
+      const quick: ToolHandler = {
+        ...hangTool,
+        execute: () => Promise.resolve({ content: 'fast enough' }),
+      };
+      const result = await runAgent({
+        provider: new MockProvider([toolUse('quick', hangCall()), endTurn('done')]),
+        tools: new ToolRegistry([quick]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        toolDeadlines: { defaultMs: 10_000 },
+      });
+      expect(resultText(result.history)).toBe('fast enough');
+    });
+  });
+
+  describe('persistent shells', () => {
+    /** The built-in registry plus one extra tool, so `Task` is still there. */
+    function withBuiltins(extra: ToolHandler): ToolRegistry {
+      const tools = new ToolRegistry();
+      tools.register(extra);
+      return tools;
+    }
+
+    /** Tool results from a run, keyed by the call id that produced them. */
+    function toolResults(history: StoredMessage[]): Map<string, string> {
+      const out = new Map<string, string>();
+      for (const msg of history) {
+        for (const block of msg.content) {
+          if (typeof block !== 'string' && block.type === 'tool_result') {
+            out.set(block.tool_use_id, block.content);
+          }
+        }
+      }
+      return out;
+    }
+
+    it('closes every shell it opened, even when the loop throws', async () => {
+      // A crashed run leaving live shell processes on the machine is the
+      // objection this capability has to answer, so the guarantee cannot rest
+      // on the loop reaching its normal exit.
+      let seen: import('./shell/registry.js').ShellRegistry | undefined;
+      const grab: ToolHandler = {
+        name: 'Grab',
+        definition: {
+          name: 'Grab',
+          description: 'captures the registry then explodes the run',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        async execute(_input, toolCtx) {
+          seen = toolCtx.shells;
+          await toolCtx.shells?.open({ cwd });
+          return { content: 'grabbed' };
+        },
+      };
+
+      const exploding: Provider = {
+        name: 'exploding',
+        runTurn: (() => {
+          let first = true;
+          return () => {
+            if (first) {
+              first = false;
+              return Promise.resolve(
+                toolUse('grabbing', {
+                  type: 'tool_use',
+                  id: 'c1',
+                  name: 'Grab',
+                  input: {},
+                }),
+              );
+            }
+            // Not an AbortError, so the loop does not treat it as cancellation.
+            throw Object.assign(new Error('provider exploded'), { fatal: true });
+          };
+        })(),
+      };
+
+      await runAgent({
+        provider: exploding,
+        tools: new ToolRegistry([grab]),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+      });
+
+      expect(seen).toBeDefined();
+      expect(seen?.list()).toEqual([]);
+    });
+
+    it("does not hand a sub-agent the parent session's shells", async () => {
+      // The REPL owns one registry for the whole session. A delegated agent
+      // sharing it could `cd` or close a shell the parent is mid-way through
+      // using, and each would then be wrong about its state. Sub-agents get
+      // their own, closed when their run ends.
+      const { ShellRegistry } = await import('./shell/registry.js');
+      const parentShells = new ShellRegistry();
+      let subShells: unknown = 'never ran';
+
+      const peek: ToolHandler = {
+        name: 'Peek',
+        definition: {
+          name: 'Peek',
+          description: 'reports the registry it was given',
+          inputSchema: { type: 'object', properties: {} },
+        },
+        execute: (_input, toolCtx) => {
+          subShells = toolCtx.shells;
+          return Promise.resolve({ content: 'peeked' });
+        },
+      };
+
+      const result = await runAgent({
+        provider: new MockProvider([
+          toolUse('delegating', {
+            type: 'tool_use',
+            id: 'task1',
+            name: 'Task',
+            input: { prompt: 'peek at the shells' },
+          }),
+          toolUse('peeking', { type: 'tool_use', id: 'p1', name: 'Peek', input: {} }),
+          endTurn('peeked'),
+          endTurn('done'),
+        ]),
+        // Built-ins plus Peek: `new ToolRegistry([peek])` would replace them and
+        // there would be no Task tool to delegate through.
+        tools: withBuiltins(peek),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        shells: parentShells,
+      });
+
+      // The delegation has to have actually happened, or `Peek` ran in the
+      // parent and the assertion below would pass for the wrong reason.
+      expect(toolResults(result.history).get('task1')).not.toMatch(/tool not found/);
+
+      expect(subShells).toBeDefined();
+      expect(subShells).not.toBe(parentShells);
+      await parentShells.closeAll();
+    });
+
+    it('leaves a host-owned registry alone', async () => {
+      // The host closes what the host owns; shells must survive between runs
+      // for a REPL session to be worth anything.
+      const { ShellRegistry } = await import('./shell/registry.js');
+      const shells = new ShellRegistry();
+      await shells.open({ cwd });
+
+      await runAgent({
+        provider: new MockProvider([endTurn('done')]),
+        tools: new ToolRegistry(),
+        systemPrompt: '',
+        userMessage: 'go',
+        model: 'deepseek-chat',
+        cwd,
+        shells,
+      });
+
+      expect(shells.list()).toHaveLength(1);
+      await shells.closeAll();
+    });
+  });
 });

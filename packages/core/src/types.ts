@@ -105,6 +105,14 @@ export interface ToolDefinition {
   description: string;
   /** JSON Schema describing the input shape. */
   inputSchema: Record<string, unknown>;
+  /**
+   * How clients should present this call. Absent means `generic`.
+   *
+   * Declared by the tool so every client — desktop, CLI, editor — reads one
+   * answer instead of each hardcoding the same tool names. See
+   * `tools/presentation.ts`.
+   */
+  render?: import('./tools/presentation.js').ToolRenderKind;
 }
 
 export interface ToolContext {
@@ -112,6 +120,22 @@ export interface ToolContext {
   cwd: string;
   /** Where to write session-scoped artifacts (snapshots, bg task logs, etc.). */
   sessionDir?: string;
+  /** Root holding every session, for tools that read past ones. */
+  sessionsRoot?: string;
+  /** Id of the running session — excluded from its own search results. */
+  sessionId?: string;
+  /**
+   * How far session search may reach. Defaults to the current workspace.
+   * Widening it is a user setting, never a tool argument: a scope parameter
+   * would let the model consent to reading another project's history on the
+   * user's behalf.
+   */
+  sessionSearchScope?: import('./sessions/search.js').SessionSearchScope;
+  /**
+   * Shells that outlive one tool call. Absent when the host owns no registry,
+   * in which case the shell tools say so instead of silently doing nothing.
+   */
+  shells?: import('./shell/registry.js').ShellRegistry;
   /** Canonical app-server turn associated with session-scoped mutations. */
   turnId?: string;
   /** Abort signal propagated from the agent loop. */
