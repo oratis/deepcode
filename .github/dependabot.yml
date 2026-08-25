@@ -12,6 +12,18 @@ updates:
       interval: weekly
       day: monday
     open-pull-requests-limit: 5
+    ignore:
+      # `@types/vscode` tracks `engines.vscode`, not the latest release, and is
+      # pinned exactly (no caret) so the compiler enforces the floor instead of
+      # merely declaring it. `engines.vscode` is the OLDEST editor the extension
+      # supports; types newer than that let a call added in a later VS Code
+      # typecheck cleanly and then fail on the editor we promised to run on.
+      # `vsce package` refuses the mismatch outright:
+      #   ERROR  @types/vscode ^1.125.0 greater than engines.vscode ^1.85.0
+      # Taking such a bump means dropping every VS Code in between — a support
+      # decision, not a dependency update. Raise `engines.vscode` deliberately
+      # and move the types with it, together.
+      - dependency-name: '@types/vscode'
     groups:
       typescript:
         patterns:
