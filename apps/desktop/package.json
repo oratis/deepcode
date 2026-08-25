@@ -25,7 +25,7 @@
     "@deepcode/core": "workspace:*",
     "@deepcode/protocol": "workspace:*",
     "@deepcode/shared-ui": "workspace:*",
-    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.0.0",
     "@tauri-apps/plugin-opener": "^2.0.0",
     "@tauri-apps/plugin-process": "^2.3.1",
