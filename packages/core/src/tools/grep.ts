@@ -145,7 +145,7 @@ export const GrepTool: ToolHandler = {
 
     args.push('--', input.pattern, searchPath);
 
-    let stdout = '';
+    let stdout: string;
     try {
       const result = await execFileAsync('rg', args, {
         cwd: ctx.cwd,

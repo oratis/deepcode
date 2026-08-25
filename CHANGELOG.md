@@ -181,6 +181,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🐛 Fixed
 
+- **A rethrown error keeps the one that caused it.** Five places wrapped a
+  caught error in a new `Error` carrying only its `.message` — settings and
+  trust-store loading, the hook trust file, and the MCP `headersHelper` — so a
+  parse failure or a spawn error arrived with the original stack, `errno` and
+  `path` discarded. They now pass `{ cause }`, and ESLint's `preserve-caught-error`
+  keeps the next one from being written.
+
 - **Tool output could flood the model's context, or vanish** (#268). Two defects,
   one cause: nothing central bounded what a tool result put in front of the
   model, so each tool improvised.

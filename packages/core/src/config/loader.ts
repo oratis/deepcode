@@ -93,7 +93,7 @@ async function readJson(path: string): Promise<DeepCodeSettings | undefined> {
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') return undefined;
-    throw new Error(`Failed to parse ${path}: ${(err as Error).message}`);
+    throw new Error(`Failed to parse ${path}: ${(err as Error).message}`, { cause: err });
   }
 }
 
@@ -104,7 +104,9 @@ async function readJsonRequired(path: string): Promise<DeepCodeSettings> {
     const raw = await fs.readFile(path, 'utf8');
     return parseSettings(raw, path);
   } catch (err) {
-    throw new Error(`--settings: cannot load ${path}: ${(err as Error).message}`);
+    throw new Error(`--settings: cannot load ${path}: ${(err as Error).message}`, {
+      cause: err,
+    });
   }
 }
 

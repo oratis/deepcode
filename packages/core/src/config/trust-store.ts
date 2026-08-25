@@ -33,7 +33,9 @@ export class DirectoryTrustStore {
       return validateState(parsed);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { dirs: {} };
-      throw new Error(`Failed to load directory trust: ${(error as Error).message}`);
+      throw new Error(`Failed to load directory trust: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   }
 
