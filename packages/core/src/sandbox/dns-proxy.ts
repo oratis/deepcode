@@ -91,10 +91,9 @@ export function parseQName(buf: Buffer): string | null {
   while (pos < buf.length) {
     const len = buf[pos];
     if (len === undefined) return null;
-    if (len === 0) {
-      pos++;
-      break;
-    }
+    // The root label ends the name. `pos` is not read after the loop, so
+    // there is nothing left to consume it for.
+    if (len === 0) break;
     if (len > 63) return null; // compression / invalid
     pos++;
     if (pos + len > buf.length) return null;

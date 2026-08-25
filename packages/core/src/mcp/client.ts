@@ -153,7 +153,7 @@ async function resolveAuthHeaders(config: McpServerConfig): Promise<Record<strin
       });
       Object.assign(headers, parseHelperOutput(stdout));
     } catch (err) {
-      throw new Error(`headersHelper failed: ${(err as Error).message}`);
+      throw new Error(`headersHelper failed: ${(err as Error).message}`, { cause: err });
     }
   }
   return headers;
