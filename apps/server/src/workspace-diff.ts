@@ -35,8 +35,8 @@ export async function collectWorkspaceDiff(cwd: string): Promise<WorkspaceDiffRe
   const files: WorkspaceDiffFile[] = [];
 
   for (const entry of selected) {
-    let patch = '';
-    let binary = false;
+    let patch: string;
+    let binary: boolean;
     let fileTruncated = false;
     if (entry.untracked || !hasHead) {
       const captured = await addedFilePatch(workspace, entry.path, remainingBytes);

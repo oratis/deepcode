@@ -38,7 +38,9 @@ export class HookTrustStore {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         return { version: 1, directories: {} };
       }
-      throw new Error(`Failed to load hook trust: ${(error as Error).message}`);
+      throw new Error(`Failed to load hook trust: ${(error as Error).message}`, {
+        cause: error,
+      });
     }
   }
 
