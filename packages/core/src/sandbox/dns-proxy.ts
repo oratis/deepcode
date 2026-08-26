@@ -17,6 +17,8 @@ export interface DnsProxyOpts {
   allowedDomains: string[];
   /** Upstream DNS server for allowed lookups (default 1.1.1.1). */
   upstream?: string;
+  /** Upstream DNS port; default 53. Overridable so tests can run a local stub. */
+  upstreamPort?: number;
   /** Bind address; default 127.0.0.1. */
   bindAddr?: string;
   /** Bind port; default 0 (random). */
@@ -32,11 +34,21 @@ export interface DnsProxyHandle {
   close: () => Promise<void>;
 }
 
+/** Shutdown bookkeeping shared between the server socket and in-flight forwards. */
+interface ProxyState {
+  /** Set synchronously by close(), before the server socket is torn down. */
+  closed: boolean;
+  /** Abandon callbacks, keyed by upstream socket, for forwards still in flight. */
+  pending: Map<Socket, () => void>;
+}
+
 export async function startDnsProxy(opts: DnsProxyOpts): Promise<DnsProxyHandle> {
   const allowed = new Set(opts.allowedDomains.map((d) => d.toLowerCase()));
   const upstream = opts.upstream ?? '1.1.1.1';
+  const upstreamPort = opts.upstreamPort ?? 53;
   const log = opts.log ?? (() => {});
   const sock = createSocket('udp4');
+  const state: ProxyState = { closed: false, pending: new Map() };
 
   sock.on('message', (msg, rinfo) => {
     const domain = parseQName(msg);
@@ -51,8 +63,11 @@ export async function startDnsProxy(opts: DnsProxyOpts): Promise<DnsProxyHandle>
       return;
     }
     log(`[dns-proxy] ALLOW ${norm} → ${upstream}`);
-    forward(sock, msg, rinfo, upstream).catch((err: Error) => {
+    forward(sock, msg, rinfo, upstream, upstreamPort, state).catch((err: Error) => {
       log(`[dns-proxy] forward error: ${err.message}`);
+      // Same shutdown hazard as inside forward(): a rejection can land after
+      // close(), and send() on a closed socket throws synchronously here.
+      if (state.closed) return;
       sock.send(buildNxDomain(msg), rinfo.port, rinfo.address);
     });
   });
@@ -70,6 +85,11 @@ export async function startDnsProxy(opts: DnsProxyOpts): Promise<DnsProxyHandle>
     port,
     close: () =>
       new Promise<void>((resolve) => {
+        // Flag first: forwards check this before touching `sock`, and both run
+        // on the same thread, so nothing can slip between the check and a send.
+        state.closed = true;
+        // Snapshot — abandoning a forward removes it from the map.
+        for (const abandon of [...state.pending.values()]) abandon();
         try {
           sock.close(() => resolve());
         } catch {
@@ -119,26 +139,56 @@ function forward(
   query: Buffer,
   reply: { address: string; port: number },
   upstream: string,
+  upstreamPort: number,
+  state: ProxyState,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const upSock = createSocket('udp4');
     const timer = setTimeout(() => {
-      upSock.close();
+      release();
       reject(new Error('upstream timeout'));
     }, 5000);
-    upSock.once('message', (msg) => {
+
+    /** Drop the upstream socket and its timer. Safe to call more than once. */
+    function release(): void {
       clearTimeout(timer);
-      serverSock.send(msg, reply.port, reply.address, (err) => {
+      state.pending.delete(upSock);
+      try {
         upSock.close();
+      } catch {
+        // Already closed.
+      }
+    }
+
+    // close() calls this for every forward still waiting: the proxy socket is
+    // gone, so nobody is left to answer, and leaving the timer armed would
+    // hold the event loop open for another 5s.
+    state.pending.set(upSock, () => {
+      release();
+      resolve();
+    });
+
+    upSock.once('message', (msg) => {
+      release();
+      // The proxy can be closed while the reply is in flight. send() on a
+      // closed socket throws ERR_SOCKET_DGRAM_NOT_RUNNING synchronously from
+      // inside this handler — past the executor's synchronous phase, so the
+      // promise never sees it and it escapes as an uncaught exception.
+      if (state.closed) {
+        resolve();
+        return;
+      }
+      serverSock.send(msg, reply.port, reply.address, (err) => {
         if (err) reject(err);
         else resolve();
       });
     });
+
     upSock.once('error', (err) => {
-      clearTimeout(timer);
-      upSock.close();
+      release();
       reject(err);
     });
-    upSock.send(query, 53, upstream);
+
+    upSock.send(query, upstreamPort, upstream);
   });
 }
