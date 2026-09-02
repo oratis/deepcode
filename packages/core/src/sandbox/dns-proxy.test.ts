@@ -101,3 +101,128 @@ describe('startDnsProxy', () => {
     proxy = null;
   });
 });
+
+// Regression: closing the proxy while a forward is awaiting its upstream reply
+// used to call send() on the already-closed server socket. dgram throws
+// ERR_SOCKET_DGRAM_NOT_RUNNING *synchronously* from inside the upstream
+// 'message' handler, i.e. after the enclosing Promise executor's synchronous
+// phase, so the promise never catches it and it surfaces as an uncaught
+// exception that fails the whole vitest run.
+describe('startDnsProxy shutdown race', () => {
+  /** A stub upstream resolver that answers `delayMs` after the query arrives. */
+  function startStubUpstream(delayMs: number): Promise<{
+    port: number;
+    close: () => Promise<void>;
+  }> {
+    const sock = createSocket('udp4');
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+    sock.on('message', (msg, rinfo) => {
+      const timer = setTimeout(() => {
+        timers.delete(timer);
+        try {
+          sock.send(buildNxDomain(msg), rinfo.port, rinfo.address);
+        } catch {
+          // Stub already torn down.
+        }
+      }, delayMs);
+      timers.add(timer);
+    });
+    return new Promise((resolve, reject) => {
+      sock.once('error', reject);
+      sock.bind(0, '127.0.0.1', () => {
+        sock.removeListener('error', reject);
+        resolve({
+          port: sock.address().port,
+          close: () =>
+            new Promise<void>((done) => {
+              for (const timer of timers) clearTimeout(timer);
+              timers.clear();
+              sock.close(() => done());
+            }),
+        });
+      });
+    });
+  }
+
+  /**
+   * Run `body` with vitest's own uncaughtException handlers detached, and
+   * report whatever escaped. Without that swap the process-level handler turns
+   * a reproduction into a run-level failure instead of a clean assertion.
+   */
+  async function captureUncaught(body: () => Promise<void>): Promise<unknown[]> {
+    const escaped: unknown[] = [];
+    const capture = (err: unknown): void => {
+      escaped.push(err);
+    };
+    const prior = process.listeners('uncaughtException');
+    process.removeAllListeners('uncaughtException');
+    process.on('uncaughtException', capture);
+    try {
+      await body();
+      // Let the late upstream reply land while our handler is still installed.
+      await new Promise((r) => setTimeout(r, 150));
+    } finally {
+      process.removeListener('uncaughtException', capture);
+      for (const listener of prior) {
+        process.on('uncaughtException', listener as (err: Error) => void);
+      }
+    }
+    return escaped;
+  }
+
+  it('does not throw when the upstream reply lands after close()', async () => {
+    const upstream = await startStubUpstream(120);
+    try {
+      const escaped = await captureUncaught(async () => {
+        const proxy = await startDnsProxy({
+          allowedDomains: ['github.com'],
+          upstream: '127.0.0.1',
+          upstreamPort: upstream.port,
+          log: () => {},
+        });
+        const client = createSocket('udp4');
+        await new Promise<void>((resolve, reject) => {
+          client.send(buildQuery('github.com'), proxy.port, '127.0.0.1', (err) =>
+            err ? reject(err) : resolve(),
+          );
+        });
+        // Give the forward time to reach the stub, then close mid-flight.
+        await new Promise((r) => setTimeout(r, 40));
+        await proxy.close();
+        client.close();
+      });
+      expect(escaped).toEqual([]);
+    } finally {
+      await upstream.close();
+    }
+  });
+
+  it('close() drops the pending upstream socket and its timeout timer', async () => {
+    // A stub that never answers in time: without cleanup the 5s upstream timer
+    // (and its socket) outlive close() and keep the event loop alive.
+    const upstream = await startStubUpstream(60_000);
+    try {
+      const proxy = await startDnsProxy({
+        allowedDomains: ['github.com'],
+        upstream: '127.0.0.1',
+        upstreamPort: upstream.port,
+        log: () => {},
+      });
+      const client = createSocket('udp4');
+      await new Promise<void>((resolve, reject) => {
+        client.send(buildQuery('github.com'), proxy.port, '127.0.0.1', (err) =>
+          err ? reject(err) : resolve(),
+        );
+      });
+      await new Promise((r) => setTimeout(r, 40));
+      const before = process.getActiveResourcesInfo().length;
+      await proxy.close();
+      client.close();
+      const after = process.getActiveResourcesInfo().length;
+      // Server socket + upstream socket + the 5s timer all released.
+      expect(after).toBeLessThan(before);
+    } finally {
+      await upstream.close();
+    }
+  });
+});
