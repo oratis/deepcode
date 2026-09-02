@@ -80,6 +80,13 @@ export async function startDnsProxy(opts: DnsProxyOpts): Promise<DnsProxyHandle>
     });
   });
 
+  // The NXDOMAIN sends above pass no callback, so a failed send (say, the
+  // client's address became unreachable when its netns went away) surfaces as
+  // an 'error' event — and an unlistened 'error' event kills the host process.
+  sock.on('error', (err) => {
+    log(`[dns-proxy] socket error: ${err.message}`);
+  });
+
   const port = sock.address().port;
   return {
     port,
