@@ -63,6 +63,14 @@ describe('parseSlash', () => {
     expect(parseSlash('/effort max')).toEqual({ kind: 'set-effort', value: 'max' });
   });
 
+  it('/plan enters plan mode, /plan off leaves, a trailing prompt is refused', () => {
+    expect(parseSlash('/plan')).toEqual({ kind: 'set-mode', value: 'plan' });
+    expect(parseSlash('/plan off')).toEqual({ kind: 'set-mode', value: 'default' });
+    const r = parseSlash('/plan refactor auth');
+    expect(r?.kind).toBe('error');
+    expect(r && 'message' in r && r.message).toContain('takes no prompt');
+  });
+
   it('rejects an invalid argument with the usage line, not silently', () => {
     const r = parseSlash('/effort ludicrous');
     expect(r?.kind).toBe('error');

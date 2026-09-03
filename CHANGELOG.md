@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the entries exact. A session restored from its log has only the text the
   model saw, so replayed cards degrade to today's plain-text body.
 
+- **`/plan`** enters plan mode directly (`/plan off` leaves it) — the same
+  switch `/mode plan` already threw, one word shorter and matching what Claude
+  Code users type. A trailing prompt (`/plan do X`) is refused with a pointer
+  rather than silently dropped, because half-obeying a command teaches the
+  wrong lesson about what it did.
+
 - **Persistent shells now last a whole CLI session, and `/shells` shows them.**
   The registry landed in #273 owned by a single `runAgent` call, which meant a
   shell opened in one turn was gone by the next — a slower `Bash` with extra

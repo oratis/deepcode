@@ -44,6 +44,7 @@ export const DESKTOP_COMMANDS: SlashCommand[] = [
     args: '<name>',
     summary: 'Switch approval mode (default, plan, acceptEdits, …)',
   },
+  { name: '/plan', args: '[off]', summary: 'Enter plan mode (read-only); /plan off leaves it' },
   { name: '/effort', args: '<tier>', summary: 'Switch effort tier (low … max)' },
   { name: '/cost', summary: 'Spend and token usage this conversation' },
   { name: '/context', summary: 'How much of the context window is used' },
@@ -122,6 +123,16 @@ export function parseSlash(input: string): SlashAction | null {
       return (MODES as string[]).includes(arg)
         ? { kind: 'set-mode', value: arg as AgentMode }
         : { kind: 'error', message: `Usage: /mode ${MODES.join(' | ')}` };
+    case '/plan':
+      // Same switch /mode plan throws, one word shorter. A trailing prompt is
+      // refused rather than silently dropped — type it as a normal message.
+      if (arg === '' || arg === 'off') {
+        return { kind: 'set-mode', value: arg === 'off' ? 'default' : 'plan' };
+      }
+      return {
+        kind: 'error',
+        message: '/plan takes no prompt — enter plan mode, then type your message.',
+      };
     case '/effort':
       return (EFFORTS as string[]).includes(arg)
         ? { kind: 'set-effort', value: arg as Effort }
