@@ -22,6 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ✨ Added
 
+- **Grep and Glob results in the desktop are now clickable locations.** Both
+  tools attach the places they found as structured data — resolved from their
+  own parsed rows, where a path containing `:` is still unambiguous — and the
+  desktop renders a search's card as a list of openable paths (with line and
+  matched text in content mode) instead of a grey text blob. Clicking one opens
+  it in the file panel. This is the `locations` render intent the DSH round
+  specified and deferred: re-deriving entries by parsing the formatted result
+  text was the rejected design, and attaching them at the source is what makes
+  the entries exact. A session restored from its log has only the text the
+  model saw, so replayed cards degrade to today's plain-text body.
+
 - **Persistent shells now last a whole CLI session, and `/shells` shows them.**
   The registry landed in #273 owned by a single `runAgent` call, which meant a
   shell opened in one turn was gone by the next — a slower `Bash` with extra

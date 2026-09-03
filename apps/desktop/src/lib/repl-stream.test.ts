@@ -72,6 +72,24 @@ describe('repl-stream mutators', () => {
     });
   });
 
+  it('keeps a result’s locations on the card, and omits the key when there are none', () => {
+    let m: Msg[] = [];
+    m = appendToolUse(m, tool('a', 'Grep'));
+    m = appendToolUse(m, tool('b', 'Read'));
+    m = attachToolResult(m, 'a', '/repo/x.ts:1:hit', 'ok', [
+      { path: '/repo/x.ts', line: 1, preview: 'hit' },
+    ]);
+    // A restored session replays results without structured data — the card
+    // must not grow a `locations: []` that reads as "searched, found nothing".
+    m = attachToolResult(m, 'b', 'file contents', 'ok', []);
+    const turn = m[0]!;
+    if (turn.role !== 'assistant') throw new Error('expected assistant');
+    expect(turn.turn.tools[0]!.locations).toEqual([
+      { path: '/repo/x.ts', line: 1, preview: 'hit' },
+    ]);
+    expect('locations' in turn.turn.tools[1]!).toBe(false);
+  });
+
   it('falls back to only the newest running tool across resumed turns', () => {
     const m: Msg[] = [
       {

@@ -5,6 +5,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { isAbsolute, resolve } from 'node:path';
 import { withheldNotice, withholdDeniedReads } from '../config/contract-dispatch.js';
+import { MAX_TOOL_LOCATIONS, type ToolLocation } from './presentation.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 const execFileAsync = promisify(execFile);
@@ -90,6 +91,7 @@ export const GrepTool: ToolHandler = {
   name: 'Grep',
   definition: {
     name: 'Grep',
+    render: 'locations',
     description:
       'Searches for a regex pattern using ripgrep (rg). Supports globs, file types, case-insensitive matching.',
     inputSchema: {
@@ -194,14 +196,15 @@ export const GrepTool: ToolHandler = {
       (row) => row.path ?? searchPath,
     );
 
-    let lines = kept.map(formatRipgrepRow);
-    const matched = lines.length;
-
-    if (input.head_limit && input.head_limit > 0) {
-      const truncated = lines.length > input.head_limit;
-      lines = lines.slice(0, input.head_limit);
-      if (truncated) lines.push(`... [${lines.length} of ${matched}]`);
-    }
+    const matched = kept.length;
+    // Slice the ROWS, not the formatted lines: the locations below must line up
+    // with what is shown, and rows still carry the exact path `--null` gave us.
+    const shown =
+      input.head_limit && input.head_limit > 0 && kept.length > input.head_limit
+        ? kept.slice(0, input.head_limit)
+        : kept;
+    const lines = shown.map(formatRipgrepRow);
+    if (shown.length < matched) lines.push(`... [${lines.length} of ${matched}]`);
 
     // Say that something was withheld, never what. Silence is worse than the
     // count: an agent that finds nothing goes looking through Bash, which the
@@ -209,9 +212,31 @@ export const GrepTool: ToolHandler = {
     const notice = withheldNotice(withheld);
     if (notice) lines.push(notice);
 
+    // Structured entries for clients that render results as openable locations.
+    // Built from the parsed rows — the formatted text's `:` separator is not
+    // reversible (a path may contain one), which is why the text is never
+    // parsed back. A row without a path came from a single-file search, so the
+    // search path is the file. Line numbers exist only when rg printed them.
+    const locations: ToolLocation[] = shown.slice(0, MAX_TOOL_LOCATIONS).map((row) => {
+      const path = row.path ?? searchPath;
+      const entry: ToolLocation = { path };
+      if (mode === 'content' && row.text !== null) {
+        if (input['-n']) {
+          const numbered = /^(\d+):(.*)$/s.exec(row.text);
+          if (numbered) {
+            entry.line = Number(numbered[1]);
+            entry.preview = numbered[2];
+            return entry;
+          }
+        }
+        entry.preview = row.text;
+      }
+      return entry;
+    });
+
     return {
       content: lines.join('\n') || '(no matches)',
-      data: { mode, matches: matched, ...(withheld > 0 ? { withheld } : {}) },
+      data: { mode, matches: matched, locations, ...(withheld > 0 ? { withheld } : {}) },
     };
   },
 };

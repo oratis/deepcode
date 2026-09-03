@@ -149,6 +149,68 @@ describe('GrepTool', async () => {
     expect(r.data?.mode).toBe('files_with_matches');
   });
 
+  // Locations are built from the parsed rows, never re-parsed out of the
+  // formatted text — the `:` separator there is ambiguous when a path contains
+  // one, which is the same reason the withhold filter runs on rows.
+  describe('locations', () => {
+    const locs = (r: { data?: Record<string, unknown> }) =>
+      (r.data?.locations ?? []) as Array<{
+        path: string;
+        line?: number;
+        preview?: string;
+      }>;
+
+    it.skipIf(skipReason)('carries path, line and preview in content mode with -n', async () => {
+      const r = await GrepTool.execute(
+        { pattern: 'verifyToken', path: tmp, type: 'ts', '-n': true },
+        { cwd: tmp },
+      );
+      const sorted = locs(r).sort((a, b) => a.path.localeCompare(b.path));
+      expect(sorted).toEqual([
+        { path: join(tmp, 'a.ts'), line: 1, preview: 'function verifyToken() {}' },
+        { path: join(tmp, 'b.ts'), line: 1, preview: 'verifyToken(); // call site' },
+      ]);
+    });
+
+    it.skipIf(skipReason)('attributes a single-file search to the search path', async () => {
+      // rg printed no filename at all here; the row's path is null and the
+      // file it came from is the search path itself.
+      const r = await GrepTool.execute(
+        { pattern: 'verifyToken', path: join(tmp, 'a.ts'), '-n': true },
+        { cwd: tmp },
+      );
+      expect(locs(r)).toEqual([
+        { path: join(tmp, 'a.ts'), line: 1, preview: 'function verifyToken() {}' },
+      ]);
+    });
+
+    it.skipIf(skipReason)('lists bare paths in files_with_matches mode', async () => {
+      const r = await GrepTool.execute(
+        { pattern: 'verifyToken', path: tmp, output_mode: 'files_with_matches', type: 'ts' },
+        { cwd: tmp },
+      );
+      const paths = locs(r).map((l) => l.path);
+      expect(paths.sort()).toEqual([join(tmp, 'a.ts'), join(tmp, 'b.ts')]);
+      expect(locs(r).every((l) => l.line === undefined && l.preview === undefined)).toBe(true);
+    });
+
+    it.skipIf(skipReason)(
+      'slices with head_limit so entries line up with shown lines',
+      async () => {
+        const r = await GrepTool.execute(
+          { pattern: 'verifyToken', path: tmp, head_limit: 1 },
+          { cwd: tmp },
+        );
+        expect(locs(r)).toHaveLength(1);
+        // The truncation marker counts everything found, not everything listed.
+        expect(r.content).toMatch(/\.\.\. \[1 of \d+\]/);
+        // The one location is the one shown.
+        const firstLine = (r.content as string).split('\n')[0]!;
+        expect(firstLine.startsWith(locs(r)[0]!.path)).toBe(true);
+      },
+    );
+  });
+
   // The pre-call gate adjudicates the *search root*. A search rooted at the
   // workspace is allowed, and then hands back the contents of every file it
   // matched — including the ones the contract says must never be read.
@@ -168,6 +230,9 @@ describe('GrepTool', async () => {
       expect(r.content).not.toMatch(/hunter2/); // the secret itself
       expect(r.content).toMatch(/1 result withheld by the file contract/);
       expect(r.data?.withheld).toBe(1);
+      // The structured entries must not leak what the text withheld.
+      const paths = (r.data?.locations as Array<{ path: string }>).map((l) => l.path);
+      expect(paths.some((p) => p.includes('prod.key'))).toBe(false);
     });
 
     it.skipIf(skipReason)('withholds in files_with_matches mode too', async () => {

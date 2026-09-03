@@ -7,7 +7,7 @@
 
 import type { JSX } from 'react';
 import { computeLineDiff } from '../lib/diff.js';
-import type { ToolPresentation } from '@deepcode/core/dist/tools/presentation.js';
+import type { ToolLocation, ToolPresentation } from '@deepcode/core/dist/tools/presentation.js';
 
 /** How much of a tool's text output a card shows before cutting it off. */
 const MAX_BODY_CHARS = 1500;
@@ -42,6 +42,44 @@ function DiffBody({ before, after }: { before: string; after: string }): JSX.Ele
   );
 }
 
+/**
+ * The places a search found, each one openable.
+ *
+ * Entries come from the tool's structured result data, resolved by the tool
+ * itself from its own parsed rows — never re-parsed out of the formatted text,
+ * whose `:` separator is ambiguous when a path contains one. Without an
+ * `onOpenFile` the list still renders; the rows are just not buttons.
+ */
+function LocationsBody({
+  locations,
+  onOpenFile,
+}: {
+  locations: ToolLocation[];
+  onOpenFile?: (path: string) => void;
+}): JSX.Element {
+  return (
+    <>
+      {locations.map((loc, i) => {
+        const label = `${loc.display ?? loc.path}${loc.line !== undefined ? `:${loc.line}` : ''}`;
+        return (
+          <div key={i} className="tc-loc-row">
+            {onOpenFile ? (
+              <button type="button" className="tc-loc" onClick={() => onOpenFile(loc.path)}>
+                {label}
+              </button>
+            ) : (
+              <span className="tc-loc">{label}</span>
+            )}
+            {loc.preview !== undefined && loc.preview !== '' && (
+              <span className="tc-loc-preview"> {loc.preview}</span>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
 /** A command and what it printed, styled as a shell transcript. */
 function TerminalBody({ command, output }: { command: string; output?: string }): JSX.Element {
   return (
@@ -59,20 +97,31 @@ function TerminalBody({ command, output }: { command: string; output?: string })
  *
  * @param presentation What core derived from the call's arguments.
  * @param resultText The tool's output, once it has any.
+ * @param locations Openable entries from the result's structured data. A call
+ *   whose intent is `locations` but that has none — still running, restored
+ *   from a session log, or genuinely empty — falls back to the text body.
+ * @param onOpenFile Opens a path in the file panel, when the host offers one.
  * @returns The body, or null when there is nothing to show yet.
  */
 export function ToolBody({
   presentation,
   resultText,
+  locations,
+  onOpenFile,
 }: {
   presentation: ToolPresentation;
   resultText?: string;
+  locations?: ToolLocation[];
+  onOpenFile?: (path: string) => void;
 }): JSX.Element | null {
   if (presentation.kind === 'diff' && presentation.diff) {
     return <DiffBody before={presentation.diff.before} after={presentation.diff.after} />;
   }
   if (presentation.kind === 'terminal' && presentation.command !== undefined) {
     return <TerminalBody command={presentation.command} output={resultText} />;
+  }
+  if (presentation.kind === 'locations' && locations && locations.length > 0) {
+    return <LocationsBody locations={locations} onOpenFile={onOpenFile} />;
   }
   return resultText ? <>{clip(resultText)}</> : null;
 }

@@ -43,7 +43,7 @@ import {
 } from '../lib/slash-commands.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { ToolBody } from '../components/ToolBody.js';
-import { presentToolCall } from '@deepcode/core/dist/tools/presentation.js';
+import { presentToolCall, readToolLocations } from '@deepcode/core/dist/tools/presentation.js';
 import { projectName } from '../lib/project.js';
 import { useVoice } from '../lib/use-voice.js';
 import { insertTranscript } from '../lib/voice.js';
@@ -197,7 +197,7 @@ interface AgentEvt {
   text?: string;
   name?: string;
   input?: Record<string, unknown>;
-  result?: { content: string; isError?: boolean };
+  result?: { content: string; isError?: boolean; data?: Record<string, unknown> };
   error?: string;
   stopReason?: string;
   // usage event — emitted per provider round-trip with that turn's token counts
@@ -404,6 +404,7 @@ export function ReplScreen({
               e.id ?? '',
               e.result?.content ?? '',
               e.result?.isError ? 'err' : 'ok',
+              readToolLocations(e.result?.data),
             ),
           );
           break;
@@ -1151,7 +1152,14 @@ function renderMessage(
                           : '✕ error',
                   }}
                   layout={presentation.kind}
-                  body={<ToolBody presentation={presentation} resultText={t.resultText} />}
+                  body={
+                    <ToolBody
+                      presentation={presentation}
+                      resultText={t.resultText}
+                      locations={t.locations}
+                      onOpenFile={onOpenFile}
+                    />
+                  }
                   onOpen={
                     onOpenFile && typeof t.input?.file_path === 'string'
                       ? () => onOpenFile(String(t.input.file_path))

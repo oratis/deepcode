@@ -39,6 +39,24 @@ describe('GlobTool', () => {
     expect(lines.length).toBeLessThanOrEqual(2);
   });
 
+  it('attaches locations: absolute for opening, relative as displayed', async () => {
+    const r = await GlobTool.execute({ pattern: '**/*.ts', path: tmp }, { cwd: tmp });
+    const locs = (r.data?.locations ?? []) as Array<{ path: string; display?: string }>;
+    expect(locs.length).toBe(3);
+    for (const loc of locs) {
+      expect(loc.path.startsWith(tmp)).toBe(true);
+      expect(loc.display).toBe(loc.path.slice(tmp.length + 1));
+    }
+    // Entries line up with the listing, in the same (mtime) order.
+    const listed = (r.content as string).split('\n').filter(Boolean);
+    expect(locs.map((l) => l.display)).toEqual(listed);
+  });
+
+  it('slices locations with limit, so the marker line has no entry', async () => {
+    const r = await GlobTool.execute({ pattern: '**/*.ts', path: tmp, limit: 1 }, { cwd: tmp });
+    expect((r.data?.locations as unknown[]).length).toBe(1);
+  });
+
   it('returns (no matches) cleanly', async () => {
     const r = await GlobTool.execute({ pattern: '**/*.xyz', path: tmp }, { cwd: tmp });
     expect(r.isError).toBeFalsy();

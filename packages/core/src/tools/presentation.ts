@@ -22,7 +22,70 @@ export type ToolRenderKind =
   /** A shell command and its output. */
   | 'terminal'
   /** A change to a file, shown as added and removed lines. */
-  | 'diff';
+  | 'diff'
+  /** A list of file locations the call found, each one openable. */
+  | 'locations';
+
+/**
+ * One place a search-shaped tool found, exact enough to open.
+ *
+ * The intent stays a pure function of the call's ARGUMENTS — a pattern does not
+ * say what it will match — so the entries ride the result's `data` channel
+ * instead, attached by the tool at execute time from its own parsed rows. That
+ * is the whole point: Grep resolves paths from ripgrep's `--null` output, where
+ * a path containing `:` is still unambiguous, and re-deriving the entries from
+ * the formatted result text would reintroduce exactly that ambiguity.
+ *
+ * A client replaying a session log has only the result text (session history
+ * stores what the model saw), so a replayed call falls back to the generic text
+ * body — same characters, minus the affordance to click them.
+ */
+export interface ToolLocation {
+  /** Absolute path, for opening. */
+  path: string;
+  /** The path as the result text printed it (e.g. relative). Defaults to `path`. */
+  display?: string;
+  /** 1-based line, when the tool knows one. */
+  line?: number;
+  /** The matched text, when the tool has it (Grep content mode). */
+  preview?: string;
+}
+
+/**
+ * Upper bound on locations a tool attaches to one result.
+ *
+ * An unbounded content-mode Grep can match thousands of lines; the text output
+ * already carries them all for the model, and duplicating every one as a
+ * structured entry only bloats the wire for a list no card will usefully show.
+ */
+export const MAX_TOOL_LOCATIONS = 200;
+
+/**
+ * Read `data.locations` back out of a tool result's structured payload.
+ *
+ * The one validating extractor every client shares, so a malformed or
+ * hand-crafted payload degrades to "no locations" everywhere instead of
+ * crashing one renderer. Entries missing a string path are dropped;
+ * non-numeric lines are ignored rather than invented.
+ */
+export function readToolLocations(data: unknown): ToolLocation[] {
+  if (!data || typeof data !== 'object') return [];
+  const raw = (data as { locations?: unknown }).locations;
+  if (!Array.isArray(raw)) return [];
+  const out: ToolLocation[] = [];
+  for (const entry of raw.slice(0, MAX_TOOL_LOCATIONS)) {
+    if (!entry || typeof entry !== 'object') continue;
+    const { path, display, line, preview } = entry as Record<string, unknown>;
+    if (typeof path !== 'string' || path === '') continue;
+    out.push({
+      path,
+      ...(typeof display === 'string' ? { display } : {}),
+      ...(typeof line === 'number' && Number.isFinite(line) ? { line } : {}),
+      ...(typeof preview === 'string' ? { preview } : {}),
+    });
+  }
+  return out;
+}
 
 /** A file change derivable from a call's arguments alone. */
 export interface ToolDiffIntent {
@@ -73,6 +136,8 @@ export const BUILTIN_RENDER_INTENTS: Readonly<Record<string, ToolRenderKind>> = 
   Edit: 'diff',
   Write: 'diff',
   NotebookEdit: 'diff',
+  Grep: 'locations',
+  Glob: 'locations',
 };
 
 /**
@@ -114,6 +179,11 @@ export function presentToolCall(
     if (after === undefined) return { kind: 'generic', target };
     return { kind, target, diff: { path, before, after } };
   }
+
+  // `locations` has no argument-derived payload: a pattern does not say what it
+  // will match. The entries arrive on the result's `data` channel, and a client
+  // that has none (a replay from the session log) falls back to the text body.
+  if (kind === 'locations') return { kind, target };
 
   return { kind: 'generic', target };
 }

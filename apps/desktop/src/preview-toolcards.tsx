@@ -2,12 +2,13 @@
 // build input is pinned to index.html, so this page exists only under
 // `vite dev` (served at /preview-toolcards.html) for visual iteration.
 //
-// Renders one card per render intent so the three layouts can be compared side
+// Renders one card per render intent so the four layouts can be compared side
 // by side without running an agent.
 
 import type { JSX } from 'react';
 import { createRoot } from 'react-dom/client';
 import { presentToolCall } from '@deepcode/core/dist/tools/presentation.js';
+import type { ToolLocation } from '@deepcode/core/dist/tools/presentation.js';
 import { ToolBody } from './components/ToolBody.js';
 import { ToolCard } from './components/ToolCard.js';
 import './index.css';
@@ -16,6 +17,7 @@ const CALLS: Array<{
   name: string;
   input: Record<string, unknown>;
   result?: string;
+  locations?: ToolLocation[];
   status: 'ok' | 'err' | 'running';
 }> = [
   {
@@ -55,9 +57,48 @@ const CALLS: Array<{
   },
   {
     name: 'Grep',
-    input: { pattern: 'applySpillPolicy', path: 'packages/core/src' },
+    input: { pattern: 'applySpillPolicy', path: 'packages/core/src', '-n': true },
     result:
-      'packages/core/src/agent.ts:16\npackages/core/src/spill/policy.ts:71\npackages/core/src/index.ts:213',
+      'packages/core/src/agent.ts:16:import { applySpillPolicy } from...\npackages/core/src/spill/policy.ts:71:export function applySpillPolicy(\npackages/core/src/index.ts:213:  applySpillPolicy,',
+    locations: [
+      {
+        path: '/repo/packages/core/src/agent.ts',
+        display: 'packages/core/src/agent.ts',
+        line: 16,
+        preview: "import { applySpillPolicy } from './spill/policy.js';",
+      },
+      {
+        path: '/repo/packages/core/src/spill/policy.ts',
+        display: 'packages/core/src/spill/policy.ts',
+        line: 71,
+        preview: 'export function applySpillPolicy(',
+      },
+      {
+        path: '/repo/packages/core/src/index.ts',
+        display: 'packages/core/src/index.ts',
+        line: 213,
+        preview: '  applySpillPolicy,',
+      },
+    ],
+    status: 'ok',
+  },
+  {
+    name: 'Glob',
+    input: { pattern: 'src/sandbox/*.ts', path: 'packages/core' },
+    result: 'src/sandbox/dns-proxy.ts\nsrc/sandbox/netns.ts\nsrc/sandbox/profiles.ts',
+    locations: [
+      { path: '/repo/packages/core/src/sandbox/dns-proxy.ts', display: 'src/sandbox/dns-proxy.ts' },
+      { path: '/repo/packages/core/src/sandbox/netns.ts', display: 'src/sandbox/netns.ts' },
+      { path: '/repo/packages/core/src/sandbox/profiles.ts', display: 'src/sandbox/profiles.ts' },
+    ],
+    status: 'ok',
+  },
+  {
+    // A restored session has only the result text — the same call degrades to
+    // the generic body, no buttons.
+    name: 'Grep',
+    input: { pattern: 'applySpillPolicy', path: 'packages/core/src' },
+    result: 'packages/core/src/agent.ts:16\npackages/core/src/spill/policy.ts:71',
     status: 'ok',
   },
   {
@@ -93,7 +134,14 @@ function Preview(): JSX.Element {
                       ? '✓ done'
                       : '✕ error',
               }}
-              body={<ToolBody presentation={presentation} resultText={call.result} />}
+              body={
+                <ToolBody
+                  presentation={presentation}
+                  resultText={call.result}
+                  locations={call.locations}
+                  onOpenFile={(path) => console.log('open', path)}
+                />
+              }
             />
           </div>
         );
