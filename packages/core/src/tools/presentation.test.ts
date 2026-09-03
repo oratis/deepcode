@@ -2,8 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { BUILTIN_TOOLS } from './registry.js';
 import {
   BUILTIN_RENDER_INTENTS,
+  MAX_TOOL_LOCATIONS,
   pickTarget,
   presentToolCall,
+  readToolLocations,
   type ToolRenderKind,
 } from './presentation.js';
 
@@ -53,6 +55,19 @@ describe('presentToolCall', () => {
     expect(presentToolCall('Edit', input)).toEqual(presentToolCall('Edit', input));
   });
 
+  it('renders Grep and Glob as location lists, labelled by their pattern', () => {
+    // The intent alone: what was found lives in the result's data channel, so
+    // the presentation carries no entries — arguments cannot know the matches.
+    expect(presentToolCall('Grep', { pattern: 'TODO', path: 'src' })).toEqual({
+      kind: 'locations',
+      target: 'TODO',
+    });
+    expect(presentToolCall('Glob', { pattern: '**/*.ts' })).toEqual({
+      kind: 'locations',
+      target: '**/*.ts',
+    });
+  });
+
   it('ignores non-string arguments where it expects text', () => {
     expect(presentToolCall('Bash', { command: 42 }).kind).toBe('generic');
     expect(presentToolCall('Edit', { file_path: '/a', old_string: 1, new_string: 2 }).kind).toBe(
@@ -69,6 +84,46 @@ describe('pickTarget', () => {
 
   it('returns nothing when no argument makes a useful label', () => {
     expect(pickTarget({ replace_all: true })).toBeUndefined();
+  });
+});
+
+describe('readToolLocations', () => {
+  it('reads well-formed entries and keeps only their known fields', () => {
+    expect(
+      readToolLocations({
+        locations: [
+          { path: '/a/b.ts', display: 'b.ts', line: 3, preview: 'hit', extra: 'dropped' },
+          { path: '/c.ts' },
+        ],
+      }),
+    ).toEqual([{ path: '/a/b.ts', display: 'b.ts', line: 3, preview: 'hit' }, { path: '/c.ts' }]);
+  });
+
+  it('degrades malformed payloads to no locations instead of throwing', () => {
+    // This is the one validating extractor every client shares, so a bad
+    // payload must fail the same quiet way everywhere.
+    expect(readToolLocations(undefined)).toEqual([]);
+    expect(readToolLocations('locations')).toEqual([]);
+    expect(readToolLocations({ locations: 'nope' })).toEqual([]);
+    expect(
+      readToolLocations({ locations: [null, 42, { display: 'no path' }, { path: '' }] }),
+    ).toEqual([]);
+  });
+
+  it('ignores a non-numeric line rather than inventing one', () => {
+    expect(readToolLocations({ locations: [{ path: '/a', line: 'seven' }] })).toEqual([
+      { path: '/a' },
+    ]);
+    expect(readToolLocations({ locations: [{ path: '/a', line: Infinity }] })).toEqual([
+      { path: '/a' },
+    ]);
+  });
+
+  it('caps the list at MAX_TOOL_LOCATIONS', () => {
+    const locations = Array.from({ length: MAX_TOOL_LOCATIONS + 50 }, (_, i) => ({
+      path: `/f${i}`,
+    }));
+    expect(readToolLocations({ locations })).toHaveLength(MAX_TOOL_LOCATIONS);
   });
 });
 

@@ -38,9 +38,12 @@ export { ToolRegistry, BUILTIN_TOOLS } from './registry.js';
 export {
   presentToolCall,
   pickTarget,
+  readToolLocations,
   BUILTIN_RENDER_INTENTS,
+  MAX_TOOL_LOCATIONS,
   type ToolRenderKind,
   type ToolPresentation,
   type ToolDiffIntent,
+  type ToolLocation,
 } from './presentation.js';
 export type { ToolDefinition, ToolContext, ToolResult, ToolHandler } from './types.js';

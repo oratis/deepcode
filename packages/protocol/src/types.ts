@@ -68,7 +68,14 @@ export interface ToolCompletedEvent {
   threadId: string;
   turnId: string;
   itemId: string;
-  result: { content: string; isError?: boolean };
+  /**
+   * `data` is the tool's structured payload (core `ToolResult.data`), passed
+   * through verbatim — the server has always serialized the whole result, so
+   * declaring it here documents the wire rather than widening it. Clients use
+   * it for richer rendering (e.g. Grep/Glob attach `locations`); it is
+   * transient and not part of the persisted thread snapshot.
+   */
+  result: { content: string; isError?: boolean; data?: Record<string, unknown> };
 }
 
 export interface UsageUpdatedEvent {

@@ -12,6 +12,7 @@
 // The card header's label comes from core, so the CLI and the extension read
 // the same answer rather than each keeping their own key list.
 import { pickTarget } from '@deepcode/core/dist/tools/presentation.js';
+import type { ToolLocation } from '@deepcode/core/dist/tools/presentation.js';
 
 export { pickTarget };
 
@@ -22,6 +23,12 @@ export interface ToolInvocation {
   input: Record<string, unknown>;
   status: 'running' | 'ok' | 'err';
   resultText?: string;
+  /**
+   * Openable places the call found, from the result's structured data. Only
+   * live results carry them — a session restored from its log has just the
+   * text, and its cards degrade to the plain-text body.
+   */
+  locations?: ToolLocation[];
 }
 
 export interface AssistantTurn {
@@ -123,6 +130,7 @@ export function attachToolResult(
   toolId: string,
   content: string,
   status: 'ok' | 'err',
+  locations?: ToolLocation[],
 ): Msg[] {
   let messageIndex = -1;
   let toolIndex = -1;
@@ -153,7 +161,12 @@ export function attachToolResult(
   return msgs.map((message, index): Msg => {
     if (index !== messageIndex || message.role !== 'assistant') return message;
     const tools = [...message.turn.tools];
-    tools[toolIndex] = { ...tools[toolIndex]!, status, resultText: content };
+    tools[toolIndex] = {
+      ...tools[toolIndex]!,
+      status,
+      resultText: content,
+      ...(locations && locations.length > 0 ? { locations } : {}),
+    };
     return { ...message, turn: { ...message.turn, tools } };
   });
 }

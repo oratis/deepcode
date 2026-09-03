@@ -4,6 +4,7 @@
 import { glob } from 'node:fs/promises';
 import { isAbsolute, relative, resolve } from 'node:path';
 import { withheldNotice, withholdDeniedReads } from '../config/contract-dispatch.js';
+import { MAX_TOOL_LOCATIONS, type ToolLocation } from './presentation.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 interface GlobInput {
@@ -18,6 +19,7 @@ export const GlobTool: ToolHandler = {
   name: 'Glob',
   definition: {
     name: 'Glob',
+    render: 'locations',
     description:
       'Finds files matching a glob pattern (e.g. "src/**/*.ts"). Returns paths sorted by mtime (most recent first).',
     inputSchema: {
@@ -86,9 +88,21 @@ export const GlobTool: ToolHandler = {
     const notice = withheldNotice(withheld);
     if (notice) lines.push(notice);
 
+    // Structured entries for clients that render results as openable locations:
+    // the absolute path for opening, plus the relative form the text printed.
+    const locations: ToolLocation[] = top.slice(0, MAX_TOOL_LOCATIONS).map((s) => ({
+      path: s.p,
+      display: relative(ctx.cwd, s.p) || s.p,
+    }));
+
     return {
       content: lines.join('\n') || '(no matches)',
-      data: { count: top.length, total: stamped.length, ...(withheld > 0 ? { withheld } : {}) },
+      data: {
+        count: top.length,
+        total: stamped.length,
+        locations,
+        ...(withheld > 0 ? { withheld } : {}),
+      },
     };
   },
 };

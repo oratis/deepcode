@@ -22,10 +22,11 @@ interface ToolCardProps {
   body?: ReactNode;
   /**
    * How the body is laid out. `diff` and `terminal` preserve columns strictly;
-   * `generic` wraps. Chosen from the tool's own declared render intent — see
-   * core's `tools/presentation.ts`.
+   * `locations` is a one-entry-per-line list of openable paths; `generic`
+   * wraps. Chosen from the tool's own declared render intent — see core's
+   * `tools/presentation.ts`.
    */
-  layout?: 'generic' | 'diff' | 'terminal';
+  layout?: 'generic' | 'diff' | 'terminal' | 'locations';
   /**
    * If set, the target becomes a clickable "open preview" affordance — used for
    * file tools (Read/Write/Edit) to load the file into the right-side panel.
