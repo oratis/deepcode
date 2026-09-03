@@ -119,6 +119,25 @@ describe('built-in command behavior', () => {
     expect(ctx.mode).toBe('plan');
   });
 
+  it('/plan enters plan mode and /plan off leaves it', async () => {
+    const reg = new CommandRegistry();
+    const ctx = makeContext();
+    await reg.match('/plan')!.cmd.run([], ctx);
+    expect(ctx.mode).toBe('plan');
+    await reg.match('/plan off')!.cmd.run(['off'], ctx);
+    expect(ctx.mode).toBe('default');
+  });
+
+  it('/plan refuses a trailing prompt instead of silently dropping it', async () => {
+    const reg = new CommandRegistry();
+    const ctx = makeContext();
+    const out = await reg
+      .match('/plan refactor the auth flow')!
+      .cmd.run(['refactor', 'the', 'auth', 'flow'], ctx);
+    expect(out.join('\n')).toMatch(/takes no prompt/);
+    expect(ctx.mode).toBe('default'); // unchanged — nothing half-happened
+  });
+
   it('/effort switches when valid', async () => {
     const reg = new CommandRegistry();
     const ctx = makeContext();

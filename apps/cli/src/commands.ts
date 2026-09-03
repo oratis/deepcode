@@ -287,6 +287,23 @@ export const ModeCommand: SlashCommand = {
   },
 };
 
+export const PlanCommand: SlashCommand = {
+  name: '/plan',
+  description: 'Enter plan mode (read-only exploring; same as /mode plan).',
+  run(args, ctx) {
+    // `/plan off` reads as the obvious way back out, so honor it rather than
+    // teaching one more incantation. Anything else after /plan is a mistake —
+    // the prompt itself is typed as a normal message once the mode is set.
+    if (args.length > 0 && args[0] !== 'off') {
+      return ['/plan takes no prompt. Enter plan mode first, then type your message.'];
+    }
+    const next = args[0] === 'off' ? 'default' : 'plan';
+    if (ctx.mode === next) return [`Already in ${next} mode.`];
+    ctx.mode = next;
+    return [`Mode switched to ${next}.`];
+  },
+};
+
 // Effort tier UI metadata surfaced by `/effort` with no args.
 // why: the maxTokens/temperature numbers are NOT defined here — they are read
 // from EFFORT_PARAMS in @deepcode/core, the single source of truth the REPL and
@@ -1440,6 +1457,7 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
   StatusCommand,
   ModelCommand,
   ModeCommand,
+  PlanCommand,
   EffortCommand,
   CostCommand,
   ContextCommand,
