@@ -172,6 +172,7 @@ export async function resolveSession(
     const n = loaded.messages.length;
     const plural = n === 1 ? '' : 's';
     if (opts.forkSession) {
+      await sessions.assertForkable(sourceId);
       const forked = await sessions.create(cwd, {
         model: loaded.meta.model ?? model,
         title: loaded.meta.title,

@@ -164,3 +164,15 @@ native 默认和显式回滚路径不变：`engine: "native"` 加新会话；已
 首次 CI 的 SDK 实际进程 smoke 属于 opt-in，尚未执行；本次将其加入 Ubuntu/macOS 矩阵的独立必跑步骤。两种模型配置连接本地 Messages fixture，使用假密钥，验证安装的 SDK 可执行文件、受控工具写入与会话恢复，不依赖厂商密钥，也不消耗厂商额度。该步骤失败会阻止 CI 通过；最新提交的结果记录在 [PR #296](https://github.com/oratis/deepcode/pull/296)。
 
 仍待验收：真实 Kimi/GLM 端点和套餐、多轮长任务质量与成本、SDK 独立安装及发行签名/公证包、无系统 Node/Claude 的冷启动和升级回滚。SDK 保持实验功能，native 默认不变。
+
+## 11. 独立 agent 审查与发布前修复
+
+独立 agent 对 `5df23ab` 进行只读审查并发布 [COMMENT review](https://github.com/oratis/deepcode/pull/296#pullrequestreview-5644341351)，三项发现均已复现并修复：
+
+- **P1 取消后启动写入**：native/SDK 在最后一次异步路径核验后再次检查 signal；Write/Edit/NotebookEdit 在异步准备后、实际写入前检查取消，并向文件 I/O 传递 signal。回归测试在最终 stat、mkdir 和原文件读取完成时注入取消，确认不启动 handler 或不覆盖原文件。已经提交到操作系统的写入不承诺事务回滚。
+- **P2 额外目录丢失**：共享目录合并器按有效 sandbox mode 处理默认和 mode-only 配置，CLI/server 的额外目录都进入 allowWrite；native 与 SDK 测试同时验证 read-only/denyWrite 优先。
+- **P2 SDK 会话分叉丢失来源**：CLI 和 canonical protocol store 在复制前统一验证源会话。SDK、未知版本或丢失 binding 但仍有 SDK 目录的会话拒绝分叉；原生及旧原生会话继续可用。失败不会创建目标会话，也不修改源历史。
+
+发布准备同步 `0.4.0` 的六处版本号和 CHANGELOG，并把 SDK 实际进程 smoke 加入标签发布验证。按既有发布流程，缺少 Apple/npm 凭证时只发布 VSIX 与源码；SDK 可选运行文件仍不附带到 VSIX，native 仍是默认。合并与发布以独立复审和最新 CI 通过为条件；最终证据记录在 PR。
+
+独立复审确认三项均修复，额外运行 core 49 项、CLI 恢复 9 项、server store 8 项全部通过。修复后的本地全量测试为 1,778 passed / 23 skipped；SDK 实际进程 2 项、桌面 E2E 7 项、Rust 30 项通过。冻结安装、类型、lint、格式、构建、文档与发布检查通过；VS Code app-server 701,845 bytes、VSIX 216,965 bytes，均在既有预算内。

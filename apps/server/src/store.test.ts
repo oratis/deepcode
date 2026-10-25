@@ -1,9 +1,9 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SessionManager, writeMeta } from '@deepcode/core/sessions';
-import type { ThreadSnapshot } from '@deepcode/protocol';
+import { ProtocolRuntime, type ThreadSnapshot } from '@deepcode/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { CanonicalThreadStore } from './store.js';
@@ -26,6 +26,33 @@ async function fixture() {
 }
 
 describe('CanonicalThreadStore', () => {
+  it.each(['native', 'sdk', 'future', 'orphaned-sdk'])(
+    'enforces %s engine history boundaries when forking a protocol thread',
+    async (kind) => {
+      const { store, sessions } = await fixture();
+      const runtime = new ProtocolRuntime({ store });
+      const source = await runtime.startThread('/workspace');
+      const directory = join(sessions.root, source.id);
+      await mkdir(directory, { recursive: true });
+      if (kind === 'orphaned-sdk') await mkdir(join(directory, 'claude-sdk'));
+      else
+        await writeFile(
+          join(directory, 'engine.json'),
+          JSON.stringify({
+            version: kind === 'future' ? 99 : 1,
+            engine: kind === 'native' ? 'native' : 'claude-sdk',
+          }),
+        );
+      if (kind === 'native') {
+        expect((await runtime.forkThread(source.id)).id).not.toBe(source.id);
+        expect(await sessions.list()).toHaveLength(2);
+      } else {
+        await expect(runtime.forkThread(source.id)).rejects.toThrow(/cannot be forked/);
+        expect((await sessions.list()).map((s) => s.id)).toEqual([source.id]);
+        expect((await store.list()).map((s) => s.id)).toEqual([source.id]);
+      }
+    },
+  );
   it('materializes protocol history into the canonical session index', async () => {
     const { store, sessions } = await fixture();
     const thread: ThreadSnapshot = {

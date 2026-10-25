@@ -20,6 +20,8 @@ function clone<T>(value: T): T {
 export interface ThreadStore {
   load(threadId: string): Promise<ThreadSnapshot | null>;
   save(thread: ThreadSnapshot): Promise<void>;
+  /** Stores with engine-private history must validate before copying a projection. */
+  assertForkable?(threadId: string): Promise<void>;
   /**
    * Optional: listing and archiving need an index the base store doesn't have.
    * A store without them leaves `threadManagement` off, and the runtime rejects
@@ -219,6 +221,7 @@ export class ProtocolRuntime {
    */
   async forkThread(threadId: string, traceId?: string): Promise<ThreadSnapshot> {
     const source = await this.requireThread(threadId);
+    await this.options.store.assertForkable?.(threadId);
     const now = this.now();
     const fork: ThreadSnapshot = {
       id: this.newId('thread'),

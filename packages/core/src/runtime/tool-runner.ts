@@ -91,6 +91,7 @@ export function createEngineToolRunner(options: RunAgentOptions & { onBlocked?: 
         options.sandboxConfig,
         options.sandboxDefaultMode,
       );
+      options.signal?.throwIfAborted();
       if (denial) {
         const result = { content: `Tool call blocked: ${denial}`, isError: true };
         options.onEvent?.({ type: 'tool_result', id, result });
@@ -133,6 +134,7 @@ export function createEngineToolRunner(options: RunAgentOptions & { onBlocked?: 
           options.sandboxDefaultMode,
         );
         if (denial) throw new Error(denial);
+        options.signal?.throwIfAborted();
         result = await handler.execute(input, {
           cwd: options.cwd,
           signal: options.signal,

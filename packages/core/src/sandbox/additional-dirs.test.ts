@@ -33,7 +33,21 @@ describe('withAdditionalWritableDirs', () => {
   it('is a no-op when the sandbox is disabled — never silently enables it', () => {
     const off: SandboxConfig = { enabled: false };
     expect(withAdditionalWritableDirs(off, ['/data'])).toBe(off);
-    expect(withAdditionalWritableDirs(undefined, ['/data'])).toBeUndefined();
+  });
+
+  it.each([
+    undefined,
+    { mode: 'workspace-write' },
+    { enabled: false, mode: 'workspace-write' },
+  ] as const)('honors additional directories under the resolved workspace mode: %j', (config) => {
+    expect(withAdditionalWritableDirs(config, ['/data'])?.filesystem?.allowWrite).toEqual([
+      '/data',
+    ]);
+  });
+
+  it('does not widen an explicit read-only mode even when legacy enabled is true', () => {
+    const config: SandboxConfig = { enabled: true, mode: 'read-only' };
+    expect(withAdditionalWritableDirs(config, ['/data'])).toBe(config);
   });
 
   it('is a no-op for empty/undefined directory lists', () => {

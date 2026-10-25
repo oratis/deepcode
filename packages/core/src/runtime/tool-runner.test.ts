@@ -6,12 +6,14 @@ import {
   readFile,
   rm,
   symlink,
+  stat,
   unlink,
   writeFile,
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { promises as fs } from 'node:fs';
 import { createEngineToolRunner } from './tool-runner.js';
 import { SessionManager } from '../sessions/manager.js';
 import { ToolRegistry } from '../tools/registry.js';
@@ -19,6 +21,12 @@ import { WriteTool } from '../tools/write.js';
 import { ReadTool } from '../tools/read.js';
 import { runAgent, type RunAgentOptions } from '../agent.js';
 import type { NewLedgerRecord } from '../ledger/index.js';
+import { withAdditionalWritableDirs } from '../sandbox/additional-dirs.js';
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>();
+  return { ...actual, stat: vi.fn(actual.stat) };
+});
 
 const usage = { inputTokens: 1, outputTokens: 1, reasoningTokens: 0, cacheReadTokens: 0 };
 describe('engine tool execution review regressions', () => {
@@ -97,6 +105,48 @@ describe('engine tool execution review regressions', () => {
     expect(records[0]?.rollbackHint).toBeUndefined();
   });
   it.each(['native', 'bridge'])(
+    'never starts %s execution when cancelled during the final path check',
+    async (engine) => {
+      const controller = new AbortController();
+      options.signal = controller.signal;
+      const target = join(cwd, 'target');
+      await writeFile(target, 'before');
+      const execute = vi.fn(WriteTool.execute);
+      options.tools = new ToolRegistry([{ ...WriteTool, execute }]);
+      const canonicalTarget = await fs.realpath(target);
+      const originalStat = fs.stat;
+      let checks = 0;
+      const mock = vi.mocked(stat).mockImplementation(async (...args) => {
+        const value = await originalStat(...args);
+        if (String(args[0]) === canonicalTarget && ++checks === 3) controller.abort();
+        return value;
+      });
+      const input = { file_path: target, content: 'after' };
+      try {
+        if (engine === 'bridge')
+          await expect(
+            createEngineToolRunner(options).run('Write', input, 'write'),
+          ).rejects.toThrow();
+        else {
+          options.provider = {
+            name: 'test',
+            runTurn: async () => ({
+              content: [{ type: 'tool_use', id: 'write', name: 'Write', input }],
+              stopReason: 'tool_use',
+              usage,
+            }),
+          };
+          expect((await runAgent(options)).stopReason).toBe('aborted');
+        }
+        expect(checks).toBe(3);
+        expect(execute).not.toHaveBeenCalled();
+        expect(await readFile(target, 'utf8')).toBe('before');
+      } finally {
+        mock.mockRestore();
+      }
+    },
+  );
+  it.each(['native', 'bridge'])(
     'rechecks %s file targets after the approval wait',
     async (engine) => {
       const outside = join(root, 'outside');
@@ -150,5 +200,47 @@ describe('engine tool execution review regressions', () => {
       ).isError,
     ).toBe(true);
     expect(await readFile(outside, 'utf8')).toBe('unchanged');
+  });
+  it.each([
+    ['native', 'default'],
+    ['bridge', 'default'],
+    ['native', 'workspace-write'],
+    ['bridge', 'workspace-write'],
+    ['native', 'read-only'],
+    ['bridge', 'read-only'],
+    ['native', 'denyWrite'],
+    ['bridge', 'denyWrite'],
+  ] as const)('honors additional directories in %s with %s sandbox', async (engine, mode) => {
+    const outside = join(root, 'additional');
+    await mkdir(outside);
+    options.sandboxConfig = withAdditionalWritableDirs(
+      mode === 'default'
+        ? undefined
+        : mode === 'denyWrite'
+          ? { mode: 'workspace-write', filesystem: { denyWrite: [outside] } }
+          : { mode },
+      [outside],
+      cwd,
+    );
+    const input = { file_path: join(outside, 'target'), content: 'allowed' };
+    if (engine === 'bridge') await createEngineToolRunner(options).run('Write', input, 'write');
+    else {
+      let calls = 0;
+      options.provider = {
+        name: 'test',
+        runTurn: async () =>
+          ++calls === 1
+            ? {
+                content: [{ type: 'tool_use', id: 'write', name: 'Write', input }],
+                stopReason: 'tool_use',
+                usage,
+              }
+            : { content: [], stopReason: 'end_turn', usage },
+      };
+      await runAgent(options);
+    }
+    if (mode === 'read-only' || mode === 'denyWrite')
+      await expect(access(input.file_path)).rejects.toThrow();
+    else expect(await readFile(input.file_path, 'utf8')).toBe('allowed');
   });
 });

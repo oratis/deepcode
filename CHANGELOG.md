@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-10-26
+
+### Multi-model runtime
+
+- Native Kimi and GLM profiles share provider routing, model budgets and scoped
+  credentials across the CLI and app-server clients. Unknown prices are shown
+  as unavailable. See [multi-model configuration](docs/multi-model.md).
+- Claude Agent SDK 0.3.310 is an explicit **experimental** engine, with controlled
+  DeepCode tools, approvals, snapshots and isolated sessions. Native remains the
+  default. To roll back, select `engine: "native"` and start a new session;
+  existing SDK records are retained.
+- Truncated responses and exhausted turn budgets report incomplete execution.
+  Summaries inherit the selected model and cancellation, credentials follow the
+  documented precedence, and user prompts can be cancelled.
+- File mutations recheck permissions after approval; review restore respects
+  file restrictions, and SDK rollback records point to the pre-edit snapshot.
+  Hook processes and SDK resources are cleaned up when work stops. Cancellation
+  during the final path check or file preparation no longer starts a later write.
+  Additional writable directories work with the default sandbox mode; SDK
+  session forks are rejected before copying incomplete history.
+- Real SDK executable tests run on Ubuntu and macOS against local fixtures;
+  Linux bwrap/netns, desktop protocol journeys and release gates also pass.
+  Real Kimi/GLM endpoints and long-task quality still need live acceptance.
+- The VSIX uses native by default and does **not** bundle the optional SDK
+  executable. Signed macOS installers and npm publication require the release
+  credentials described in [Releasing DeepCode](docs/RELEASING.md).
+
+The following changes accumulated on main since v0.3.0 are also included.
+
 ### ⚠️ Breaking
 
 - **`deepcode mcp serve` now applies your permission settings.** It executed

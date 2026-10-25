@@ -56,7 +56,8 @@ export const EditTool: ToolHandler = {
 
     let raw: string;
     try {
-      raw = await fs.readFile(absPath, 'utf8');
+      ctx.signal?.throwIfAborted();
+      raw = await fs.readFile(absPath, { encoding: 'utf8', signal: ctx.signal });
     } catch (err) {
       const e = err as NodeJS.ErrnoException;
       return { content: `Error reading ${absPath}: ${e.message}`, isError: true };
@@ -81,7 +82,8 @@ export const EditTool: ToolHandler = {
       : raw.replace(input.old_string, input.new_string);
 
     try {
-      await fs.writeFile(absPath, next, 'utf8');
+      ctx.signal?.throwIfAborted();
+      await fs.writeFile(absPath, next, { encoding: 'utf8', signal: ctx.signal });
     } catch (err) {
       return { content: `Error writing ${absPath}: ${(err as Error).message}`, isError: true };
     }

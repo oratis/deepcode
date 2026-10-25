@@ -916,6 +916,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         opts.sandboxConfig,
         opts.sandboxDefaultMode,
       );
+      if (opts.signal?.aborted) return;
       if (denial) {
         const result = { content: `Tool call blocked: ${denial}`, isError: true };
         opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result });
@@ -972,6 +973,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
           opts.sandboxDefaultMode,
         );
         if (denial) throw new Error(denial);
+        opts.signal?.throwIfAborted();
         tr = await withDeadline(toolUse, handler);
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };

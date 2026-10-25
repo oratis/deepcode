@@ -73,7 +73,7 @@ SDK 独占 agent loop；DeepCode 的内置文件/命令工具经受控 MCP 桥�
 
 SDK 自行管理上下文。CLI `/compact` 和会话 rewind 会说明不可用，文件 rewind 保留；`/clear` 建立新 SDK 会话。不要把 DeepCode 的 UI 消息投影当成 SDK 的完整历史。SDK session 与 engine 绑定保存在 `sessions/<id>/`，不修改 `~/.claude`。
 
-回滚时设置 `"engine": "native"` 并新建会话。旧 SDK 记录保留；同一 session 不能直接切换引擎，SDK session 不能中途改 provider/model/endpoint；CLI 更换模型前须先 `/clear`。绑定文件丢失或版本不支持时会拒绝恢复，原历史仍保留。该限制避免重复执行工具和错误恢复。当前不提供跨引擎自动历史导入。
+回滚时设置 `"engine": "native"` 并新建会话。旧 SDK 记录保留；同一 session 不能直接切换引擎，SDK session 不能中途改 provider/model/endpoint；CLI 更换模型前须先 `/clear`。绑定文件丢失或版本不支持时会拒绝恢复，原历史仍保留。该限制避免重复执行工具和错误恢复。当前不提供跨引擎自动历史导入。SDK 会话暂不支持 CLI `--fork-session` 或协议 `thread/fork`；复制前会拒绝并保留源会话，避免将 UI 投影当成完整原生历史。
 
 ## 验证
 
@@ -86,6 +86,6 @@ DEEPCODE_SDK_SMOKE=1 pnpm --filter @deepcode/app-server exec vitest run src/engi
 DEEPCODE_LIVE_TESTS=1 pnpm --filter @deepcode/core exec vitest run src/providers/multi.live.test.ts
 ```
 
-截断和循环预算耗尽不再报告成功：headless 返回退出码 4；server 返回 failed 和原因。取消覆盖模型请求、审批、用户问答、摘要、命令/HTTP hooks 和受控工具队列。文件工具拒绝 workspace 之外（含 symlink）的写入，除非显式增加可写目录或使用 danger-full-access；read-only 仍然禁止写入。workspace 模式拒绝硬链接文件写入；审批后会重新检查路径，review 恢复也遵守文件限制。SDK 快照编号跨轮次延续，回滚记录指向实际修改前快照；关闭快照时不会提供虚构的回滚引用。
+截断和循环预算耗尽不再报告成功：headless 返回退出码 4；server 返回 failed 和原因。取消覆盖模型请求、审批、用户问答、摘要、命令/HTTP hooks 和受控工具队列。文件工具拒绝 workspace 之外（含 symlink）的写入，除非显式增加可写目录或使用 danger-full-access；read-only 仍然禁止写入。默认或显式 workspace-write 模式均支持 `permissions.additionalDirectories`（`/add-dir`），但 read-only 和 denyWrite 仍优先。workspace 模式拒绝硬链接文件写入；审批后会重新检查路径，review 恢复也遵守文件限制。SDK 快照编号跨轮次延续，回滚记录指向实际修改前快照；关闭快照时不会提供虚构的回滚引用。
 
 Ubuntu/macOS CI 另行运行上述 SDK 实际进程 smoke，使用本地模拟端点和假密钥；Linux CI 也执行 bwrap/netns 的真实内核集成测试。当前 SDK 仍是实验功能：协议、权限及跨平台测试不能证明非 Claude 厂商完全兼容，也不代表签名安装包和真实长任务验收已完成。具体结果与剩余工作记录在 ADR。
