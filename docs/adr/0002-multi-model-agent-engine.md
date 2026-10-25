@@ -138,7 +138,7 @@ SDK 默认化条件：连续工具与长任务评测至少不低于 native 基�
 
 新增测试覆盖：环境/helper/store 优先级及取消、跨 provider 密钥与 reasoning 隔离、未信任 profile、半截流/工具批次、预算耗尽失败投影、自定义模型限制、路径/denyWrite/symlink、hook 子进程取消、SDK 审批拒绝/计划模式/无人值守终止、取消 pending approval、旧 native 历史保护、SDK 恢复及原生回滚拒绝混写。CLI 新增模型/预算、混合费用和 SDK /clear 行为也有回归。
 
-未完成的外部验收：真实 Kimi/GLM 请求、Linux bwrap/netns、真实长任务质量对比、发行签名/公证安装包。没有凭证时 live 测试跳过而非报告通过；上述本地通过不等于生产兼容认证。
+创建 PR 时未完成的外部验收：真实 Kimi/GLM 请求、Linux bwrap/netns、真实长任务质量对比、发行签名/公证安装包。后续 CI 结果见第 10 节。没有凭证时 live 测试跳过而非报告通过；上述本地通过不等于生产兼容认证。
 
 ## 9. 提交前再次复审与修复
 
@@ -155,4 +155,12 @@ SDK 默认化条件：连续工具与长任务评测至少不低于 native 基�
 
 补充兼容性：CLI 识别只配置 `DEEPSEEK_AUTH_TOKEN` 的启动方式，模型切换后的后台请求使用当前模型预算；SDK 工具桥遵守调用方的 spill 配置。snapshot 编号、修改前回滚、硬链接、审批后 symlink 替换、文件恢复限制、交互取消、孤儿进程、空摘要、SDK 绑定丢失/版本错误及清理失败均有定向测试。
 
-native 默认和显式回滚路径不变：`engine: "native"` 加新会话；已有 SDK 记录保留且不混写。额外 Rust 格式检查的失败来自未修改的基线文件，未混入格式修复。真实厂商、Linux sandbox 与发行安装包仍按第 8 节作为外部验收项，不能由本地 fixture 测试代替。
+native 默认和显式回滚路径不变：`engine: "native"` 加新会话；已有 SDK 记录保留且不混写。额外 Rust 格式检查的失败来自未修改的基线文件，未混入格式修复。真实厂商与发行安装包仍按第 8 节作为外部验收项，不能由本地 fixture 测试代替。
+
+## 10. 2026-10-26 CI 验证与持续门禁
+
+核对提交 `6a102c7` 的 [CI 运行记录](https://github.com/oratis/deepcode/actions/runs/40199497883)，5 项检查全部通过：Ubuntu/macOS 的类型、lint、格式、测试与发布门禁，以及桌面端到端、Rust、文档检查。Ubuntu 测试为 1,766 passed / 11 skipped，macOS 为 1,754 passed / 23 skipped。Ubuntu 的 bwrap 集成 11 项、netns 集成 2 项实际执行并通过，Linux sandbox 不再列为待验收。
+
+首次 CI 的 SDK 实际进程 smoke 属于 opt-in，尚未执行；本次将其加入 Ubuntu/macOS 矩阵的独立必跑步骤。两种模型配置连接本地 Messages fixture，使用假密钥，验证安装的 SDK 可执行文件、受控工具写入与会话恢复，不依赖厂商密钥，也不消耗厂商额度。该步骤失败会阻止 CI 通过；最新提交的结果记录在 [PR #296](https://github.com/oratis/deepcode/pull/296)。
+
+仍待验收：真实 Kimi/GLM 端点和套餐、多轮长任务质量与成本、SDK 独立安装及发行签名/公证包、无系统 Node/Claude 的冷启动和升级回滚。SDK 保持实验功能，native 默认不变。

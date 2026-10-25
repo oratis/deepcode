@@ -87,6 +87,13 @@ jobs:
           DC_REQUIRE_BWRAP: ${{ runner.os == 'Linux' && '1' || '0' }}
         run: pnpm test
 
+      # Exercise the installed SDK executable on both operating systems. The
+      # fixture uses a loopback Messages server and fake keys, never vendor APIs.
+      - name: Claude SDK executable smoke
+        env:
+          DEEPCODE_SDK_SMOKE: '1'
+        run: pnpm --filter @deepcode/app-server exec vitest run src/engines/claude-sdk.smoke.test.ts
+
       - name: Build + app-server release gate
         run: pnpm release:check
 

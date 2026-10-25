@@ -88,4 +88,4 @@ DEEPCODE_LIVE_TESTS=1 pnpm --filter @deepcode/core exec vitest run src/providers
 
 截断和循环预算耗尽不再报告成功：headless 返回退出码 4；server 返回 failed 和原因。取消覆盖模型请求、审批、用户问答、摘要、命令/HTTP hooks 和受控工具队列。文件工具拒绝 workspace 之外（含 symlink）的写入，除非显式增加可写目录或使用 danger-full-access；read-only 仍然禁止写入。workspace 模式拒绝硬链接文件写入；审批后会重新检查路径，review 恢复也遵守文件限制。SDK 快照编号跨轮次延续，回滚记录指向实际修改前快照；关闭快照时不会提供虚构的回滚引用。
 
-当前 SDK 仍是实验功能：本地协议与权限测试不能证明非 Claude 厂商完全兼容，也不代表签名安装包、Linux sandbox 和真实长任务验收已完成。具体结果与剩余工作记录在 ADR。
+Ubuntu/macOS CI 另行运行上述 SDK 实际进程 smoke，使用本地模拟端点和假密钥；Linux CI 也执行 bwrap/netns 的真实内核集成测试。当前 SDK 仍是实验功能：协议、权限及跨平台测试不能证明非 Claude 厂商完全兼容，也不代表签名安装包和真实长任务验收已完成。具体结果与剩余工作记录在 ADR。
