@@ -16,12 +16,15 @@ import type {
 } from '@deepcode/core';
 import {
   describeSandboxMode,
+  validModelId,
+  MODEL_CATALOG,
   resolveSandboxMode,
   contextWindowFor,
   estimateCost,
   redact,
   writeSettings,
-  EFFORT_PARAMS,
+  modelParameters,
+  providerForModel,
   VERSION,
   type Credentials,
   type Effort,
@@ -144,6 +147,8 @@ export interface SessionContext {
   voiceCapture?: () => Promise<{ transcript: string | null; lines: string[] }>;
   /** Set by /voice — the REPL pre-fills the next input line with this text. */
   prefillInput?: string;
+  /** Null means cumulative usage spans models and cannot be repriced as one model. */
+  costModel?: string | null;
   sessionId: string;
   sessions: SessionManager;
   usage: {
@@ -176,6 +181,8 @@ export interface SessionContext {
   initFlow?: () => Promise<string | null>;
   /** Current conversation history — REPL refreshes this before each command call. */
   history?: StoredMessage[];
+  /** Cancellation of a slash command that invokes a provider. */
+  signal?: AbortSignal;
   /** Provider for commands that need to call the LLM (e.g. /rewind summarize). */
   provider?: Provider;
   /** Set by /rewind to request history replacement. REPL applies after run. */
@@ -221,8 +228,11 @@ export const HelpCommand: SlashCommand = {
 
 export const ClearCommand: SlashCommand = {
   name: '/clear',
-  description: 'Clear conversation history (keeps session ID).',
-  run(_args, ctx) {
+  description: 'Clear conversation history (SDK starts a new session).',
+  async run(_args, ctx) {
+    if (ctx.settings.engine === 'claude-sdk') {
+      ctx.sessionId = (await ctx.sessions.create(ctx.cwd)).id;
+    }
     ctx.clearHistory = true;
     return ['Conversation history cleared.'];
   },
@@ -262,13 +272,17 @@ export const StatusCommand: SlashCommand = {
 
 export const ModelCommand: SlashCommand = {
   name: '/model',
-  description: 'Switch model: /model deepseek-chat | deepseek-reasoner',
+  description: 'Switch model: /model <model-id>',
   run(args, ctx) {
     if (args.length === 0) return [`Current model: ${ctx.model}`];
     const next = args[0]!;
-    if (next !== 'deepseek-chat' && next !== 'deepseek-reasoner') {
-      return [`Unknown model "${next}". Valid: deepseek-chat | deepseek-reasoner`];
+    if (!validModelId(next)) {
+      return [`Invalid model ID. Presets: ${MODEL_CATALOG.map((m) => m.id).join(' | ')}`];
     }
+    if (ctx.settings.engine === 'claude-sdk' && ctx.history?.length && next !== ctx.model)
+      return [
+        'Claude SDK fixes the model per session. Use /clear, then /model to choose a new model.',
+      ];
     ctx.model = next;
     return [`Model switched to ${next}.`];
   },
@@ -306,7 +320,7 @@ export const PlanCommand: SlashCommand = {
 
 // Effort tier UI metadata surfaced by `/effort` with no args.
 // why: the maxTokens/temperature numbers are NOT defined here — they are read
-// from EFFORT_PARAMS in @deepcode/core, the single source of truth the REPL and
+// from modelParameters in @deepcode/core, the single source of truth the REPL and
 // headless paths actually send to the provider. A divergent hardcoded table
 // here previously told users "max = 32768 tokens, temp 0.7" while the provider
 // sent max_tokens=8192, temp=0.8 — pure misinformation. Only the human-readable
@@ -321,32 +335,26 @@ const EFFORT_USE: Record<Effort, string> = {
   max: 'Open-ended exploration. Burns tokens.',
 };
 
-const EFFORT_TIERS: Array<{
-  name: Effort;
-  maxTokens: number;
-  temperature: number;
-  use: string;
-}> = EFFORT_ORDER.map((name) => ({
-  name,
-  maxTokens: EFFORT_PARAMS[name].maxTokens,
-  temperature: EFFORT_PARAMS[name].temperature,
-  use: EFFORT_USE[name],
-}));
-
 export const EffortCommand: SlashCommand = {
   name: '/effort',
   description:
     'Set effort tier (interactive picker if no arg): /effort [low|medium|high|xhigh|max]',
   run(args, ctx) {
+    const id = providerForModel(ctx.model, ctx.settings.provider);
+    const tiers = EFFORT_ORDER.map((name) => ({
+      name,
+      ...modelParameters(ctx.model, name, ctx.settings.providers?.[id], id),
+      use: EFFORT_USE[name],
+    }));
     if (args.length === 0) {
       // Selector UI — show the table; user picks via `/effort <name>` next turn.
       const lines = [`Current effort: ${ctx.effort}`, ''];
       lines.push('Available tiers:');
       lines.push('  Tier      maxTokens  temperature  Use case');
-      for (const t of EFFORT_TIERS) {
+      for (const t of tiers) {
         const marker = t.name === ctx.effort ? '●' : ' ';
         lines.push(
-          `  ${marker} ${t.name.padEnd(7)} ${String(t.maxTokens).padStart(7)}  ${t.temperature.toFixed(1).padStart(11)}  ${t.use}`,
+          `  ${marker} ${t.name.padEnd(7)} ${String(t.maxTokens).padStart(7)}  ${(t.temperature?.toFixed(1) ?? 'default').padStart(11)}  ${t.use}`,
         );
       }
       lines.push('');
@@ -354,13 +362,13 @@ export const EffortCommand: SlashCommand = {
       return lines;
     }
     const next = args[0]!;
-    const tier = EFFORT_TIERS.find((t) => t.name === next);
+    const tier = tiers.find((t) => t.name === next);
     if (!tier) {
-      return [`Unknown effort "${next}". Valid: ${EFFORT_TIERS.map((t) => t.name).join(' | ')}`];
+      return [`Unknown effort "${next}". Valid: ${tiers.map((t) => t.name).join(' | ')}`];
     }
     ctx.effort = next;
     return [
-      `Effort switched to ${next}. (maxTokens=${tier.maxTokens}, temperature=${tier.temperature}, ${tier.use})`,
+      `Effort switched to ${next}. (maxTokens=${tier.maxTokens}, temperature=${tier.temperature ?? 'default'}, ${tier.use})`,
     ];
   },
 };
@@ -373,7 +381,12 @@ export const CostCommand: SlashCommand = {
     // Cache-aware pricing per docs/design/effort-levels.md §2.4. DeepSeek's
     // prompt caching is automatic server-side; cache-hit input tokens bill at
     // ~10% of a miss, so a stable prompt prefix across turns saves real money.
-    const c = estimateCost(ctx.usage, ctx.model);
+    const c = estimateCost(ctx.usage, ctx.costModel ?? ctx.model);
+    if (!c.available || ctx.costModel === null)
+      return [
+        `Tokens — in: ${ctx.usage.inputTokens}, out: ${ctx.usage.outputTokens}`,
+        `Cost unavailable for ${ctx.costModel === null ? 'mixed-model usage' : ctx.model}; consult the provider usage dashboard.`,
+      ];
     const cacheHits = Math.min(ctx.usage.cacheReadTokens, ctx.usage.inputTokens);
     const hitPct = (c.cacheHitRate * 100).toFixed(0);
     const lines = [
@@ -393,7 +406,8 @@ export const ContextCommand: SlashCommand = {
   description: 'Show context window usage.',
   run(_args, ctx) {
     const used = ctx.usage.inputTokens + ctx.usage.outputTokens;
-    const ctxMax = contextWindowFor(ctx.model);
+    const id = providerForModel(ctx.model, ctx.settings.provider);
+    const ctxMax = ctx.settings.providers?.[id]?.contextWindow ?? contextWindowFor(ctx.model);
     const pct = ((used / ctxMax) * 100).toFixed(1);
     return [
       `Context: ${used.toLocaleString()} / ${ctxMax.toLocaleString()} (${pct}%)`,
@@ -722,6 +736,10 @@ export const RewindCommand: SlashCommand = {
     }
 
     const action = (args[1] ?? 'code').toLowerCase();
+    if (ctx.settings.engine === 'claude-sdk' && action !== 'code')
+      return [
+        'Claude SDK owns its conversation history. Use /clear to start a new session; file-only rewind remains available.',
+      ];
     const cutoffMs = Date.parse(target.capturedAt);
     const currentHistory = ctx.history ?? [];
 
@@ -754,7 +772,11 @@ export const RewindCommand: SlashCommand = {
         if (tail.length === 0) {
           return [`Nothing after snapshot #${target.seq} to summarize.`];
         }
-        const result = await compact(tail, { provider: ctx.provider });
+        const result = await compact(tail, {
+          provider: ctx.provider,
+          summarizerModel: ctx.model,
+          signal: ctx.signal,
+        });
         // New history: head (verbatim) + the compacted tail
         ctx.newHistory = [...kept, ...result.history];
         return [
@@ -769,7 +791,11 @@ export const RewindCommand: SlashCommand = {
         if (head.length === 0) {
           return [`Nothing before snapshot #${target.seq} to summarize.`];
         }
-        const result = await compact(head, { provider: ctx.provider });
+        const result = await compact(head, {
+          provider: ctx.provider,
+          summarizerModel: ctx.model,
+          signal: ctx.signal,
+        });
         // New history: compacted head + tail (verbatim)
         ctx.newHistory = [...result.history, ...tail];
         return [
@@ -939,12 +965,18 @@ export const CompactCommand: SlashCommand = {
   name: '/compact',
   description: 'Summarize the conversation so far to free up context.',
   async run(_args, ctx) {
+    if (ctx.settings.engine === 'claude-sdk')
+      return ['Claude SDK manages context compaction. Use /clear for a new session.'];
     if (!ctx.provider) return ['(/compact needs a provider — none configured.)'];
     const history = ctx.history ?? [];
     if (history.length === 0) return ['Nothing to compact yet.'];
     try {
       const { compact } = await import('@deepcode/core');
-      const result = await compact(history, { provider: ctx.provider });
+      const result = await compact(history, {
+        provider: ctx.provider,
+        summarizerModel: ctx.model,
+        signal: ctx.signal,
+      });
       if (result.messagesRemoved === 0) {
         return ['Conversation is already short enough — nothing to compact.'];
       }

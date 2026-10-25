@@ -1,3 +1,4 @@
+import { configuredEngine } from '@deepcode/app-server';
 // Headless one-shot mode: `deepcode -p "do X"`
 // Spec: docs/DEVELOPMENT_PLAN.md §5a (M8) — implemented earlier than scheduled.
 //
@@ -18,8 +19,9 @@
 import {
   BashTool,
   CredentialsStore,
-  DeepSeekProvider,
-  EFFORT_PARAMS,
+  ConfiguredProvider,
+  resolveProviderConnection,
+  defaultModel,
   HookDispatcher,
   HookTrustStore,
   ReadTool,
@@ -34,7 +36,6 @@ import {
   connectAllMcpServers,
   expandMcpResourceRefs,
   gateUntrustedSettings,
-  contextWindowFor,
   findStyle,
   loadMemory,
   loadOutputStyles,
@@ -44,7 +45,6 @@ import {
   type SandboxMode,
   loadSkills,
   makeSkillTool,
-  resolveCredentials,
   wirePlugins,
   collectPluginContributions,
   type AgentEvent,
@@ -145,18 +145,14 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     );
   }
   const credsStore = new CredentialsStore({ home: opts.home });
-  const creds = await resolveCredentials({
-    store: credsStore,
-    apiKeyHelper: settings.apiKeyHelper,
-  });
-  if (!creds.apiKey && !creds.authToken) {
-    errOutput.write(
-      'No DeepSeek credentials. Set DEEPSEEK_API_KEY or run interactive `deepcode` to onboard.\n',
-    );
+  const model = opts.model ?? defaultModel(settings);
+  try {
+    await resolveProviderConnection({ settings, store: credsStore }, model);
+  } catch (error) {
+    errOutput.write(`${(error as Error).message}\n`);
     return 3;
   }
 
-  const model = opts.model ?? settings.model ?? 'deepseek-chat';
   const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
   // A permissive mode chosen for the REPL is inherited by every unattended run
   // that reads the same settings file — including scheduled jobs firing at 3am.
@@ -169,18 +165,14 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     );
   }
   const effort = opts.effort ?? settings.effortLevel ?? 'medium';
-  const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
   const maxTurns = opts.maxTurns ?? DEFAULT_HEADLESS_MAX_TURNS;
 
   // Only ever tightens — a job profile can narrow what is auto-approved but
   // never widen it (see tightenPermissions).
   const effectivePermissions = tightenPermissions(settings.permissions, opts.permissionsOverride);
 
-  const provider = new DeepSeekProvider({
-    apiKey: creds.apiKey ?? '',
-    authToken: creds.authToken,
-    baseURL: creds.baseURL ?? settings.baseURL,
-  });
+  const provider = new ConfiguredProvider({ settings, store: credsStore });
+  const { maxTokens, temperature } = provider.parameters(model, effort as Effort);
 
   // ─── tools (with --allowedTools / --disallowedTools filter) ──────────
   let tools: ToolRegistry;
@@ -333,6 +325,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   let exitCode = 0;
   try {
     const runtime = new RuntimeHost({
+      engine: configuredEngine(settings, credsStore),
       provider,
       tools,
       cwd,
@@ -362,7 +355,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
       maxTurns,
       signal: ctrl.signal,
       session: { manager: sessions, id: session.id },
-      autoCompact: { contextWindow: contextWindowFor(model), threshold: 0.8 },
+      autoCompact: { contextWindow: provider.contextWindow(model), threshold: 0.8 },
       // In headless mode there's no human to ask: auto-deny anything that
       // would normally need approval. Users wanting auto-yes should pass
       // --mode dontAsk or --mode bypassPermissions (gated by trust).
@@ -374,7 +367,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
 
     if (aborted) {
       exitCode = 5;
-    } else if (result.stopReason === 'max_turns') {
+    } else if (result.stopReason === 'max_turns' || result.stopReason === 'max_tokens') {
       exitCode = 4;
     } else if (result.stopReason === 'error') {
       exitCode = 3;

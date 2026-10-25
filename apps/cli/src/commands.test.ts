@@ -103,12 +103,74 @@ describe('built-in command behavior', () => {
     await reg.match('/model deepseek-reasoner')!.cmd.run(['deepseek-reasoner'], ctx);
     expect(ctx.model).toBe('deepseek-reasoner');
   });
+  it.each(['kimi-k2.5', 'glm-4.7', 'custom/model'])(
+    '/model accepts %s and uses its output budget',
+    async (model) => {
+      const reg = new CommandRegistry();
+      const ctx = makeContext();
+      await reg.match('/model')!.cmd.run([model], ctx);
+      expect(ctx.model).toBe(model);
+      if (model === 'kimi-k2.5') {
+        const out = await reg.match('/effort')!.cmd.run(['max'], ctx);
+        expect(out.join('\n')).toContain('maxTokens=16384');
+      }
+    },
+  );
+  it('/cost does not reprice mixed model usage using the current model', async () => {
+    const out = await new CommandRegistry()
+      .match('/cost')!
+      .cmd.run([], makeContext({ costModel: null }));
+    expect(out.join('\n')).toContain('Cost unavailable for mixed-model usage');
+  });
+  it('/clear creates a fresh SDK session while leaving the old session intact', async () => {
+    const sessions = new SessionManager({ root: sessRoot });
+    const old = await sessions.create('/tmp/x');
+    const ctx = makeContext({ sessions, sessionId: old.id, settings: { engine: 'claude-sdk' } });
+    await new CommandRegistry().match('/clear')!.cmd.run([], ctx);
+    expect(ctx.sessionId).not.toBe(old.id);
+    expect(await sessions.load(old.id)).not.toBeNull();
+  });
+  it('keeps the current SDK model when a session already has history', async () => {
+    const ctx = makeContext({
+      model: 'kimi-k2.5',
+      settings: { engine: 'claude-sdk' },
+      history: [{ role: 'user', content: [{ type: 'text', text: 'old turn' }] }],
+    });
+    const out = await new CommandRegistry().match('/model')!.cmd.run(['glm-4.7'], ctx);
+    expect(ctx.model).toBe('kimi-k2.5');
+    expect(out.join('\n')).toContain('/clear');
+  });
+  it('passes slash-command cancellation into compaction without replacing history', async () => {
+    const ac = new AbortController();
+    const ctx = makeContext({
+      signal: ac.signal,
+      history: Array.from({ length: 15 }, () => ({
+        role: 'user',
+        content: [{ type: 'text', text: 'keep' }],
+      })),
+      provider: {
+        name: 'mock',
+        runTurn: async (opts) => {
+          expect(opts.signal).toBe(ac.signal);
+          expect(opts.model).toBe('deepseek-chat');
+          ac.abort();
+          return {
+            content: [{ type: 'text', text: 'summary' }],
+            stopReason: 'end_turn',
+            usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, reasoningTokens: 0 },
+          };
+        },
+      },
+    });
+    await new CommandRegistry().match('/compact')!.cmd.run([], ctx);
+    expect(ctx.newHistory).toBeUndefined();
+  });
 
   it('/model rejects invalid name', async () => {
     const reg = new CommandRegistry();
     const ctx = makeContext();
-    const out = await reg.match('/model wrong')!.cmd.run(['wrong'], ctx);
-    expect(out.join('\n')).toMatch(/Unknown model/);
+    const out = await reg.match('/model bad model')!.cmd.run(['bad model'], ctx);
+    expect(out.join('\n')).toMatch(/Invalid model/);
     expect(ctx.model).toBe('deepseek-chat'); // unchanged
   });
 

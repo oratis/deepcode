@@ -63,13 +63,8 @@
         "deepcode.model": {
           "type": "string",
           "default": "deepseek-chat",
-          "enum": [
-            "deepseek-chat",
-            "deepseek-reasoner",
-            "deepseek-v4-flash",
-            "deepseek-v4-pro"
-          ],
-          "description": "DeepSeek model to use."
+          "minLength": 1,
+          "description": "Model ID (for example deepseek-chat, kimi-k2.5, glm-4.7, or a custom provider model). Credentials are resolved by the backend."
         },
         "deepcode.effort": {
           "type": "string",
@@ -81,7 +76,7 @@
             "xhigh",
             "max"
           ],
-          "description": "Effort tier (affects maxTokens + temperature)."
+          "description": "Output budget tier; effective parameters depend on the selected provider."
         }
       }
     },

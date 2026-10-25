@@ -15,8 +15,11 @@ export default defineConfig({
     globals: true,
   },
   resolve: {
-    alias: {
-      '@deepcode/core': resolve(__dirname, '..', '..', 'packages', 'core', 'src', 'index.ts'),
-    },
+    alias: [
+      {
+        find: /^@deepcode\/core$/,
+        replacement: resolve(__dirname, '..', '..', 'packages', 'core', 'src', 'index.ts'),
+      },
+    ],
   },
 });

@@ -33,6 +33,7 @@ const PRICING: Record<string, ModelPricing> = {
 };
 
 export interface CostBreakdown {
+  available: boolean;
   /** Cache-miss input cost (¥). */
   cacheMissYuan: number;
   /** Cache-hit input cost (¥) — the discounted prompt-cache reads. */
@@ -48,11 +49,15 @@ export interface CostBreakdown {
 
 /**
  * Estimate session cost in CNY from cumulative usage, crediting DeepSeek's
- * cheaper cache-hit input tokens. Unknown models fall back to deepseek-chat
- * pricing. Pure — safe to call anywhere.
+ * cheaper cache-hit input tokens. Unknown models return available=false; zero components must not be displayed as a price. Pure — safe to call anywhere.
  */
 export function estimateCost(usage: ProviderUsage, model: string): CostBreakdown {
-  const p = PRICING[model] ?? PRICING['deepseek-chat']!;
+  const p = PRICING[model] ?? {
+    inputMissPerM: 0,
+    cacheHitPerM: 0,
+    outputPerM: 0,
+    reasoningPerM: 0,
+  };
   const hitTokens = Math.max(0, Math.min(usage.cacheReadTokens, usage.inputTokens));
   const missTokens = Math.max(0, usage.inputTokens - hitTokens);
 
@@ -66,6 +71,7 @@ export function estimateCost(usage: ProviderUsage, model: string): CostBreakdown
   const cacheSavingsYuan = (hitTokens / 1_000_000) * (p.inputMissPerM - p.cacheHitPerM);
 
   return {
+    available: Object.hasOwn(PRICING, model),
     cacheMissYuan,
     cacheHitYuan,
     outputYuan,

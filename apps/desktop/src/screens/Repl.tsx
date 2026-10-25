@@ -1,3 +1,4 @@
+import { MODEL_CATALOG, modelParameters } from '@deepcode/core/dist/providers/catalog.js';
 // REPL / Chat screen — design-aligned per docs/VISUAL_DESIGN.html #3.
 //
 // Layout:
@@ -100,56 +101,24 @@ const MAX_RECENT_FILES = 8;
 // Effort / AgentMode and their value lists live with the slash commands that
 // validate them, so the palette and the dropdowns can't drift apart.
 
-const EFFORT_OPTIONS: DropdownOption<Effort>[] = [
-  // `meta` is the per-turn output-token budget (maxTokens) the effort maps to in
-  // core's EFFORT_PARAMS — NOT a context size. DeepSeek caps output at 8192, so
-  // these top out at ~8k (they previously showed 4k–32k, which was impossible).
-  {
-    value: 'low',
-    label: 'Low',
-    meta: '1.5k',
-    description: 'Cheap & quick — short answers, simple edits (1.5k output).',
-  },
-  {
-    value: 'medium',
-    label: 'Medium',
-    meta: '3k',
-    description: 'Balanced (3k output). Can truncate multi-file writes.',
-  },
-  {
-    value: 'high',
-    label: 'High',
-    meta: '6k',
-    description: 'Default — longer output for multi-file edits (6k).',
-  },
-  {
-    value: 'xhigh',
-    label: 'Extra High',
-    meta: '8k',
-    description: 'Deep reasoning, near max output (8k).',
-  },
-  {
-    value: 'max',
-    label: 'Max',
-    meta: '8.2k',
-    description: "Max output (8192 — DeepSeek's hard cap). Slow & expensive.",
-  },
-];
+function effortOptions(model: string): DropdownOption<Effort>[] {
+  return (['low', 'medium', 'high', 'xhigh', 'max'] as Effort[]).map((value) => {
+    const { maxTokens } = modelParameters(model, value);
+    return {
+      value,
+      label: value === 'xhigh' ? 'Extra High' : value[0]!.toUpperCase() + value.slice(1),
+      meta: `${(maxTokens / 1000).toFixed(1)}k`,
+      description: `Preset output budget: ${maxTokens} tokens. Custom profiles may override it.`,
+    };
+  });
+}
 
-const MODEL_OPTIONS: DropdownOption<'deepseek-chat' | 'deepseek-reasoner'>[] = [
-  {
-    value: 'deepseek-chat',
-    label: 'DeepSeek-Chat',
-    meta: '128k',
-    description: 'Faster, cheaper. Best default.',
-  },
-  {
-    value: 'deepseek-reasoner',
-    label: 'DeepSeek-Reasoner (R1)',
-    meta: '128k',
-    description: 'Chain-of-thought reasoning for hard problems.',
-  },
-];
+const MODEL_OPTIONS: DropdownOption<string>[] = MODEL_CATALOG.map((model) => ({
+  value: model.id,
+  label: model.id,
+  meta: `${Math.round(model.contextWindow / 1000)}k`,
+  description: `${model.provider} · ${model.reasoning ? 'Reasoning' : 'General'}`,
+}));
 
 const MODE_OPTIONS: DropdownOption<AgentMode>[] = [
   {
@@ -282,7 +251,7 @@ export function ReplScreen({
   // Cumulative spend across all turns this conversation (¥). Tracked separately
   // from `usage` because the context bar wants the latest snapshot while cost
   // must sum every billed turn.
-  const [costYuan, setCostYuan] = useState(0);
+  const [costYuan, setCostYuan] = useState<number | null>(0);
   // Inspector-only state — files touched (Write/Edit) + the agent's todo list.
   const [recentFiles, setRecentFiles] = useState<string[]>([]);
   const [todos, setTodos] = useState<TodoItem[]>([]);
@@ -428,8 +397,8 @@ export function ReplScreen({
               cacheReadTokens: e.cacheReadTokens ?? 0,
             },
             modelRef.current,
-          ).totalYuan;
-          setCostYuan((c) => c + turnCost);
+          );
+          setCostYuan((c) => (c === null || !turnCost.available ? null : c + turnCost.totalYuan));
           break;
         }
         case 'error':
@@ -673,7 +642,7 @@ export function ReplScreen({
       case 'cost': {
         const total = usage.inputTokens + usage.outputTokens;
         say(
-          `Spend this conversation: ¥${costYuan.toFixed(4)}\n` +
+          `Spend this conversation: ${costYuan === null ? 'unavailable' : `¥${costYuan.toFixed(4)}`}\n` +
             `Tokens: ${usage.inputTokens.toLocaleString()} in · ` +
             `${usage.outputTokens.toLocaleString()} out · ${total.toLocaleString()} total`,
         );
@@ -1010,7 +979,7 @@ export function ReplScreen({
                 onChange={setModel}
                 disabled={controlsLocked}
                 dot
-                title="DeepSeek model"
+                title="Model"
                 panelWidth={280}
                 options={MODEL_OPTIONS}
                 renderTrigger={(opt) => (
@@ -1027,7 +996,7 @@ export function ReplScreen({
                 disabled={controlsLocked}
                 title="Effort — maxTokens + temperature"
                 panelWidth={280}
-                options={EFFORT_OPTIONS}
+                options={effortOptions(model)}
                 renderTrigger={(opt) => (
                   <>
                     <span>{opt.label}</span>
@@ -1067,7 +1036,7 @@ export function ReplScreen({
           </div>
           <span>{fillPct.toFixed(1)}%</span>
           <span style={{ marginLeft: 'auto', color: 'var(--text-3)' }}>
-            ¥ {costYuan.toFixed(4)}
+            {costYuan === null ? 'Cost unavailable' : `¥ ${costYuan.toFixed(4)}`}
           </span>
         </div>
       </div>

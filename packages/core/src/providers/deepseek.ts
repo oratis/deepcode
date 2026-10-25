@@ -1,14 +1,17 @@
+import { modelInfo, type ProviderId } from './catalog.js';
 // DeepSeek provider — OpenAI-compatible API at https://api.deepseek.com/v1
 // Spec: docs/DEVELOPMENT_PLAN.md §3.1
 // Effort numbers: docs/design/effort-levels.md §3.2
 
 import OpenAI from 'openai';
-import type { ContentBlock, Effort, StoredMessage, ToolUseBlock } from '../types.js';
+import type { ContentBlock, StoredMessage, ToolUseBlock } from '../types.js';
 import type { Provider, ProviderResult, ProviderRunOpts } from './types.js';
 export { DEEPSEEK_MODELS, DEFAULT_CONTEXT_WINDOW, contextWindowFor } from './model-metadata.js';
 
 export interface DeepSeekProviderOpts {
   apiKey: string;
+  provider?: ProviderId;
+  maxOutput?: number;
   baseURL?: string;
   /** Bearer token alternative — see §3.4 dual-header design. */
   authToken?: string;
@@ -16,27 +19,19 @@ export interface DeepSeekProviderOpts {
   fetch?: typeof globalThis.fetch;
 }
 
-/**
- * Effort → DeepSeek API parameters.
- * Numbers from docs/design/effort-levels.md §3.2.
- * NOTE: These are M1-design values; M1 implementation includes a benchmark
- * (`scripts/effort-bench.ts`) to verify and backfill measured numbers.
- */
-export const EFFORT_PARAMS: Record<Effort, { maxTokens: number; temperature: number }> = {
-  low: { maxTokens: 1_500, temperature: 0.2 },
-  medium: { maxTokens: 3_000, temperature: 0.4 },
-  high: { maxTokens: 6_000, temperature: 0.6 },
-  xhigh: { maxTokens: 8_000, temperature: 0.7 },
-  max: { maxTokens: 8_192, temperature: 0.8 },
-};
+// Backward-compatible name; all clients use the shared capability catalog.
+export { DEEPSEEK_EFFORT_PARAMS as EFFORT_PARAMS } from './catalog.js';
 
 export class DeepSeekProvider implements Provider {
-  readonly name = 'deepseek';
+  readonly name: ProviderId;
+  private readonly maxOutput?: number;
   private readonly client: OpenAI;
   private readonly apiKey: string;
   private readonly baseURL: string;
 
   constructor(opts: DeepSeekProviderOpts) {
+    this.name = opts.provider ?? 'deepseek';
+    this.maxOutput = opts.maxOutput;
     if (!opts.apiKey && !opts.authToken) {
       throw new Error('DeepSeekProvider requires apiKey or authToken');
     }
@@ -57,7 +52,12 @@ export class DeepSeekProvider implements Provider {
   }
 
   async runTurn(opts: ProviderRunOpts): Promise<ProviderResult> {
-    const messages = anthropicShapeToOpenAI(opts.systemPrompt, opts.messages);
+    const messages = anthropicShapeToOpenAI(
+      opts.systemPrompt,
+      opts.messages,
+      this.name,
+      opts.model,
+    );
     const tools = opts.tools.map((t) => ({
       type: 'function' as const,
       function: {
@@ -75,8 +75,19 @@ export class DeepSeekProvider implements Provider {
           typeof this.client.chat.completions.create
         >[0]['messages'],
         tools: tools.length > 0 ? tools : undefined,
-        max_tokens: opts.maxTokens ?? 8_192,
-        temperature: opts.temperature ?? 0.4,
+        max_tokens: Math.min(
+          opts.maxTokens ?? 8_192,
+          this.maxOutput ?? modelInfo(opts.model)?.maxOutput ?? 8_192,
+        ),
+        ...(this.name === 'deepseek' ? { temperature: opts.temperature ?? 0.4 } : {}),
+        ...(this.name === 'kimi' || this.name === 'glm'
+          ? {
+              thinking: {
+                type: 'enabled',
+                ...(this.name === 'glm' ? { clear_thinking: false } : {}),
+              },
+            }
+          : {}),
         stream: true,
         stream_options: { include_usage: true },
       },
@@ -86,7 +97,7 @@ export class DeepSeekProvider implements Provider {
     let text = '';
     let thinking = '';
     const toolCalls = new Map<number, { id: string; name: string; args: string }>();
-    let finish: string = 'stop';
+    let finish: string | undefined;
     let inputTokens = 0;
     let outputTokens = 0;
     let reasoningTokens = 0;
@@ -129,13 +140,17 @@ export class DeepSeekProvider implements Provider {
             prompt_tokens?: number;
             completion_tokens?: number;
             prompt_cache_hit_tokens?: number;
+            prompt_tokens_details?: { cached_tokens?: number };
             completion_tokens_details?: { reasoning_tokens?: number };
           }
         | undefined;
       if (usage) {
         inputTokens = usage.prompt_tokens ?? inputTokens;
         outputTokens = usage.completion_tokens ?? outputTokens;
-        cacheReadTokens = usage.prompt_cache_hit_tokens ?? cacheReadTokens;
+        cacheReadTokens =
+          usage.prompt_cache_hit_tokens ??
+          usage.prompt_tokens_details?.cached_tokens ??
+          cacheReadTokens;
         reasoningTokens = usage.completion_tokens_details?.reasoning_tokens ?? reasoningTokens;
       }
     }
@@ -143,7 +158,7 @@ export class DeepSeekProvider implements Provider {
     // Assemble content blocks
     const content: ContentBlock[] = [];
     if (thinking) {
-      content.push({ type: 'thinking', text: thinking });
+      content.push({ type: 'thinking', text: thinking, provider: this.name, model: opts.model });
     }
     if (text) {
       content.push({ type: 'text', text });
@@ -157,6 +172,10 @@ export class DeepSeekProvider implements Provider {
     let validToolCalls = 0;
     let truncatedToolCall = false;
     for (const call of toolCalls.values()) {
+      if (!finish || !call.id) {
+        truncatedToolCall = true;
+        continue;
+      }
       if (!call.name) {
         truncatedToolCall = true;
         continue;
@@ -180,12 +199,15 @@ export class DeepSeekProvider implements Provider {
     // report 'max_tokens' so the agent loop ends cleanly instead of executing a
     // malformed call or looping on an empty tool turn.
     let stopReason: ProviderResult['stopReason'];
-    if (validToolCalls > 0) stopReason = 'tool_use';
+    if (!finish) stopReason = 'error';
     else if (finish === 'length' || truncatedToolCall) stopReason = 'max_tokens';
+    else if (validToolCalls > 0 && finish === 'tool_calls') stopReason = 'tool_use';
+    else if (finish !== 'stop') stopReason = 'error';
     else stopReason = 'end_turn';
 
     return {
-      content,
+      content:
+        stopReason === 'tool_use' ? content : content.filter((block) => block.type !== 'tool_use'),
       stopReason,
       usage: { inputTokens, outputTokens, reasoningTokens, cacheReadTokens },
     };
@@ -195,7 +217,10 @@ export class DeepSeekProvider implements Provider {
 function safeParseJson(s: string): Record<string, unknown> | null {
   if (!s) return null;
   try {
-    return JSON.parse(s);
+    const value: unknown = JSON.parse(s);
+    return value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -208,6 +233,8 @@ function safeParseJson(s: string): Record<string, unknown> | null {
 function anthropicShapeToOpenAI(
   systemPrompt: string,
   messages: StoredMessage[],
+  provider: ProviderId = 'deepseek',
+  model?: string,
 ): Array<Record<string, unknown>> {
   const out: Array<Record<string, unknown>> = [];
   if (systemPrompt) {
@@ -248,9 +275,16 @@ function anthropicShapeToOpenAI(
             function: { name: block.name, arguments: JSON.stringify(block.input) },
           });
         }
-        // thinking blocks are not sent back to the API (they're streaming-only).
+        // Provider-scoped continuation is handled below; foreign thinking is never replayed.
       }
       const assistantMsg: Record<string, unknown> = { role: 'assistant' };
+      if (provider !== 'deepseek') {
+        const reasoning = msg.content
+          .filter((b) => b.type === 'thinking' && b.provider === provider && b.model === model)
+          .map((b) => (b.type === 'thinking' ? b.text : ''))
+          .join('');
+        if (reasoning) assistantMsg.reasoning_content = reasoning;
+      }
       if (textParts.length > 0) assistantMsg.content = textParts.join('\n');
       if (toolCalls.length > 0) assistantMsg.tool_calls = toolCalls;
       out.push(assistantMsg);

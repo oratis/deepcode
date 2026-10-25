@@ -46,6 +46,35 @@ describe('RestoreReviewActionTool', () => {
       expect.objectContaining({ reason: 'post-RestoreReviewAction', turnId: 'turn-revert' }),
     ]);
   });
+  it.each(['read-only', 'denyWrite', 'contract'] as const)(
+    'honors %s restrictions on the discovered restore footprint',
+    async (restriction) => {
+      const filePath = join(cwd, 'a.txt');
+      await fs.writeFile(filePath, 'before');
+      await snapshot(filePath, 'pre-Write', 1);
+      await fs.writeFile(filePath, 'after');
+      await snapshot(filePath, 'post-Write', 2);
+      const result = await RestoreReviewActionTool.execute(
+        { action_turn_id: actionTurnId },
+        {
+          cwd,
+          sessionDir: join(sessionsRoot, sessionId),
+          sandboxConfig:
+            restriction === 'read-only'
+              ? { mode: 'read-only' }
+              : restriction === 'denyWrite'
+                ? { filesystem: { denyWrite: ['a.txt'] } }
+                : undefined,
+          contract:
+            restriction === 'contract'
+              ? { version: 1, rules: [{ glob: 'a.txt', write: 'deny' }] }
+              : undefined,
+        },
+      );
+      expect(result.isError).toBe(true);
+      expect(await fs.readFile(filePath, 'utf8')).toBe('after');
+    },
+  );
 
   it('refuses atomically when the file changed after the action', async () => {
     const filePath = join(cwd, 'a.txt');

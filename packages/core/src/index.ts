@@ -29,6 +29,20 @@ export {
   type ProviderStreamHandlers,
 } from './providers/index.js';
 
+export {
+  ConfiguredProvider,
+  resolveProviderConnection,
+  defaultModel,
+  validateEndpoint,
+  MODEL_CATALOG,
+  PROVIDERS,
+  modelInfo,
+  providerForModel,
+  validModelId,
+  modelParameters,
+} from './providers/index.js';
+export type { ProviderId, ProviderProfile, ModelInfo } from './providers/index.js';
+
 // Tools
 export {
   ReadTool,

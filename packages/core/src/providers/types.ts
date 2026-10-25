@@ -34,5 +34,6 @@ export interface ProviderRunOpts {
 
 export interface Provider {
   readonly name: string;
+  readonly defaultModel?: string;
   runTurn(opts: ProviderRunOpts): Promise<ProviderResult>;
 }

@@ -77,6 +77,9 @@ export interface ToolResultBlock {
 }
 
 export interface ThinkingBlock {
+  /** Scope continuation data to the producing model; never replay across providers. */
+  provider?: string;
+  model?: string;
   type: 'thinking';
   text: string;
 }
@@ -220,7 +223,8 @@ export type AgentEvent =
   /** The whole user turn reached one terminal state. Emitted exactly once. */
   | {
       type: 'turn_complete';
-      stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error' | 'blocked';
+      stopReason:
+        'end_turn' | 'stop_sequence' | 'max_tokens' | 'max_turns' | 'aborted' | 'error' | 'blocked';
       message?: StoredMessage;
     }
   | {

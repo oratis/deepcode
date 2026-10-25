@@ -16,3 +16,6 @@ export {
   type BuildRuntimeCapabilitiesInput,
   type RuntimeCapabilities,
 } from './capabilities.js';
+
+export { createEngineToolRunner } from './tool-runner.js';
+export type { AgentEngine } from './engine.js';

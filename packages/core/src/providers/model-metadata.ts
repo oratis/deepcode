@@ -1,3 +1,4 @@
+import { modelInfo } from './catalog.js';
 import type { DeepSeekModel } from '../types.js';
 
 // Keep model metadata in a dependency-free module. Renderer surfaces may use
@@ -11,9 +12,9 @@ export const DEEPSEEK_MODELS: Record<DeepSeekModel, { ctx: number; maxOutput: nu
 };
 
 /** Fallback context window for an unrecognized model id. */
-export const DEFAULT_CONTEXT_WINDOW = 128_000;
+export const DEFAULT_CONTEXT_WINDOW = 32_000;
 
 /** Context-window size for a model, with a safe fallback for custom ids. */
 export function contextWindowFor(model: string): number {
-  return DEEPSEEK_MODELS[model as DeepSeekModel]?.ctx ?? DEFAULT_CONTEXT_WINDOW;
+  return modelInfo(model)?.contextWindow ?? DEFAULT_CONTEXT_WINDOW;
 }

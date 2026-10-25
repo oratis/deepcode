@@ -7,7 +7,7 @@ import {
   type SessionManager,
   type StoredMessage,
 } from '@deepcode/core';
-import { EFFORT_PARAMS } from '@deepcode/core/dist/providers/deepseek.js';
+import { modelParameters } from '@deepcode/core';
 import type { CompletedItem, ThreadSnapshot } from '@deepcode/protocol';
 
 import type { TurnExecutionArgs, TurnExecutionItem, TurnExecutor } from './server.js';
@@ -35,6 +35,7 @@ export interface RuntimeHostLease {
   systemPrompt?: string;
   model?: string;
   effort?: Effort;
+  parameters?: (model: string, effort: Effort) => ReturnType<typeof modelParameters>;
   diagnostics?: Array<{
     source: string;
     code: string;
@@ -53,8 +54,7 @@ export interface RuntimeHostLease {
   close?: () => Promise<void> | void;
 }
 
-const DEFAULT_SYSTEM_PROMPT =
-  'You are DeepCode, an AI coding assistant powered by DeepSeek. Be concise and accurate.';
+const DEFAULT_SYSTEM_PROMPT = 'You are DeepCode, an AI coding assistant. Be concise and accurate.';
 
 export class RuntimeHostExecutor implements TurnExecutor {
   constructor(private readonly options: RuntimeHostExecutorOptions) {}
@@ -97,16 +97,17 @@ export class RuntimeHostExecutor implements TurnExecutor {
       const streamingItemId = `${args.turn.id}-assistant`;
       const events: AgentEvent[] = [];
       const effort = parseEffort(args.input.effort ?? lease.effort);
-      const effortParams = EFFORT_PARAMS[effort];
+      const model =
+        typeof args.input.model === 'string'
+          ? args.input.model
+          : (lease.model ?? this.options.model ?? 'deepseek-chat');
+      const effortParams = lease.parameters?.(model, effort) ?? modelParameters(model, effort);
       const result = await lease.host.run({
         cwd: args.thread.cwd,
         systemPrompt: lease.systemPrompt ?? this.options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
         userMessage: text,
         history,
-        model:
-          typeof args.input.model === 'string'
-            ? args.input.model
-            : (lease.model ?? this.options.model ?? 'deepseek-chat'),
+        model,
         maxTokens: effortParams.maxTokens,
         temperature: effortParams.temperature,
         ...(reviewAction?.kind === 'revert' ? { allowedTools: ['RestoreReviewAction'] } : {}),
@@ -164,7 +165,15 @@ export class RuntimeHostExecutor implements TurnExecutor {
         ...reviewFindingsFromEvents(events),
         ...completedItemsFromMessages(newMessages, text),
       ];
-      if (result.stopReason === 'error') {
+      const successful = result.stopReason === 'end_turn' || result.stopReason === 'stop_sequence';
+      if (!successful) {
+        items.push({
+          type: 'error',
+          payload: {
+            code: result.stopReason,
+            message: `Run stopped: ${result.stopReason}. Continue the task when ready.`,
+          },
+        });
         const error = [...events].reverse().find((event) => event.type === 'error');
         if (error?.type === 'error') {
           items.push({ type: 'error', payload: { message: error.error } });
@@ -172,7 +181,7 @@ export class RuntimeHostExecutor implements TurnExecutor {
       }
       return {
         items,
-        status: result.stopReason === 'error' ? ('failed' as const) : ('completed' as const),
+        status: successful ? ('completed' as const) : ('failed' as const),
       };
     } finally {
       await lease.close?.();

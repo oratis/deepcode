@@ -1,3 +1,5 @@
+import { validModelId } from '../providers/catalog.js';
+
 /**
  * Lightweight validation for diagnostics. Kept independent of the static
  * schema reader so CJS sidecar bundles do not need `import.meta.url`.
@@ -5,10 +7,18 @@
 export function validateSettingsShallow(settings: Record<string, unknown>): string[] {
   const errors: string[] = [];
 
-  const modelEnum = ['deepseek-chat', 'deepseek-reasoner', 'deepseek-v4-flash', 'deepseek-v4-pro'];
-  if (settings['model'] !== undefined && !modelEnum.includes(settings['model'] as string)) {
-    errors.push(`settings.model "${settings['model']}" not in ${modelEnum.join(' | ')}`);
+  if (settings.model !== undefined && !validModelId(settings.model)) {
+    errors.push('settings.model must be a non-empty model identifier');
   }
+  if (
+    settings.provider !== undefined &&
+    !['deepseek', 'kimi', 'glm'].includes(String(settings.provider))
+  ) {
+    errors.push('settings.provider must be deepseek, kimi or glm');
+  }
+
+  if (settings.engine !== undefined && !['native', 'claude-sdk'].includes(String(settings.engine)))
+    errors.push('settings.engine must be native or claude-sdk');
 
   const effortEnum = ['low', 'medium', 'high', 'xhigh', 'max'];
   if (

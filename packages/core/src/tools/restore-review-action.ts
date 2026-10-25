@@ -4,6 +4,8 @@ import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 
 import { captureSnapshot, listSnapshots, type Snapshot } from '../sessions/snapshots.js';
 import type { ToolContext, ToolHandler, ToolResult } from '../types.js';
+import { fileWriteDenial } from '../sandbox/file-policy.js';
+import { evaluateContract } from '../config/contract-dispatch.js';
 
 interface RestoreCandidate {
   filePath: string;
@@ -55,6 +57,27 @@ export const RestoreReviewActionTool: ToolHandler = {
       if (candidates.length === 0) {
         return failure('no complete Edit/Write snapshot pairs were found for this action');
       }
+      // Revert discovers its write footprint from snapshots, after dispatch.
+      // It must honor the same path restrictions as an explicit Write call.
+      for (const candidate of candidates) {
+        ctx.signal?.throwIfAborted();
+        const input = { file_path: candidate.filePath };
+        const denial = await fileWriteDenial(
+          'Write',
+          input,
+          ctx.cwd,
+          ctx.sandboxConfig,
+          ctx.sandboxDefaultMode,
+        );
+        if (denial) return failure(denial);
+        const verdict = evaluateContract(ctx.contract, {
+          tool: 'Write',
+          input,
+          cwd: ctx.cwd,
+        }).verdict;
+        if (verdict === 'deny' || verdict === 'ask')
+          return failure('file contract restricts the restore target');
+      }
 
       let sequence = snapshots.reduce((maximum, snapshot) => Math.max(maximum, snapshot.seq), 0);
       for (const candidate of candidates) {
@@ -72,6 +95,7 @@ export const RestoreReviewActionTool: ToolHandler = {
       const restored: RestoreCandidate[] = [];
       try {
         for (const candidate of candidates) {
+          ctx.signal?.throwIfAborted();
           await restoreBeforeImage(candidate);
           restored.push(candidate);
         }

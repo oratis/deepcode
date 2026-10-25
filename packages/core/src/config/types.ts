@@ -143,6 +143,14 @@ export interface VoiceConfig {
 
 export interface DeepCodeSettings {
   // Identity
+  engine?: 'native' | 'claude-sdk';
+  provider?: import('../providers/catalog.js').ProviderId;
+  providers?: Partial<
+    Record<
+      import('../providers/catalog.js').ProviderId,
+      import('../providers/catalog.js').ProviderProfile
+    >
+  >;
   model?: string;
   baseURL?: string;
   apiKeyHelper?: string;

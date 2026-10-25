@@ -30,10 +30,10 @@ describe('validateSettingsShallow', () => {
     ).toEqual([]);
   });
 
-  it('flags unknown model', () => {
-    const errs = validateSettingsShallow({ model: 'gpt-4' });
+  it('flags invalid model', () => {
+    const errs = validateSettingsShallow({ model: '' });
     expect(errs.length).toBe(1);
-    expect(errs[0]).toMatch(/gpt-4/);
+    expect(errs[0]).toMatch(/model/);
   });
 
   it('flags unknown effort tier', () => {
@@ -63,7 +63,7 @@ describe('validateSettingsShallow', () => {
 
   it('catches multiple errors at once', () => {
     const errs = validateSettingsShallow({
-      model: 'bad',
+      model: '',
       effortLevel: 'bad',
       permissions: { defaultMode: 'bad' },
     });

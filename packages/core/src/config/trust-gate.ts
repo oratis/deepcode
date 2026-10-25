@@ -12,6 +12,9 @@ export type TrustStatus = 'trusted' | 'plan-only' | 'untrusted';
 /** Project/local settings fields that can execute code or widen runtime authority. */
 export const TRUST_GATED_FIELDS = [
   'model',
+  'provider',
+  'engine',
+  'providers',
   'baseURL',
   'forceLoginMethod',
   'effortLevel',

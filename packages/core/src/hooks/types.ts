@@ -22,6 +22,7 @@ export interface HookHandlerOutput {
 }
 
 export interface HookContext {
+  signal?: AbortSignal;
   cwd: string;
   /** ISO timestamp. */
   triggeredAt: string;

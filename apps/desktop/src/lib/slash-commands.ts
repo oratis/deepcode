@@ -1,3 +1,4 @@
+import { MODEL_CATALOG, validModelId } from '@deepcode/core/dist/providers/catalog.js';
 // Slash commands the desktop can actually serve.
 //
 // The CLI's 38 commands run against a SessionContext full of node:fs, a
@@ -24,7 +25,7 @@ export interface SlashCommand {
   summary: string;
 }
 
-export const MODELS = ['deepseek-chat', 'deepseek-reasoner'] as const;
+export const MODELS = MODEL_CATALOG.map((model) => model.id);
 export const MODES: AgentMode[] = [
   'default',
   'acceptEdits',
@@ -38,7 +39,7 @@ export const EFFORTS: Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const DESKTOP_COMMANDS: SlashCommand[] = [
   { name: '/help', summary: 'List the commands available here' },
   { name: '/clear', summary: 'Start a new conversation' },
-  { name: '/model', args: '<id>', summary: 'Switch model (deepseek-chat | deepseek-reasoner)' },
+  { name: '/model', args: '<id>', summary: 'Switch model (DeepSeek, Kimi, GLM or custom ID)' },
   {
     name: '/mode',
     args: '<name>',
@@ -116,7 +117,7 @@ export function parseSlash(input: string): SlashAction | null {
     case '/diff':
       return { kind: 'diff' };
     case '/model':
-      return (MODELS as readonly string[]).includes(arg)
+      return validModelId(arg)
         ? { kind: 'set-model', value: arg }
         : { kind: 'error', message: `Usage: /model ${MODELS.join(' | ')}` };
     case '/mode':
