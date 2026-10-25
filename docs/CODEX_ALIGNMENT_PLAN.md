@@ -1,5 +1,9 @@
 # DeepCode × Codex 整体改造计划
 
+> 2026-10-24 多模型方向补充：最新 main 的复审、实施进度与 Claude Code 引擎决策见
+> [ADR 0002](adr/0002-multi-model-agent-engine.md)。该 ADR 区分现有自研运行时、模型协议适配与
+> Claude Agent SDK 引擎，记录实施顺序、验收及回滚条件。原生多模型接入已实现；SDK 为显式启用的实验引擎，native 仍为默认。
+
 > 状态：正反方审议与仲裁范围内的实现已完成，等待 stacked draft PR 审阅/合并<br>
 > 基线：`main@38fcc3a`<br>
 > 日期：2026-08-01<br>

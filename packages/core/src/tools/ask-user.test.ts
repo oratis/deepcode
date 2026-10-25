@@ -2,6 +2,21 @@ import { describe, expect, it } from 'vitest';
 import { AskUserQuestionTool } from './ask-user.js';
 
 describe('AskUserQuestionTool', () => {
+  it('cancels a host prompt that never resolves', async () => {
+    const ac = new AbortController();
+    const pending = AskUserQuestionTool.execute(
+      { question: 'Wait?' },
+      {
+        cwd: '/x',
+        signal: ac.signal,
+        askUser: async () => {
+          ac.abort();
+          return new Promise(() => {});
+        },
+      },
+    );
+    expect((await pending).isError).toBe(true);
+  });
   it('errors when no askUser callback is provided', async () => {
     const r = await AskUserQuestionTool.execute(
       { question: 'Which library?', options: [{ label: 'A' }, { label: 'B' }] },

@@ -101,6 +101,10 @@ export class CanonicalThreadStore implements ThreadStore {
     this.sessions = new SessionManager({ root: sessionsDirectory });
   }
 
+  async assertForkable(threadId: string): Promise<void> {
+    await this.sessions.assertForkable(threadId);
+  }
+
   async load(threadId: string): Promise<ThreadSnapshot | null> {
     const snapshot = await this.snapshots.load(threadId);
     if (snapshot) return snapshot;

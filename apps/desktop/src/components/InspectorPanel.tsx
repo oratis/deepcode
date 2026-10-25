@@ -153,7 +153,7 @@ export function InspectorPanel({
       </div>
       <div className="insp-row">
         <span className="k">Spend</span>
-        <span className="v">¥ {costYuan.toFixed(4)}</span>
+        <span className="v">{costYuan === null ? 'Unavailable' : `¥ ${costYuan.toFixed(4)}`}</span>
       </div>
     </aside>
   );

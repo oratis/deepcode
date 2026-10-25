@@ -1,3 +1,4 @@
+import { runCommand } from '../hooks/dispatcher.js';
 // Credentials — macOS Keychain primary, ~/.deepcode/credentials.json fallback.
 // Spec: docs/DEVELOPMENT_PLAN.md §3.4
 
@@ -178,22 +179,45 @@ export class CredentialsStore {
 export async function resolveCredentials(args: {
   store: CredentialsStore;
   apiKeyHelper?: string;
+  apiKeyEnv?: string;
+  /** Only the legacy DeepSeek connection may read the unscoped credential store. */
+  useStore?: boolean;
+  env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
 }): Promise<Credentials> {
+  args.signal?.throwIfAborted();
+  const stored = args.useStore === false ? {} : await args.store.load();
+  const env = args.env ?? process.env;
+  const envKey = env[args.apiKeyEnv ?? 'DEEPSEEK_API_KEY']?.trim();
+  const legacyToken =
+    args.useStore !== false && (!args.apiKeyEnv || args.apiKeyEnv === 'DEEPSEEK_API_KEY')
+      ? env.DEEPSEEK_AUTH_TOKEN?.trim()
+      : undefined;
+  const fallback = envKey
+    ? { ...stored, apiKey: envKey, authToken: undefined }
+    : legacyToken
+      ? { ...stored, apiKey: undefined, authToken: legacyToken }
+      : stored;
   if (args.apiKeyHelper) {
     try {
-      const { stdout } = await execFileAsync('/bin/sh', ['-c', args.apiKeyHelper], {
-        timeout: 10_000,
+      const { stdout, exitCode } = await runCommand({
+        command: args.apiKeyHelper,
+        cwd: process.cwd(),
+        env: process.env,
+        timeoutMs: 10_000,
+        signal: args.signal,
       });
-      const key = stdout.trim();
+      args.signal?.throwIfAborted();
+      const key = exitCode === 0 ? stdout.trim() : '';
       if (key) {
-        const stored = await args.store.load();
-        return { ...stored, apiKey: key };
+        return { ...stored, apiKey: key, authToken: undefined };
       }
     } catch {
       // fall through to stored creds
     }
   }
-  return args.store.load();
+  args.signal?.throwIfAborted();
+  return fallback;
 }
 
 /**

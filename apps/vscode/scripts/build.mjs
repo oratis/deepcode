@@ -21,7 +21,7 @@ await Promise.all([
     platform: 'node',
     format: 'cjs',
     target: 'node22',
-    external: ['vscode'],
+    external: ['vscode', '@anthropic-ai/claude-agent-sdk'],
     define: {
       __DEEPCODE_SETTINGS_SCHEMA__: JSON.stringify(settingsSchema),
       'import.meta.url': '__deepcode_import_meta_url',
@@ -40,6 +40,7 @@ await Promise.all([
     format: 'cjs',
     target: 'node22',
     minify: true,
+    external: ['@anthropic-ai/claude-agent-sdk'],
     sourcemap: false,
     legalComments: 'none',
     define: {

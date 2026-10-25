@@ -79,6 +79,18 @@ export class HookDispatcher {
     return !!this.agentDispatcher;
   }
 
+  /** Engines may reject unsupported hook semantics instead of silently bypassing them. */
+  handlerTypes(): HookHandler['type'][] {
+    if (this.disabled) return [];
+    return [
+      ...new Set(
+        Object.values(this.hooks).flatMap((matchers) =>
+          (matchers ?? []).flatMap((matcher) => matcher.hooks.map((handler) => handler.type)),
+        ),
+      ),
+    ];
+  }
+
   /**
    * Merge additional hook matchers into the dispatcher (e.g. from plugins).
    * Matchers under the same event name are appended in order.
@@ -104,12 +116,13 @@ export class HookDispatcher {
       anyBlocked: false,
       timings: [],
     };
-    if (this.disabled) return result;
+    if (this.disabled || ctx.signal?.aborted) return result;
 
     const matchers = this.hooks[ctx.event] ?? [];
     for (const m of matchers) {
       if (!this.matcherApplies(m, ctx)) continue;
       for (const handler of m.hooks) {
+        if (ctx.signal?.aborted) return { ...result, anyBlocked: true };
         // `if` field: permission-rule-syntax filter that further gates this specific handler
         if (handler.if && !ifFieldMatches(handler.if, ctx)) continue;
         const t0 = Date.now();
@@ -239,12 +252,13 @@ export class HookDispatcher {
         DEEPCODE_TRIGGERED_AT: ctx.triggeredAt,
       },
       stdin: payloadJson,
+      signal: ctx.signal,
     });
   }
 
   private async runHttpHandler(
     handler: HookHandler,
-    _ctx: HookContext,
+    ctx: HookContext,
     payloadJson: string,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
     if (!handler.url)
@@ -277,9 +291,8 @@ export class HookDispatcher {
           method: 'POST',
           headers,
           body: payloadJson,
-          signal: controller.signal,
+          signal: ctx.signal ? AbortSignal.any([ctx.signal, controller.signal]) : controller.signal,
         });
-        clearTimeout(timer);
         const text = await res.text();
         return {
           stdout: text,
@@ -305,25 +318,52 @@ interface RunCommandOpts {
   timeoutMs: number;
   env: Record<string, string | undefined>;
   stdin?: string;
+  signal?: AbortSignal;
 }
 
 export function runCommand(
   opts: RunCommandOpts,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
   return new Promise((resolveResult) => {
+    if (opts.signal?.aborted) {
+      resolveResult({ stdout: '', stderr: 'Hook cancelled', exitCode: 130 });
+      return;
+    }
     const cwd = resolve(opts.cwd);
-    const child = spawn('/bin/sh', ['-c', opts.command], { cwd, env: opts.env });
+    const child = spawn('/bin/sh', ['-c', opts.command], {
+      cwd,
+      env: opts.env,
+      detached: process.platform !== 'win32',
+    });
     let stdout = '';
     let stderr = '';
     let killed = false;
-    const timer = setTimeout(() => {
-      killed = true;
-      // SIGKILL + destroy pipes — see bash.ts; needed for orphaned grandchild
-      // pipes on Ubuntu CI (dash doesn't propagate signals).
-      child.kill('SIGKILL');
+    const killGroup = () => {
+      try {
+        if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
+        else child.kill('SIGKILL');
+      } catch {
+        /* already exited */
+      }
+    };
+    const kill = () => {
+      killGroup();
       child.stdout?.destroy();
       child.stderr?.destroy();
+    };
+    const onAbort = () => {
+      killed = true;
+      kill();
+    };
+    const timer = setTimeout(() => {
+      killed = true;
+      kill();
     }, opts.timeoutMs);
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    const cleanup = () => {
+      clearTimeout(timer);
+      opts.signal?.removeEventListener('abort', onAbort);
+    };
 
     child.stdout.on('data', (c: Buffer) => {
       stdout += c.toString('utf8');
@@ -333,16 +373,20 @@ export function runCommand(
     });
 
     child.on('error', (err) => {
-      clearTimeout(timer);
+      cleanup();
       resolveResult({ stdout, stderr: stderr + (err as Error).message, exitCode: 127 });
     });
 
+    // A completed hook/helper cannot leave detached grandchildren writing later.
+    // Do not destroy pipes here: buffered output still belongs to this command.
+    child.on('exit', killGroup);
+
     child.on('close', (code) => {
-      clearTimeout(timer);
+      cleanup();
       let exitCode = code ?? 0;
       if (killed) {
         stderr += `\n[killed by timeout after ${opts.timeoutMs}ms]`;
-        exitCode = 124;
+        exitCode = opts.signal?.aborted ? 130 : 124;
       }
       resolveResult({ stdout, stderr, exitCode });
     });

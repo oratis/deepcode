@@ -1,11 +1,14 @@
+import { configuredEngine } from '@deepcode/app-server';
 // CLI REPL — readline-based interactive loop.
 // Spec: docs/DEVELOPMENT_PLAN.md §5
 
 import {
   BashTool,
   CredentialsStore,
-  DeepSeekProvider,
-  EFFORT_PARAMS,
+  ConfiguredProvider,
+  resolveProviderConnection,
+  defaultModel,
+  type Provider,
   HookDispatcher,
   HookTrustStore,
   ReadTool,
@@ -37,9 +40,7 @@ import {
   gateUntrustedSettings,
   loadSkills,
   loadSlashCommands,
-  contextWindowFor,
   makeSkillTool,
-  resolveCredentials,
   settingsPaths,
   wirePlugins,
   withAdditionalWritableDirs,
@@ -171,6 +172,7 @@ export async function resolveSession(
     const n = loaded.messages.length;
     const plural = n === 1 ? '' : 's';
     if (opts.forkSession) {
+      await sessions.assertForkable(sourceId);
       const forked = await sessions.create(cwd, {
         model: loaded.meta.model ?? model,
         title: loaded.meta.title,
@@ -276,19 +278,16 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     );
   }
   const credsStore = new CredentialsStore({ home: opts.home });
-  const creds = await resolveCredentials({
-    store: credsStore,
-    apiKeyHelper: settings.apiKeyHelper,
-  });
-
-  if (!creds.apiKey && !creds.authToken) {
-    output.write(
-      'No DeepSeek credentials found. Run `deepcode` (no args) to onboard, or set DEEPSEEK_API_KEY.\n',
-    );
+  const model = opts.model ?? defaultModel(settings);
+  let connection;
+  try {
+    connection = await resolveProviderConnection({ settings, store: credsStore }, model);
+  } catch (error) {
+    output.write(`${(error as Error).message}\n`);
     return 1;
   }
+  const creds = { apiKey: connection.apiKey, baseURL: connection.baseURL };
 
-  const model = opts.model ?? settings.model ?? 'deepseek-chat';
   const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default') as Mode;
   // Precedence: --effort flag → DEEPCODE_EFFORT_LEVEL env → settings.effortLevel → default.
   // Spec: docs/DEVELOPMENT_PLAN.md §3.13c. (/effort runtime switch and skill
@@ -298,7 +297,6 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     envVar: process.env.DEEPCODE_EFFORT_LEVEL,
     settingsLevel: settings.effortLevel,
   });
-  const { maxTokens, temperature } = EFFORT_PARAMS[effort as Effort] ?? EFFORT_PARAMS.medium;
 
   const sessions = new SessionManager();
   // Resolve which session to use: resume an explicit id, continue the most
@@ -315,11 +313,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
   const session = resolved.session;
   if (resolved.notice) output.write(`  ${resolved.notice}\n`);
 
-  const provider = new DeepSeekProvider({
-    apiKey: creds.apiKey ?? '',
-    authToken: creds.authToken,
-    baseURL: creds.baseURL ?? settings.baseURL,
-  });
+  const provider = new ConfiguredProvider({ settings, store: credsStore });
   // M3c: --allowedTools / --disallowedTools filtering BEFORE registry construction
   let tools: ToolRegistry;
   if (opts.allowedTools || opts.disallowedTools) {
@@ -490,6 +484,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
 
   let history: StoredMessage[] = resolved.seededHistory;
   const runtime = new RuntimeHost({
+    engine: configuredEngine(settings, credsStore),
     provider,
     tools,
     cwd,
@@ -535,7 +530,16 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
       ...(pluginsWire?.hashMismatches ?? []),
       ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
     ],
-    initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
+    initFlow: () =>
+      runInitFlow({
+        cwd,
+        output,
+        rl: { question: (q) => rl.question(q, { signal: ctx.signal }) },
+        provider,
+        model: ctx.model,
+        ...provider.parameters(ctx.model, ctx.effort as Effort),
+        signal: ctx.signal,
+      }),
     // M8: /voice records from the mic + transcribes via whisper.cpp, then the
     // loop pre-fills the next input line with the transcript (rl is created below).
     voiceCapture: () => captureVoice({ rl, output, settings, home: opts.home }),
@@ -558,8 +562,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
         systemPrompt,
         userMessage: spec.prompt,
         model: ctx.model,
-        maxTokens,
-        temperature,
+        ...provider.parameters(ctx.model, ctx.effort as Effort),
         cwd: ctx.cwd,
         signal: ac.signal,
         modeOverride: ctx.mode as Mode,
@@ -606,7 +609,14 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
   };
 
   let ctrlCCount = 0;
+  let activeTurn: AbortController | undefined;
+  rl.on('close', () => activeTurn?.abort());
   rl.on('SIGINT', () => {
+    if (activeTurn && !activeTurn.signal.aborted) {
+      activeTurn.abort();
+      output.write('\nCancelling the current turn…\n');
+      return;
+    }
     ctrlCCount++;
     if (ctrlCCount >= 2) {
       output.write('\nGoodbye.\n');
@@ -676,7 +686,15 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     if (match) {
       // Refresh ctx.history snapshot before running — /rewind reads it.
       ctx.history = history;
-      const lines = await Promise.resolve(match.cmd.run(match.args, ctx));
+      activeTurn = new AbortController();
+      ctx.signal = activeTurn.signal;
+      const lines = await Promise.resolve()
+        .then(() => match.cmd.run(match.args, ctx))
+        .catch((error: Error) => [`Command stopped: ${error.message}`])
+        .finally(() => {
+          activeTurn = undefined;
+          ctx.signal = undefined;
+        });
       for (const line of lines) output.write(line + '\n');
       output.write('\n');
       if (ctx.clearHistory) {
@@ -737,82 +755,103 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     const thinking = opts.hideThinking ? null : new ThinkingStream(palette);
 
     // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
-    const result = await runtime.run({
-      systemPrompt,
-      userMessage: userInput,
-      history,
-      model: ctx.model,
-      maxTokens,
-      temperature,
-      maxTurns: opts.maxTurns,
-      cwd: ctx.cwd,
-      // ctx.sessionId (not the launch `session.id`) so a live `/resume <id>`
-      // switch redirects new messages to the resumed session.
-      session: { manager: sessions, id: ctx.sessionId },
-      modeOverride: ctx.mode as Mode,
-      autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
-      // Session-scoped manager: the agent's TaskCreate calls land here too, so
-      // background tasks persist across turns and show up in /tasks.
-      taskManager: tasks,
-      // Session-scoped too, for the same reason: a shell opened this turn has to
-      // still be there next turn or it is just a slower Bash. Deliberately NOT
-      // given to the background-task runner below — two agents interleaving
-      // commands in one shell would each be wrong about its state.
-      shells,
-      approval: async (toolName, input, verdict) => {
-        output.write(
-          `\n  ${palette.yellow('⏸')} Approve ${palette.bold(toolName)}?  ${palette.dim(verdict.reason)}\n`,
-        );
-        // Show what is about to happen. A Write gets diffed against the file on
-        // disk when it already exists, so an overwrite doesn't look like a
-        // creation.
-        let existing: string | undefined;
-        if (toolName === 'Write' && typeof input.file_path === 'string') {
-          try {
-            const { readFile } = await import('node:fs/promises');
-            existing = await readFile(input.file_path, 'utf8');
-          } catch {
-            /* new file — no baseline */
+    const turnController = new AbortController();
+    activeTurn = turnController;
+    const result = await runtime
+      .run({
+        signal: turnController.signal,
+        systemPrompt,
+        userMessage: userInput,
+        history,
+        model: ctx.model,
+        ...provider.parameters(ctx.model, ctx.effort as Effort),
+        maxTurns: opts.maxTurns,
+        cwd: ctx.cwd,
+        // ctx.sessionId (not the launch `session.id`) so a live `/resume <id>`
+        // switch redirects new messages to the resumed session.
+        session: { manager: sessions, id: ctx.sessionId },
+        modeOverride: ctx.mode as Mode,
+        autoCompact: { contextWindow: provider.contextWindow(ctx.model), threshold: 0.8 },
+        // Session-scoped manager: the agent's TaskCreate calls land here too, so
+        // background tasks persist across turns and show up in /tasks.
+        taskManager: tasks,
+        // Session-scoped too, for the same reason: a shell opened this turn has to
+        // still be there next turn or it is just a slower Bash. Deliberately NOT
+        // given to the background-task runner below — two agents interleaving
+        // commands in one shell would each be wrong about its state.
+        shells,
+        approval: async (toolName, input, verdict) => {
+          output.write(
+            `\n  ${palette.yellow('⏸')} Approve ${palette.bold(toolName)}?  ${palette.dim(verdict.reason)}\n`,
+          );
+          // Show what is about to happen. A Write gets diffed against the file on
+          // disk when it already exists, so an overwrite doesn't look like a
+          // creation.
+          let existing: string | undefined;
+          if (toolName === 'Write' && typeof input.file_path === 'string') {
+            try {
+              const { readFile } = await import('node:fs/promises');
+              existing = await readFile(input.file_path, 'utf8');
+            } catch {
+              /* new file — no baseline */
+            }
           }
-        }
-        output.write(renderApprovalPreview(toolName, input, palette, existing));
-        const answer = (await rl.question('     [y]es / [n]o / [a]lways: ')).trim().toLowerCase();
-        if (answer === 'a' || answer === 'always') {
-          // Persist a bare-tool matcher to project-local settings so the next
-          // run of this tool from this project skips the prompt.
-          try {
-            const { localPath } = settingsPaths({ cwd: ctx.cwd });
-            await appendAllowMatcher(localPath, toolName);
-            output.write(`     ✓ Added "${toolName}" to ${localPath} permissions.allow\n`);
-          } catch (err) {
-            output.write(`     ⚠ Could not persist always-allow: ${(err as Error).message}\n`);
+          output.write(renderApprovalPreview(toolName, input, palette, existing));
+          const answer = (
+            await rl.question('     [y]es / [n]o / [a]lways: ', { signal: turnController.signal })
+          )
+            .trim()
+            .toLowerCase();
+          if (answer === 'a' || answer === 'always') {
+            // Persist a bare-tool matcher to project-local settings so the next
+            // run of this tool from this project skips the prompt.
+            try {
+              const { localPath } = settingsPaths({ cwd: ctx.cwd });
+              await appendAllowMatcher(localPath, toolName);
+              output.write(`     ✓ Added "${toolName}" to ${localPath} permissions.allow\n`);
+            } catch (err) {
+              output.write(`     ⚠ Could not persist always-allow: ${(err as Error).message}\n`);
+            }
+            return 'always';
           }
-          return 'always';
-        }
-        return answer === 'y' || answer === 'yes';
-      },
-      askUser: async (req) => {
-        output.write(`\n  ❓ ${req.question}\n`);
-        const opts = req.options ?? [];
-        opts.forEach((o, i) => {
-          output.write(`     ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}\n`);
-        });
-        if (opts.length === 0) {
-          return (await rl.question('     Answer: ')).trim();
-        }
-        const reply = (
-          await rl.question(`     Pick 1-${opts.length} (or type free text): `)
-        ).trim();
-        const n = Number(reply);
-        if (Number.isInteger(n) && n >= 1 && n <= opts.length) {
-          return opts[n - 1]!.label;
-        }
-        return `Other: ${reply}`;
-      },
-      onEvent: (e: AgentEvent) => formatEvent(output, e, palette, thinking),
-    });
+          return answer === 'y' || answer === 'yes';
+        },
+        askUser: async (req) => {
+          output.write(`\n  ❓ ${req.question}\n`);
+          const opts = req.options ?? [];
+          opts.forEach((o, i) => {
+            output.write(
+              `     ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}\n`,
+            );
+          });
+          if (opts.length === 0) {
+            return (await rl.question('     Answer: ', { signal: turnController.signal })).trim();
+          }
+          const reply = (
+            await rl.question(`     Pick 1-${opts.length} (or type free text): `, {
+              signal: turnController.signal,
+            })
+          ).trim();
+          const n = Number(reply);
+          if (Number.isInteger(n) && n >= 1 && n <= opts.length) {
+            return opts[n - 1]!.label;
+          }
+          return `Other: ${reply}`;
+        },
+        onEvent: (e: AgentEvent) => formatEvent(output, e, palette, thinking),
+      })
+      .catch((error: Error) => {
+        output.write(`  Run could not start: ${error.message}\n`);
+        return null;
+      })
+      .finally(() => {
+        activeTurn = undefined;
+      });
     if (thinking) output.write(thinking.close());
+    if (!result) continue;
     history = result.history;
+    ctx.costModel =
+      ctx.costModel === undefined ? ctx.model : ctx.costModel === ctx.model ? ctx.model : null;
     ctx.usage.inputTokens += result.usage.inputTokens;
     ctx.usage.outputTokens += result.usage.outputTokens;
     ctx.usage.reasoningTokens += result.usage.reasoningTokens;
@@ -828,6 +867,13 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
       output.write('\n  ◐ Entered plan mode (write tools blocked until you exit).\n');
     }
     output.write('\n');
+    if (
+      result.stopReason === 'max_tokens' ||
+      result.stopReason === 'max_turns' ||
+      result.stopReason === 'blocked'
+    ) {
+      output.write(`  Run stopped: ${result.stopReason}. Continue when ready.\n`);
+    }
     if (result.stopReason === 'error') {
       output.write('  ✕ Error during agent loop. Try again or /status to inspect.\n\n');
     }
@@ -917,10 +963,11 @@ async function runInitFlow(args: {
   cwd: string;
   output: Writable;
   rl: { question: (q: string) => Promise<string> };
-  provider: DeepSeekProvider;
+  provider: Provider;
   model: string;
   maxTokens?: number;
   temperature?: number;
+  signal?: AbortSignal;
 }): Promise<string | null> {
   const { cwd, output, rl, provider, model, maxTokens, temperature } = args;
   const path = await import('node:path');
@@ -933,7 +980,8 @@ async function runInitFlow(args: {
 
   // Phase 2: propose
   output.write('  ▎ /init — Phase 2/3: asking model to draft AGENTS.md...\n');
-  const draft = await draftAgentsMd(provider, model, summary, maxTokens, temperature);
+  const draft = await draftAgentsMd(provider, model, summary, maxTokens, temperature, args.signal);
+  args.signal?.throwIfAborted();
 
   // Phase 3: approve
   output.write('\n  ▎ Proposed AGENTS.md:\n');
@@ -954,6 +1002,7 @@ async function runInitFlow(args: {
   const verb = exists ? 'Overwrite' : 'Write';
   const ans = (await rl.question(`     ${verb} ${target}? [y]es / [n]o: `)).trim().toLowerCase();
   if (ans !== 'y' && ans !== 'yes') return null;
+  args.signal?.throwIfAborted();
   await fsp.writeFile(target, draft, 'utf8');
   return target;
 }
@@ -986,11 +1035,12 @@ async function buildProjectSummary(cwd: string): Promise<string> {
 }
 
 async function draftAgentsMd(
-  provider: DeepSeekProvider,
+  provider: Provider,
   model: string,
   summary: string,
   maxTokens?: number,
   temperature?: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const sys = `You are drafting an AGENTS.md (the per-project agent-instructions file). Output ONLY the Markdown — no preface, no fences. Sections to include:
 
@@ -1003,6 +1053,7 @@ async function draftAgentsMd(
 
 Keep it under 80 lines.`;
   const r = await provider.runTurn({
+    signal,
     model,
     systemPrompt: sys,
     tools: [],

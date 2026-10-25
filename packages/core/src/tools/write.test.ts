@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { WriteTool } from './write.js';
 
 describe('WriteTool', () => {
@@ -12,6 +12,28 @@ describe('WriteTool', () => {
   });
   afterAll(async () => {
     await rm(tmp, { recursive: true, force: true });
+  });
+
+  it('does not write when cancelled during parent-directory preparation', async () => {
+    const path = join(tmp, 'cancelled.txt');
+    await fs.writeFile(path, 'before');
+    const controller = new AbortController();
+    const originalMkdir = fs.mkdir;
+    const mock = vi.spyOn(fs, 'mkdir').mockImplementation(async (...args) => {
+      const result = await originalMkdir(...args);
+      controller.abort();
+      return result;
+    });
+    try {
+      const result = await WriteTool.execute(
+        { file_path: path, content: 'after' },
+        { cwd: tmp, signal: controller.signal },
+      );
+      expect(result.isError).toBe(true);
+      expect(await fs.readFile(path, 'utf8')).toBe('before');
+    } finally {
+      mock.mockRestore();
+    }
   });
 
   it('writes a new file', async () => {

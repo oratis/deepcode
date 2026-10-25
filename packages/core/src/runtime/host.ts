@@ -1,3 +1,4 @@
+import { bindSessionEngine, type AgentEngine } from './engine.js';
 import {
   runAgent,
   type ApprovalCallback,
@@ -22,6 +23,7 @@ import type { Mode } from '../types.js';
 import { resolveRuntimePolicy } from './policy.js';
 
 export interface RuntimeHostOptions {
+  engine?: AgentEngine;
   provider: Provider;
   tools: ToolRegistry;
   /** Default working directory; a turn may override it explicitly. */
@@ -188,7 +190,7 @@ export class RuntimeHost {
   private async runWithContract(turn: RuntimeTurnOptions, cwd: string): Promise<RunAgentResult> {
     const { modeOverride, approval, ...agentTurn } = turn;
     const contract = (await this.fileContract(cwd)).contract;
-    return runAgent({
+    const options: RunAgentOptions = {
       ...agentTurn,
       provider: this.options.provider,
       tools: this.options.tools,
@@ -203,7 +205,9 @@ export class RuntimeHost {
       sandboxConfig: this.options.sandboxConfig,
       sandboxDefaultMode: this.options.sandboxDefaultMode ?? 'workspace-write',
       pluginDirs: this.options.pluginDirs,
-    });
+    };
+    await bindSessionEngine(options, this.options.engine?.name ?? 'native');
+    return this.options.engine ? this.options.engine.run(options) : runAgent(options);
   }
 }
 

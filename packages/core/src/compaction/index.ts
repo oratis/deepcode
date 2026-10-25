@@ -9,7 +9,8 @@ import type { ContentBlock, StoredMessage, TextBlock } from '../types.js';
 export interface CompactionOpts {
   /** Provider to use for the summarization call. */
   provider: Provider;
-  /** Model to use for summarization (default `deepseek-chat` — cheaper). */
+  signal?: AbortSignal;
+  /** Model to use for summarization (defaults to the active provider model). */
   summarizerModel?: string;
   /** Keep the first N user/assistant pairs verbatim (system context anchor). */
   keepFirstPairs?: number;
@@ -47,6 +48,7 @@ export async function compact(
   history: StoredMessage[],
   opts: CompactionOpts,
 ): Promise<CompactionResult> {
+  opts.signal?.throwIfAborted();
   const keepFirst = opts.keepFirstPairs ?? DEFAULT_KEEP_FIRST;
   const keepLast = opts.keepLastMessages ?? DEFAULT_KEEP_LAST;
   if (history.length <= keepFirst + keepLast + 1) {
@@ -64,8 +66,10 @@ export async function compact(
 
   const summaryPrompt = buildSummaryPrompt(middle);
 
+  opts.signal?.throwIfAborted();
   const result = await opts.provider.runTurn({
-    model: opts.summarizerModel ?? 'deepseek-chat',
+    signal: opts.signal,
+    model: opts.summarizerModel ?? opts.provider.defaultModel ?? 'deepseek-chat',
     systemPrompt:
       'You compress long agent conversations. Output a TERSE summary preserving: ' +
       '(1) what files were read/modified and key contents; ' +
@@ -82,12 +86,16 @@ export async function compact(
     temperature: 0.2,
   });
 
-  const summaryText =
-    result.content
-      .filter((b): b is TextBlock => b.type === 'text')
-      .map((b) => b.text)
-      .join('\n')
-      .trim() || '[compaction failed — no summary returned]';
+  opts.signal?.throwIfAborted();
+  if (result.stopReason !== 'end_turn' && result.stopReason !== 'stop_sequence') {
+    throw new Error(`Compaction did not finish: ${result.stopReason}`);
+  }
+  const summaryText = result.content
+    .filter((b): b is TextBlock => b.type === 'text')
+    .map((b) => b.text)
+    .join('\n')
+    .trim();
+  if (!summaryText) throw new Error('Compaction did not return a summary');
 
   const summaryMsg: StoredMessage = {
     role: 'assistant',

@@ -74,10 +74,34 @@ export const AskUserQuestionTool: ToolHandler = {
       return { content: 'Error: at most 4 options allowed.', isError: true };
     }
     try {
-      const answer = await ctx.askUser({
+      ctx.signal?.throwIfAborted();
+      const request = {
         question: input.question,
         options,
         multiSelect: !!input.multiSelect,
+      };
+      const answer = await new Promise<string>((resolve, reject) => {
+        const cleanup = () => ctx.signal?.removeEventListener('abort', abort);
+        const abort = () => {
+          cleanup();
+          reject(ctx.signal?.reason ?? new Error('User prompt cancelled'));
+        };
+        ctx.signal?.addEventListener('abort', abort, { once: true });
+        Promise.resolve()
+          .then(() => {
+            ctx.signal?.throwIfAborted();
+            return ctx.askUser!(request);
+          })
+          .then(
+            (answer) => {
+              cleanup();
+              resolve(answer);
+            },
+            (error: unknown) => {
+              cleanup();
+              reject(error);
+            },
+          );
       });
       return { content: answer, data: { question: input.question, answer } };
     } catch (err) {

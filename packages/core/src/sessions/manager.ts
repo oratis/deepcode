@@ -2,6 +2,8 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §3.5
 
 import type { StoredMessage } from '../types.js';
+import { access, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import {
   appendMessage,
   defaultSessionsDir,
@@ -63,6 +65,30 @@ export class SessionManager {
 
   async list(): Promise<SessionMeta[]> {
     return listSessionsLow(this.root);
+  }
+
+  /** UI projections cannot substitute for an engine's private resumable history. */
+  async assertForkable(sessionId: string): Promise<void> {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(sessionId)) throw new Error('Invalid session ID');
+    const directory = join(this.root, sessionId);
+    try {
+      const binding = JSON.parse(await readFile(join(directory, 'engine.json'), 'utf8')) as {
+        version: number;
+        engine: string;
+      };
+      if (binding.version !== 1 || binding.engine !== 'native')
+        throw new Error('This engine session cannot be forked. Start a new session instead.');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    // Fail closed if an SDK session has lost its engine binding.
+    try {
+      await access(join(directory, 'claude-sdk'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+      throw error;
+    }
+    throw new Error('SDK session history cannot be forked. Start a new session instead.');
   }
 
   async delete(sessionId: string): Promise<void> {

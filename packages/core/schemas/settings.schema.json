@@ -6,10 +6,116 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
+    "provider": {
+      "type": "string",
+      "enum": ["deepseek", "kimi", "glm"]
+    },
+    "engine": {
+      "type": "string",
+      "enum": ["native", "claude-sdk"],
+      "default": "native",
+      "description": "Claude SDK is experimental; start a new session when changing engines."
+    },
+    "providers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "deepseek": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseURL": {
+              "type": "string",
+              "format": "uri"
+            },
+            "apiKeyEnv": {
+              "type": "string",
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "contextWindow": {
+              "type": "integer",
+              "minimum": 1024
+            },
+            "maxOutput": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "anthropicURL": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "kimi": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseURL": {
+              "type": "string",
+              "format": "uri"
+            },
+            "apiKeyEnv": {
+              "type": "string",
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "contextWindow": {
+              "type": "integer",
+              "minimum": 1024
+            },
+            "maxOutput": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "anthropicURL": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "glm": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "baseURL": {
+              "type": "string",
+              "format": "uri"
+            },
+            "apiKeyEnv": {
+              "type": "string",
+              "pattern": "^[A-Z_][A-Z0-9_]*$"
+            },
+            "model": {
+              "type": "string",
+              "minLength": 1
+            },
+            "contextWindow": {
+              "type": "integer",
+              "minimum": 1024
+            },
+            "maxOutput": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "anthropicURL": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        }
+      }
+    },
     "model": {
       "type": "string",
-      "enum": ["deepseek-chat", "deepseek-reasoner", "deepseek-v4-flash", "deepseek-v4-pro"],
-      "description": "Default model. deepseek-chat = fast general; deepseek-reasoner = multi-step reasoning."
+      "minLength": 1,
+      "description": "Model ID; known prefixes select DeepSeek, Kimi or GLM. Custom IDs use provider."
     },
     "baseURL": {
       "type": "string",

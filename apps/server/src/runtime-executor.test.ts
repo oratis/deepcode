@@ -107,6 +107,43 @@ class ToolProvider implements Provider {
 }
 
 describe('RuntimeHostExecutor', () => {
+  it.each(['max_tokens', 'error', 'max_turns', 'blocked'] as const)(
+    'projects %s as failed with an explicit reason',
+    async (stopReason) => {
+      const host = new RuntimeHost({
+        provider: new StreamingProvider(),
+        tools: new ToolRegistry(),
+        cwd: '/workspace',
+      });
+      vi.spyOn(host, 'run').mockResolvedValue({
+        history: [],
+        turnsUsed: 1,
+        usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
+        stopReason,
+      });
+      const result = await new RuntimeHostExecutor({ createHost: () => host }).execute({
+        thread,
+        turn: {
+          id: 'limited',
+          threadId: thread.id,
+          status: 'in_progress',
+          startedAt: '',
+          items: [],
+        },
+        input: { text: 'work' },
+        signal: new AbortController().signal,
+        publishDelta: () => undefined,
+        ...protocolCallbacks(),
+      });
+      expect(result.status).toBe('failed');
+      expect(result.items).toContainEqual(
+        expect.objectContaining({
+          type: 'error',
+          payload: expect.objectContaining({ code: stopReason }),
+        }),
+      );
+    },
+  );
   it('exposes only the restore tool to a canonical revert turn', async () => {
     const provider = new StreamingProvider();
     const tools = new ToolRegistry();

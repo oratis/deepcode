@@ -16,6 +16,7 @@ await build({
   entryPoints: [resolve(packageRoot, 'src', 'sidecar-entry.ts')],
   outfile: output,
   bundle: true,
+  external: ['@anthropic-ai/claude-agent-sdk'],
   platform: 'node',
   format: 'cjs',
   target: 'node22',

@@ -180,7 +180,7 @@ describe('DeepSeekProvider', () => {
     expect(result.stopReason).toBe('max_tokens');
   });
 
-  it('keeps a valid call but drops a truncated sibling in the same turn', async () => {
+  it('does not execute a partial batch when output truncates a sibling tool call', async () => {
     const chunks = [
       {
         choices: [
@@ -215,10 +215,8 @@ describe('DeepSeekProvider', () => {
       messages: [{ role: 'user', content: [{ type: 'text', text: 'go' }] }],
     });
     const toolUses = result.content.filter((b) => b.type === 'tool_use');
-    expect(toolUses).toHaveLength(1);
-    expect(toolUses[0]?.type === 'tool_use' && toolUses[0].name).toBe('Read');
-    // At least one valid call survived → still a tool_use turn.
-    expect(result.stopReason).toBe('tool_use');
+    expect(toolUses).toHaveLength(0);
+    expect(result.stopReason).toBe('max_tokens');
   });
 });
 

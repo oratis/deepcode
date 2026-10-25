@@ -25,7 +25,7 @@ export interface InspectorData {
   /** Latest provider round-trip token counts — drives the Context section. */
   usage: { inputTokens: number; outputTokens: number };
   /** Cumulative spend this conversation (¥) — shown in Session info. */
-  costYuan: number;
+  costYuan: number | null;
   /** Active model id — Context denominator (contextWindowFor) + Session info. */
   model: string;
   /** Permission mode — Session info. */

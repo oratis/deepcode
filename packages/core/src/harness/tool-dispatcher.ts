@@ -1,3 +1,4 @@
+import { fileWriteDenial } from '../sandbox/file-policy.js';
 // Tool dispatcher — the central gate. Combines mode + permission + hook decision
 // into a single allow/ask/deny verdict.
 // Spec: docs/design/sandbox-plan-worktree.md §5.1
@@ -12,12 +13,19 @@ import {
 } from '../config/permissions.js';
 import { evaluateContract, mostRestrictive } from '../config/contract-dispatch.js';
 import type { FileContract } from '../config/file-contract.js';
-import type { AutoModeConfig, PermissionRules } from '../config/types.js';
+import type {
+  AutoModeConfig,
+  PermissionRules,
+  SandboxConfig,
+  SandboxMode,
+} from '../config/types.js';
 import type { Mode } from '../types.js';
 import type { HookDispatcher, HookResult } from '../hooks/index.js';
 import type { Provider } from '../providers/types.js';
 
 export interface DispatchRequest {
+  sandboxConfig?: SandboxConfig;
+  sandboxDefaultMode?: SandboxMode;
   tool: string;
   input: Record<string, unknown>;
   mode: Mode;
@@ -30,6 +38,8 @@ export interface DispatchRequest {
   autoMode?: AutoModeConfig;
   /** Provider used for the LLM classifier in auto mode. */
   autoModeProvider?: Provider;
+  autoModeModel?: string;
+  signal?: AbortSignal;
 }
 
 export interface DispatchVerdict {
@@ -110,6 +120,14 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
     };
   }
 
+  const fileDenial = await fileWriteDenial(
+    req.tool,
+    req.input,
+    req.cwd,
+    req.sandboxConfig,
+    req.sandboxDefaultMode,
+  );
+  if (fileDenial) return { decision: 'deny', source: 'permission', reason: fileDenial };
   // Auto mode: when no static rule decided + no explicit permission allow,
   // invoke the LLM classifier. The classifier's verdict overrides the mode's
   // default of 'ask'.
@@ -119,6 +137,8 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
       toolInput: req.input,
       config: req.autoMode,
       provider: req.autoModeProvider,
+      model: req.autoModeModel,
+      signal: req.signal,
     });
     if (autoVerdict === 'deny') {
       return {
@@ -145,6 +165,7 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
   let hookResult: HookResult | undefined;
   if (req.hooks && modeVerdict !== 'deny') {
     hookResult = await req.hooks.dispatch({
+      signal: req.signal,
       event: 'PreToolUse',
       cwd: req.cwd,
       triggeredAt: new Date().toISOString(),

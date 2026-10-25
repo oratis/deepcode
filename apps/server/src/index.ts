@@ -10,3 +10,5 @@ export * from './structured-logger.js';
 export * from './diagnostic-export.js';
 export * from './workspace-diff.js';
 export { capabilitiesFor } from './capabilities.js';
+
+export { configuredEngine, ClaudeSdkEngine } from './engines/claude-sdk.js';

@@ -5,6 +5,12 @@
 
 import {
   CredentialsStore,
+  loadSettings,
+  gateUntrustedSettings,
+  DirectoryTrustStore,
+  defaultModel,
+  providerForModel,
+  PROVIDERS,
   VERSION,
   diagnoseSettings,
   fileContractWarnings,
@@ -204,7 +210,19 @@ async function main(): Promise<number> {
   // Onboarding if no creds
   const credsStore = new CredentialsStore();
   const existing = await credsStore.load();
-  if (!existing.apiKey && !existing.authToken && !process.env.DEEPSEEK_API_KEY) {
+  const loaded = await loadSettings({ cwd: process.cwd(), settingsPath: args.settingsFile });
+  const trusted = await new DirectoryTrustStore().statusFor(process.cwd());
+  const settings = gateUntrustedSettings(loaded, trusted).settings;
+  const selected = providerForModel(args.model ?? defaultModel(settings), settings.provider);
+  const keyEnv = settings.providers?.[selected]?.apiKeyEnv ?? PROVIDERS[selected].apiKeyEnv;
+  if (
+    selected === 'deepseek' &&
+    !existing.apiKey &&
+    !existing.authToken &&
+    !process.env[keyEnv] &&
+    !(keyEnv === 'DEEPSEEK_API_KEY' && process.env.DEEPSEEK_AUTH_TOKEN) &&
+    !settings.apiKeyHelper
+  ) {
     const result = await runOnboarding({
       input: process.stdin,
       output: process.stdout,

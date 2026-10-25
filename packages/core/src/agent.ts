@@ -20,6 +20,7 @@ import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { resolveRuntimePolicy } from './runtime/policy.js';
+import { fileWriteDenial } from './sandbox/file-policy.js';
 import { applySpillPolicy, type SpillStore } from './spill/index.js';
 import { ShellRegistry } from './shell/registry.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
@@ -194,7 +195,8 @@ export interface RunAgentResult {
    * Reason the loop terminated. `blocked` means an unattended run hit a call
    * needing approval while configured with `onApprovalRequired: 'abort'`.
    */
-  stopReason: 'end_turn' | 'max_turns' | 'aborted' | 'error' | 'blocked';
+  stopReason:
+    'end_turn' | 'stop_sequence' | 'max_tokens' | 'max_turns' | 'aborted' | 'error' | 'blocked';
   /** Mode-control signals flipped by tools during this run (M3c-rest). */
   modeSignal?: { exitPlanMode?: boolean; enterPlanMode?: boolean };
 }
@@ -275,7 +277,11 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   const runtimePolicy = resolveRuntimePolicy(opts);
   const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
   let history: StoredMessage[] = [...(opts.history ?? [])];
-  let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
+  let snapshotSeq =
+    (await opts.session?.manager.snapshots(opts.session.id))?.reduce(
+      (max, snapshot) => Math.max(max, snapshot.seq),
+      0,
+    ) ?? 0;
 
   // Append the user message first (if provided). When systemReminders is
   // enabled (default), prepend a <system-reminder> block ahead of the user
@@ -482,6 +488,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       if (opts.hooks) {
         try {
           await opts.hooks.dispatch({
+            signal: opts.signal,
             event: 'SubagentStop',
             cwd: opts.cwd,
             triggeredAt: new Date().toISOString(),
@@ -589,6 +596,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (!opts.hooks || depth !== 0) return;
     try {
       await opts.hooks.dispatch({
+        signal: opts.signal,
         event: 'Stop',
         cwd: opts.cwd,
         triggeredAt: new Date().toISOString(),
@@ -601,6 +609,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
 
   const finish = async (stopReason: RunAgentResult['stopReason']): Promise<RunAgentResult> => {
     await fireStop(stopReason);
+    if (opts.signal?.aborted) stopReason = 'aborted';
     const message = [...history].reverse().find((candidate) => candidate.role === 'assistant');
     opts.onEvent?.({ type: 'turn_complete', stopReason, message });
     return { history, turnsUsed, usage: totalUsage, stopReason, modeSignal };
@@ -640,6 +649,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       return finish('error');
     }
 
+    if (opts.signal?.aborted) return finish('aborted');
     totalUsage.inputTokens += result.usage.inputTokens;
     totalUsage.outputTokens += result.usage.outputTokens;
     totalUsage.reasoningTokens += result.usage.reasoningTokens;
@@ -678,7 +688,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
 
     // If no tool calls, we're done
     if (result.stopReason !== 'tool_use') {
-      return finish('end_turn');
+      return finish(result.stopReason);
     }
 
     // Execute tool calls and append a single user-role message with tool_result
@@ -809,8 +819,13 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         hooks: opts.hooks,
         cwd: opts.cwd,
         autoMode: opts.autoMode,
+        sandboxConfig: opts.sandboxConfig,
+        sandboxDefaultMode: opts.sandboxDefaultMode,
         autoModeProvider: opts.provider,
+        autoModeModel: opts.model,
+        signal: opts.signal,
       });
+      if (opts.signal?.aborted) return finish('aborted');
       let allowed = verdict.decision === 'allow';
       let blockReason = verdict.reason;
       if (verdict.decision === 'ask' && opts.unattended) {
@@ -893,6 +908,26 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
     // hook, post-snapshot, event + result. Side-effect-free tools call this
     // concurrently; mutating tools call it one at a time (see partition below).
     const execOne = async ({ toolUse, handler }: Ready): Promise<void> => {
+      if (opts.signal?.aborted) return;
+      const denial = await fileWriteDenial(
+        toolUse.name,
+        toolUse.input,
+        opts.cwd,
+        opts.sandboxConfig,
+        opts.sandboxDefaultMode,
+      );
+      if (opts.signal?.aborted) return;
+      if (denial) {
+        const result = { content: `Tool call blocked: ${denial}`, isError: true };
+        opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result });
+        resultsById.set(toolUse.id, {
+          type: 'tool_result',
+          tool_use_id: toolUse.id,
+          ...result,
+          is_error: true,
+        });
+        return;
+      }
       const isFileMutation = toolUse.name === 'Edit' || toolUse.name === 'Write';
       // Remembered so a ledger record can point at the checkpoint taken for
       // this specific call rather than at "whatever was last captured".
@@ -929,10 +964,21 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
 
       let tr;
       try {
+        opts.signal?.throwIfAborted();
+        const denial = await fileWriteDenial(
+          toolUse.name,
+          toolUse.input,
+          opts.cwd,
+          opts.sandboxConfig,
+          opts.sandboxDefaultMode,
+        );
+        if (denial) throw new Error(denial);
+        opts.signal?.throwIfAborted();
         tr = await withDeadline(toolUse, handler);
       } catch (err) {
         tr = { content: `Error: ${(err as Error).message}`, isError: true };
       }
+      if (opts.signal?.aborted) return;
 
       // Every result passes the spill policy on its way to the model, so no
       // single tool can flood the context regardless of what it returns.
@@ -945,6 +991,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       // PostToolUse hook (M3) — observation only; can inject additionalContext
       if (opts.hooks) {
         await opts.hooks.dispatch({
+          signal: opts.signal,
           event: 'PostToolUse',
           cwd: opts.cwd,
           triggeredAt: new Date().toISOString(),
@@ -957,6 +1004,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         });
       }
 
+      if (opts.signal?.aborted) return;
       if (opts.enableSnapshots !== false && opts.session && isFileMutation && !tr.isError) {
         const filePath = (toolUse.input as { file_path?: string }).file_path;
         if (filePath) {
@@ -1045,6 +1093,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       try {
         if (opts.hooks) {
           await opts.hooks.dispatch({
+            signal: opts.signal,
             event: 'PreCompact',
             cwd: opts.cwd,
             triggeredAt: new Date().toISOString(),
@@ -1053,10 +1102,12 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         }
         const compactResult = await compact(history, {
           provider: opts.provider,
-          summarizerModel: opts.autoCompact.summarizerModel,
+          summarizerModel: opts.autoCompact.summarizerModel ?? opts.model,
+          signal: opts.signal,
           keepFirstPairs: opts.autoCompact.keepFirstPairs,
           keepLastMessages: opts.autoCompact.keepLastMessages,
         });
+        if (opts.signal?.aborted) return finish('aborted');
         history = compactResult.history;
         totalUsage.inputTokens += compactResult.usage.inputTokens;
         totalUsage.outputTokens += compactResult.usage.outputTokens;
@@ -1069,6 +1120,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         });
         if (opts.hooks) {
           await opts.hooks.dispatch({
+            signal: opts.signal,
             event: 'PostCompact',
             cwd: opts.cwd,
             triggeredAt: new Date().toISOString(),

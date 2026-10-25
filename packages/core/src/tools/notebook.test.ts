@@ -1,7 +1,8 @@
+import { promises as fs } from 'node:fs';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NotebookEditTool } from './notebook.js';
 
 interface NbCell {
@@ -36,6 +37,26 @@ describe('NotebookEditTool', () => {
   });
   afterEach(async () => {
     await rm(cwd, { recursive: true, force: true });
+  });
+
+  it('does not write when cancelled while reading the notebook', async () => {
+    const controller = new AbortController();
+    const originalRead = fs.readFile;
+    const mock = vi.spyOn(fs, 'readFile').mockImplementation(async (...args) => {
+      const result = await originalRead(...args);
+      controller.abort();
+      return result;
+    });
+    try {
+      const result = await NotebookEditTool.execute(
+        { notebook_path: nbName, cell_id: 'c1', new_source: 'changed' },
+        { cwd, signal: controller.signal },
+      );
+      expect(result.isError).toBe(true);
+      expect(await originalRead(join(cwd, nbName), 'utf8')).toBe(makeNb());
+    } finally {
+      mock.mockRestore();
+    }
   });
 
   it('replaces a cell by id (source stored as nbformat lines)', async () => {

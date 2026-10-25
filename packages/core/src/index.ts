@@ -6,7 +6,7 @@
 // Kept in lockstep with apps/cli/package.json by scripts/version-consistency.test.ts,
 // and rewritten from the tag by .github/workflows/release.yml at publish time —
 // before this it stayed at 0.1.0 while the CLI shipped as 0.1.6.
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 export const PROJECT_NAME = 'DeepCode';
 
 // Types
@@ -28,6 +28,20 @@ export {
   type ProviderUsage,
   type ProviderStreamHandlers,
 } from './providers/index.js';
+
+export {
+  ConfiguredProvider,
+  resolveProviderConnection,
+  defaultModel,
+  validateEndpoint,
+  MODEL_CATALOG,
+  PROVIDERS,
+  modelInfo,
+  providerForModel,
+  validModelId,
+  modelParameters,
+} from './providers/index.js';
+export type { ProviderId, ProviderProfile, ModelInfo } from './providers/index.js';
 
 // Tools
 export {

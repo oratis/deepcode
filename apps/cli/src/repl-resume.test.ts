@@ -3,7 +3,7 @@
 // pointed at a throwaway root, so no live REPL or provider is needed.
 
 import { afterEach, describe, expect, it } from 'vitest';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SessionManager, type StoredMessage } from '@deepcode/core';
@@ -100,4 +100,32 @@ describe('resolveSession', () => {
     expect(r.seededHistory).toEqual([]);
     expect(r.notice).toMatch(/not found/i);
   });
+
+  it.each(['sdk', 'future', 'orphaned-sdk'])(
+    'rejects %s forks before creating a new session or copying its projection',
+    async (kind) => {
+      const sm = await freshManager();
+      const src = await sm.create('/proj', { model: 'kimi-k2.5' });
+      await sm.append(src.id, text('SDK UI projection'));
+      const directory = join(sm.root, src.id);
+      await mkdir(directory, { recursive: true });
+      if (kind === 'orphaned-sdk') await mkdir(join(directory, 'claude-sdk'));
+      else
+        await writeFile(
+          join(directory, 'engine.json'),
+          JSON.stringify({
+            version: kind === 'future' ? 99 : 1,
+            engine: 'claude-sdk',
+          }),
+        );
+      await expect(
+        resolveSession(sm, '/proj', 'deepseek-chat', {
+          resumeId: src.id,
+          forkSession: true,
+        }),
+      ).rejects.toThrow(/cannot be forked/);
+      expect((await sm.list()).map((s) => s.id)).toEqual([src.id]);
+      expect((await sm.load(src.id))!.messages).toEqual([text('SDK UI projection')]);
+    },
+  );
 });

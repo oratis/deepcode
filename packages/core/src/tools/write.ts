@@ -40,8 +40,10 @@ export const WriteTool: ToolHandler = {
       : resolve(ctx.cwd, input.file_path);
 
     try {
+      ctx.signal?.throwIfAborted();
       await fs.mkdir(dirname(absPath), { recursive: true });
-      await fs.writeFile(absPath, input.content, 'utf8');
+      ctx.signal?.throwIfAborted();
+      await fs.writeFile(absPath, input.content, { encoding: 'utf8', signal: ctx.signal });
     } catch (err) {
       const e = err as Error;
       return { content: `Error writing ${absPath}: ${e.message}`, isError: true };

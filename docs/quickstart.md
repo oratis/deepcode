@@ -1,6 +1,6 @@
 # DeepCode Quickstart
 
-DeepCode is a coding agent driven by **DeepSeek**. It ships as a **CLI**
+DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). It ships as a **CLI**
 (`deepcode`) and a **macOS desktop app**, with VS Code/LSP integrations under
 active development. The clients reuse `@deepcode/core`, but some runtime,
 permission, and recovery behavior is still being unified; see the
@@ -50,7 +50,7 @@ deepcode --model deepseek-reasoner --effort high   # deeper reasoning
 
 `-p`/`--print` runs a single prompt and exits. Combine with `--output-format json`
 for machine-readable output. Exit codes: `0` ok · `1` generic · `2` bad-input ·
-`3` api/auth · `4` max-turns · `5` aborted · `6` blocked (see below).
+`3` api/auth · `4` output/turn budget exhausted · `5` aborted · `6` blocked (see below).
 
 ```bash
 deepcode -p "summarize the architecture" --output-format json

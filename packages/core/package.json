@@ -93,7 +93,11 @@
       "import": "./dist/skills/index.js"
     },
     "./skills/*": "./skills/*",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./dist/providers/catalog.js": {
+      "types": "./dist/providers/catalog.d.ts",
+      "import": "./dist/providers/catalog.js"
+    }
   },
   "files": [
     "dist/",

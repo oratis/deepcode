@@ -92,7 +92,10 @@ export const NotebookEditTool: ToolHandler = {
 
     let nb: Notebook;
     try {
-      nb = JSON.parse(await fs.readFile(absPath, 'utf8')) as Notebook;
+      ctx.signal?.throwIfAborted();
+      nb = JSON.parse(
+        await fs.readFile(absPath, { encoding: 'utf8', signal: ctx.signal }),
+      ) as Notebook;
     } catch (err) {
       return { content: `Error reading notebook: ${(err as Error).message}`, isError: true };
     }
@@ -134,7 +137,11 @@ export const NotebookEditTool: ToolHandler = {
     }
 
     try {
-      await fs.writeFile(absPath, JSON.stringify(nb, null, 1) + '\n', 'utf8');
+      ctx.signal?.throwIfAborted();
+      await fs.writeFile(absPath, JSON.stringify(nb, null, 1) + '\n', {
+        encoding: 'utf8',
+        signal: ctx.signal,
+      });
     } catch (err) {
       return { content: `Error writing notebook: ${(err as Error).message}`, isError: true };
     }

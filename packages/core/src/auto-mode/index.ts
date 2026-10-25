@@ -21,8 +21,9 @@ export interface ClassifyOpts {
   config?: AutoModeConfig;
   /** Provider for the LLM judge. Required unless config decides statically. */
   provider?: Provider;
-  /** Model id for the judge call. Defaults to config.model or deepseek-chat. */
+  /** Model id for the judge call. Defaults to config.model or the active provider model. */
   model?: string;
+  signal?: AbortSignal;
 }
 
 /**
@@ -55,13 +56,19 @@ export async function classifyAutoMode(opts: ClassifyOpts): Promise<AutoVerdict>
 
   // LLM classifier
   if (!opts.provider) {
-    return (cfg.fallback ?? 'ask') as AutoVerdict;
+    return cfg.fallback === 'deny' ? 'deny' : 'ask';
   }
   try {
-    const verdict = await llmClassify(opts.provider, opts.toolName, opts.toolInput, opts.model);
+    const verdict = await llmClassify(
+      opts.provider,
+      opts.toolName,
+      opts.toolInput,
+      cfg.model ?? opts.model,
+      opts.signal,
+    );
     return verdict;
   } catch {
-    return (cfg.fallback ?? 'ask') as AutoVerdict;
+    return cfg.fallback === 'deny' ? 'deny' : 'ask';
   }
 }
 
@@ -79,20 +86,23 @@ async function llmClassify(
   toolName: string,
   toolInput: Record<string, unknown>,
   model?: string,
+  signal?: AbortSignal,
 ): Promise<AutoVerdict> {
   const userMsg = `Tool: ${toolName}\nInput: ${JSON.stringify(toolInput).slice(0, 1500)}`;
   const result = await provider.runTurn({
-    model: model ?? 'deepseek-chat',
+    signal,
+    model: model ?? provider.defaultModel ?? 'deepseek-chat',
     systemPrompt: CLASSIFY_PROMPT,
     tools: [],
     messages: [{ role: 'user', content: [{ type: 'text', text: userMsg }] }],
     maxTokens: 8,
     temperature: 0,
   });
+  if (signal?.aborted || result.stopReason !== 'end_turn') return 'ask';
   const textBlock = result.content.find((c) => c.type === 'text');
   if (!textBlock || textBlock.type !== 'text') return 'ask';
   const raw = textBlock.text.toLowerCase().trim();
-  if (raw.startsWith('allow')) return 'allow';
+  if (raw === 'allow') return 'allow';
   if (raw.startsWith('deny')) return 'deny';
   return 'ask';
 }
