@@ -1,0 +1,855 @@
+// Agent loop — orchestrates provider <-> tools <-> session.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.1 / §3.15
+import { compact, shouldCompact } from './compaction/index.js';
+import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
+import { deadlineMessage, RepeatToolGuard, resolveToolDeadlineMs, } from './guard/index.js';
+import { dispatchToolCall } from './harness/tool-dispatcher.js';
+import { TaskManager } from './tasks/manager.js';
+import { resolveRuntimePolicy } from './runtime/policy.js';
+import { applySpillPolicy } from './spill/index.js';
+import { ShellRegistry } from './shell/registry.js';
+/** Max sub-agent recursion: top-level (0) may spawn sub-agents (depth 1); those
+ *  cannot spawn more. */
+const MAX_SUBAGENT_DEPTH = 1;
+/** Tools a sub-agent never gets (would let it mutate the parent's control flow). */
+const SUBAGENT_TOOL_DENYLIST = new Set([
+    'Task',
+    'EnterPlanMode',
+    'ExitPlanMode',
+    'AskUserQuestion',
+    // Background tasks are top-level only (a sub-agent has no task manager).
+    'TaskCreate',
+    'TaskList',
+    'TaskGet',
+    'TaskOutput',
+    'TaskUpdate',
+    'TaskStop',
+    'Monitor',
+]);
+/** Default turn cap for a sub-agent run when its frontmatter doesn't set one. */
+const DEFAULT_SUBAGENT_MAX_TURNS = 12;
+const DEFAULT_MAX_TURNS = 16;
+async function waitForApproval(approval, toolName, toolInput, verdict, signal) {
+    if (!signal)
+        return approval(toolName, toolInput, verdict);
+    if (signal.aborted)
+        return false;
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        const finish = (decision) => {
+            if (settled)
+                return;
+            settled = true;
+            signal.removeEventListener('abort', onAbort);
+            resolve(decision);
+        };
+        const onAbort = () => finish(false);
+        signal.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve(approval(toolName, toolInput, verdict)).then(finish, (error) => {
+            if (settled)
+                return;
+            settled = true;
+            signal.removeEventListener('abort', onAbort);
+            reject(error);
+        });
+    });
+}
+/**
+ * Tools with no side effects whose results don't depend on each other — safe to
+ * execute concurrently within a single turn. Everything else (Edit/Write/Bash/
+ * TodoWrite/AskUserQuestion/ExitPlanMode) runs sequentially to preserve snapshot
+ * ordering, mutation order, and one-at-a-time interactive prompts.
+ */
+const READ_ONLY_TOOLS = new Set([
+    'Read',
+    'Grep',
+    'Glob',
+    'WebFetch',
+    'WebSearch',
+    'SubmitReviewFinding',
+]);
+/**
+ * Runs the agent loop until the model produces an end_turn (no tool calls),
+ * or `maxTurns` is reached, or the abort signal fires.
+ */
+/**
+ * Run the agent loop.
+ *
+ * When the caller supplies no {@link RunAgentOptions.shells}, this run owns a
+ * registry and closes every shell it opened before returning — including when
+ * the loop throws. Leaving live shell processes behind after a crashed run is
+ * the failure this wrapper exists to make impossible.
+ *
+ * @param opts Everything the loop needs.
+ * @returns The final history, usage, and stop reason.
+ */
+export async function runAgent(opts) {
+    if (opts.shells)
+        return runAgentInner(opts);
+    const shells = new ShellRegistry();
+    try {
+        return await runAgentInner({ ...opts, shells });
+    }
+    finally {
+        await shells.closeAll();
+    }
+}
+async function runAgentInner(opts) {
+    const maxTurns = opts.maxTurns ?? DEFAULT_MAX_TURNS;
+    const runtimePolicy = resolveRuntimePolicy(opts);
+    const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
+    let history = [...(opts.history ?? [])];
+    let snapshotSeq = (await opts.session?.manager.snapshots(opts.session.id))?.length ?? 0;
+    // Append the user message first (if provided). When systemReminders is
+    // enabled (default), prepend a <system-reminder> block ahead of the user
+    // text so the model sees pending todos / date / cwd / etc.
+    if (opts.userMessage !== undefined) {
+        let userText = opts.userMessage;
+        if (opts.systemReminders !== false) {
+            try {
+                // Lazy-load with @vite-ignore so bundlers skip this module — the
+                // renderer passes systemReminders:false to bypass it entirely, and
+                // a static import here would drag node:fs into the browser bundle.
+                const remindersMod = /* @vite-ignore */ './reminders/index.js';
+                const { buildSystemReminders } = (await import(remindersMod));
+                const block = await buildSystemReminders({
+                    cwd: opts.cwd,
+                    sessionDir: opts.session
+                        ? `${opts.session.manager.root}/${opts.session.id}`
+                        : undefined,
+                }, opts.systemReminders ?? {});
+                if (block)
+                    userText = `${block}\n\n${userText}`;
+            }
+            catch {
+                /* reminder failures must not abort the agent */
+            }
+        }
+        // UserPromptSubmit hook — fires before the prompt is processed; any JSON
+        // `additionalContext` it returns is appended to the prompt. Top-level only
+        // (a sub-agent's prompt isn't a user prompt).
+        if (opts.hooks && (opts.subAgentDepth ?? 0) === 0) {
+            try {
+                const r = await opts.hooks.dispatch({
+                    event: 'UserPromptSubmit',
+                    cwd: opts.cwd,
+                    triggeredAt: new Date().toISOString(),
+                    payload: { prompt: opts.userMessage },
+                });
+                const extra = r.json?.additionalContext;
+                if (typeof extra === 'string' && extra.trim())
+                    userText = `${userText}\n\n${extra}`;
+            }
+            catch {
+                /* hook failure must not abort the prompt */
+            }
+        }
+        const userMsg = {
+            role: 'user',
+            content: [{ type: 'text', text: userText }],
+            timestamp: new Date().toISOString(),
+        };
+        history.push(userMsg);
+        if (opts.session && opts.persistSessionMessages !== false) {
+            await opts.session.manager.append(opts.session.id, userMsg);
+        }
+    }
+    // modeSignal is mutable — EnterPlanMode / ExitPlanMode flip these; the agent
+    // loop owner reads them after the run to switch mode (default ⇄ plan).
+    const modeSignal = {};
+    // Inputs this run has read, in call order, deduped. Provenance for every
+    // change it goes on to make: the question "which input do I fix" is only
+    // answerable if somebody wrote down what was open at the time.
+    const readsThisTurn = new Set();
+    const toolCtx = {
+        cwd: opts.cwd,
+        signal: opts.signal,
+        sandboxConfig: opts.sandboxConfig,
+        sandboxDefaultMode: opts.sandboxDefaultMode,
+        contract: opts.contract,
+        sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
+        sessionsRoot: opts.session?.manager.root,
+        sessionId: opts.session?.id,
+        sessionSearchScope: opts.sessionSearchScope,
+        turnId: opts.session?.turnId,
+        askUser: opts.askUser,
+        modeSignal,
+    };
+    // Spill storage is resolved once, lazily: the local backend imports node:fs,
+    // which a renderer build has no answer for. A host without one still gets the
+    // bounded preview — it just cannot offer retrieval.
+    const resolveSpillStore = async () => {
+        if (opts.spillStore)
+            return opts.spillStore;
+        const dir = toolCtx.sessionDir;
+        if (dir === undefined)
+            return undefined;
+        try {
+            const mod = /* @vite-ignore */ './spill/local.js';
+            const { createLocalSpillStore } = (await import(mod));
+            return createLocalSpillStore(dir);
+        }
+        catch {
+            // No filesystem in this build — preview-only is the documented fallback.
+            return undefined;
+        }
+    };
+    // Memoized on the promise, not its result: tools run concurrently, and a
+    // second caller arriving mid-import must wait for the same answer rather than
+    // observe "not resolved yet" as "no store".
+    let spillStorePending;
+    const spillStore = () => (spillStorePending ??= resolveSpillStore());
+    // Wire the Task tool's sub-agent runner — but only below the recursion cap,
+    // so a sub-agent can't spawn further sub-agents (it also never gets the Task
+    // tool, see the denylist below; this is belt-and-suspenders).
+    const depth = opts.subAgentDepth ?? 0;
+    if (depth < MAX_SUBAGENT_DEPTH) {
+        toolCtx.runSubAgent = async ({ prompt, agentType, signal }) => {
+            // Resolve a named sub-agent from disk (lazy import keeps node:fs out of
+            // browser bundles; failures degrade to a generic sub-agent prompt).
+            let systemPrompt = 'You are a focused sub-agent. Complete the task below using the available tools, then reply with a concise summary of your findings or result. You have no memory of any other conversation.';
+            let model = opts.model;
+            let subMaxTurns = DEFAULT_SUBAGENT_MAX_TURNS;
+            let allow = null;
+            try {
+                const mod = /* @vite-ignore */ './sub-agents/index.js';
+                const { loadSubAgents, findSubAgent } = (await import(mod));
+                const agents = await loadSubAgents({ cwd: opts.cwd, pluginDirs: opts.pluginDirs });
+                const found = agentType ? findSubAgent(agents, agentType) : undefined;
+                if (agentType && !found) {
+                    const names = agents.map((a) => a.qualifiedName).join(', ') || '(none)';
+                    throw new Error(`unknown subagent_type "${agentType}". Available: ${names}`);
+                }
+                if (found) {
+                    systemPrompt = found.body.trim() || systemPrompt;
+                    if (found.frontmatter.model)
+                        model = found.frontmatter.model;
+                    if (found.frontmatter.maxTurns)
+                        subMaxTurns = found.frontmatter.maxTurns;
+                    if (found.frontmatter.tools?.length)
+                        allow = new Set(found.frontmatter.tools);
+                }
+            }
+            catch (err) {
+                if (agentType)
+                    throw err; // explicit agent requested but not found/loadable
+                // else: no agent named — proceed with the generic sub-agent prompt
+            }
+            // A registry view exposing only the sub-agent's allowed tools (its
+            // frontmatter whitelist, if any) minus the control/recursion tools.
+            // Built inline so agent.ts never imports ToolRegistry/BUILTIN_TOOLS
+            // (which would drag node:fs into the renderer bundle).
+            const subTools = {
+                definitions: () => opts.tools
+                    .definitions()
+                    .filter((d) => !SUBAGENT_TOOL_DENYLIST.has(d.name) &&
+                    (!allow || allow.has(d.name)) &&
+                    (!allowedToolNames || allowedToolNames.has(d.name))),
+                get: (name) => SUBAGENT_TOOL_DENYLIST.has(name) ||
+                    (allow && !allow.has(name)) ||
+                    (allowedToolNames && !allowedToolNames.has(name))
+                    ? undefined
+                    : opts.tools.get(name),
+                list: () => opts.tools
+                    .list()
+                    .filter((t) => !SUBAGENT_TOOL_DENYLIST.has(t.name) &&
+                    (!allow || allow.has(t.name)) &&
+                    (!allowedToolNames || allowedToolNames.has(t.name))),
+            };
+            const sub = await runAgent({
+                provider: opts.provider,
+                tools: subTools,
+                systemPrompt,
+                userMessage: prompt,
+                model,
+                maxTokens: opts.maxTokens,
+                temperature: opts.temperature,
+                maxTurns: subMaxTurns,
+                cwd: opts.cwd,
+                // A background task passes its own signal so TaskStop can cancel just
+                // that task; foreground sub-agents inherit the main run's signal.
+                signal: signal ?? opts.signal,
+                mode: runtimePolicy.mode,
+                permissions: runtimePolicy.permissions,
+                // Every gate the parent runs under has to travel with the delegation.
+                // A contract that stops at the Task boundary is one that says "never
+                // read .env" to the main agent and nothing at all to the sub-agent it
+                // spawns to do the reading.
+                contract: opts.contract,
+                hooks: opts.hooks,
+                sandboxConfig: opts.sandboxConfig,
+                autoMode: opts.autoMode,
+                systemReminders: false, // sub-agent gets a clean context
+                subAgentDepth: depth + 1,
+            });
+            const text = sub.history
+                .filter((m) => m.role === 'assistant')
+                .flatMap((m) => m.content)
+                .filter((b) => b.type === 'text')
+                .map((b) => b.text)
+                .join('\n')
+                .trim();
+            // SubagentStop hook — fires when a sub-agent finishes.
+            if (opts.hooks) {
+                try {
+                    await opts.hooks.dispatch({
+                        event: 'SubagentStop',
+                        cwd: opts.cwd,
+                        triggeredAt: new Date().toISOString(),
+                        payload: { agentType: agentType ?? 'general', turnsUsed: sub.turnsUsed },
+                    });
+                }
+                catch {
+                    /* hook failure must not break the sub-agent result */
+                }
+            }
+            return { text, turnsUsed: sub.turnsUsed, agentType: agentType ?? 'general' };
+        };
+    }
+    // Wire the mcp_tool + agent hook dispatchers. These can only be supplied here
+    // (not at the host's HookDispatcher construction): mcp_tool needs the live
+    // tool registry where MCP tools are registered as `mcp__<server>__<tool>`, and
+    // `agent` needs the sub-agent runner built just above. setX() no-ops if the
+    // host already provided one, so this never clobbers explicit wiring.
+    if (opts.hooks) {
+        opts.hooks.setMcpToolDispatcher(async (handler) => {
+            const qualified = `mcp__${handler.server}__${handler.tool}`;
+            const tool = opts.tools.get(qualified);
+            if (!tool) {
+                return { stdout: '', stderr: `mcp_tool hook: ${qualified} is not registered`, exitCode: 1 };
+            }
+            try {
+                const r = await tool.execute((handler.arguments ?? {}), toolCtx);
+                return {
+                    stdout: r.content,
+                    stderr: r.isError ? r.content : '',
+                    exitCode: r.isError ? 1 : 0,
+                };
+            }
+            catch (err) {
+                return { stdout: '', stderr: err.message, exitCode: 1 };
+            }
+        });
+        // The agent hook runs a named sub-agent. Only wire it when a sub-agent
+        // runner exists (i.e. below the recursion cap). A re-entrancy guard stops a
+        // hook that fires *during* the sub-agent run from spawning more agents — the
+        // dispatcher is shared with the sub-agent loop, so the same flag is seen.
+        if (toolCtx.runSubAgent) {
+            const runSub = toolCtx.runSubAgent;
+            let agentHookRunning = false;
+            opts.hooks.setAgentDispatcher(async (handler, payload) => {
+                if (agentHookRunning) {
+                    return { stdout: '', stderr: 'agent hook skipped (re-entrancy guard)', exitCode: 0 };
+                }
+                const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
+                const prompt = handler.prompt
+                    ? `${handler.prompt}\n\nHook event payload:\n${payloadStr}`
+                    : payloadStr;
+                agentHookRunning = true;
+                try {
+                    const res = await runSub({ prompt, agentType: handler.agent });
+                    return { stdout: res.text, stderr: '', exitCode: 0 };
+                }
+                catch (err) {
+                    return { stdout: '', stderr: err.message, exitCode: 1 };
+                }
+                finally {
+                    agentHookRunning = false;
+                }
+            });
+        }
+    }
+    // Background tasks (TaskCreate family) — only at the top level, backed by the
+    // sub-agent runner. Each task gets its own AbortController so TaskStop cancels
+    // just that task. A sub-agent (depth ≥ 1) gets no manager → can't spawn tasks.
+    if (depth === 0 && toolCtx.runSubAgent) {
+        const runSub = toolCtx.runSubAgent;
+        const runner = (spec) => {
+            const ac = new AbortController();
+            const done = runSub({
+                prompt: spec.prompt,
+                agentType: spec.agentType,
+                signal: ac.signal,
+            }).then((r) => r.text);
+            return { done, abort: () => ac.abort() };
+        };
+        // Reuse a host-provided manager (e.g. REPL session-scoped) so tasks persist
+        // across turns and stay visible to slash commands; attach THIS run's runner
+        // either way (it resolves named sub-agents + fires SubagentStop). Otherwise
+        // fall back to a per-run manager (the original behavior).
+        if (opts.taskManager) {
+            opts.taskManager.setRunner(runner);
+            toolCtx.tasks = opts.taskManager;
+        }
+        else {
+            toolCtx.tasks = new TaskManager(runner);
+        }
+    }
+    toolCtx.shells = opts.shells;
+    const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
+    let turnsUsed = 0;
+    // One chain per run. A run begins with a user message, which is exactly when
+    // a fresh line of work starts, so there is nothing to carry over.
+    const repeatGuard = opts.repeatGuard === false ? undefined : new RepeatToolGuard(opts.repeatGuard ?? {});
+    // Stop hook — fires when the TOP-LEVEL agent finishes a run (a sub-agent's
+    // completion is signalled by SubagentStop instead). Observation only.
+    const fireStop = async (reason) => {
+        if (!opts.hooks || depth !== 0)
+            return;
+        try {
+            await opts.hooks.dispatch({
+                event: 'Stop',
+                cwd: opts.cwd,
+                triggeredAt: new Date().toISOString(),
+                payload: { stopReason: reason, turnsUsed },
+            });
+        }
+        catch {
+            /* hook failure must not affect the result */
+        }
+    };
+    const finish = async (stopReason) => {
+        await fireStop(stopReason);
+        const message = [...history].reverse().find((candidate) => candidate.role === 'assistant');
+        opts.onEvent?.({ type: 'turn_complete', stopReason, message });
+        return { history, turnsUsed, usage: totalUsage, stopReason, modeSignal };
+    };
+    for (let turn = 0; turn < maxTurns; turn++) {
+        if (opts.signal?.aborted) {
+            return finish('aborted');
+        }
+        turnsUsed++;
+        let result;
+        try {
+            result = await opts.provider.runTurn({
+                model: opts.model,
+                systemPrompt: opts.systemPrompt,
+                tools: opts.tools
+                    .definitions()
+                    .filter((definition) => !allowedToolNames || allowedToolNames.has(definition.name)),
+                // Snapshot the history slice — providers must not see mutations from
+                // subsequent turns (and tests rely on the snapshot being stable).
+                messages: [...history],
+                maxTokens: opts.maxTokens,
+                temperature: opts.temperature,
+                signal: opts.signal,
+                handlers: {
+                    onTextDelta: (text) => opts.onEvent?.({ type: 'text_delta', text }),
+                    onThinkingDelta: (text) => opts.onEvent?.({ type: 'thinking_delta', text }),
+                },
+            });
+        }
+        catch (err) {
+            if (opts.signal?.aborted || err.name === 'AbortError') {
+                return finish('aborted');
+            }
+            const message = err.message ?? 'unknown';
+            opts.onEvent?.({ type: 'error', error: message });
+            return finish('error');
+        }
+        totalUsage.inputTokens += result.usage.inputTokens;
+        totalUsage.outputTokens += result.usage.outputTokens;
+        totalUsage.reasoningTokens += result.usage.reasoningTokens;
+        totalUsage.cacheReadTokens += result.usage.cacheReadTokens;
+        opts.onEvent?.({
+            type: 'usage',
+            inputTokens: result.usage.inputTokens,
+            outputTokens: result.usage.outputTokens,
+            reasoningTokens: result.usage.reasoningTokens,
+            cacheReadTokens: result.usage.cacheReadTokens,
+        });
+        const assistantMsg = {
+            role: 'assistant',
+            content: result.content,
+            timestamp: new Date().toISOString(),
+        };
+        history.push(assistantMsg);
+        if (opts.session && opts.persistSessionMessages !== false) {
+            await opts.session.manager.append(opts.session.id, assistantMsg);
+        }
+        opts.onEvent?.({ type: 'model_step_complete', step: turnsUsed, message: assistantMsg });
+        // Emit any tool_use events
+        for (const block of result.content) {
+            if (block.type === 'tool_use') {
+                opts.onEvent?.({
+                    type: 'tool_use',
+                    id: block.id,
+                    name: block.name,
+                    input: block.input,
+                });
+            }
+        }
+        // If no tool calls, we're done
+        if (result.stopReason !== 'tool_use') {
+            return finish('end_turn');
+        }
+        // Execute tool calls and append a single user-role message with tool_result
+        // blocks. Two phases:
+        //   1. (sequential) resolve handler + permission for each call. Approval
+        //      prompts must never overlap, so gating stays strictly ordered.
+        //   2. (mixed) execute. Side-effect-free reads run concurrently via
+        //      Promise.all (the common "model emits 3 Reads at once" case); tools
+        //      that mutate state / snapshot run sequentially to preserve ordering.
+        // tool_result blocks carry their tool_use_id, so the final array is
+        // re-assembled in the model's original order regardless of finish order.
+        const toolBlocks = result.content.filter((b) => b.type === 'tool_use');
+        const resultsById = new Map();
+        const guardReminders = [];
+        const ready = [];
+        /**
+         * Append this batch's tool results to history, in the model's original call
+         * order, and persist them.
+         *
+         * Any `tool_use` still without a result gets a synthetic one. That happens
+         * when the loop stops mid-batch (unattended abort): leaving a `tool_use`
+         * unanswered produces a message sequence the provider rejects on resume,
+         * so an explicit "never ran" beats a silent hole.
+         */
+        const flushToolResults = async () => {
+            const toolResults = toolBlocks.map((b) => resultsById.get(b.id) ?? {
+                type: 'tool_result',
+                tool_use_id: b.id,
+                content: 'Tool call not executed: the run stopped before reaching it.',
+                is_error: true,
+            });
+            const resultMsg = {
+                role: 'user',
+                content: toolResults,
+                timestamp: new Date().toISOString(),
+            };
+            history.push(resultMsg);
+            if (opts.session && opts.persistSessionMessages !== false) {
+                await opts.session.manager.append(opts.session.id, resultMsg);
+            }
+        };
+        /**
+         * Append any guard reminders as their own user message.
+         *
+         * This has to be a separate message appended AFTER the tool results, not a
+         * text block alongside them: the provider maps a user message's text and
+         * its tool_result blocks to separate wire messages, and a `user` turn
+         * between the assistant's tool_calls and their `tool` replies is a sequence
+         * the API rejects.
+         */
+        const flushGuardReminders = async () => {
+            if (guardReminders.length === 0)
+                return;
+            const msg = {
+                role: 'user',
+                content: [
+                    {
+                        type: 'text',
+                        text: `<system-reminder>\n${guardReminders.join('\n\n')}\n</system-reminder>`,
+                    },
+                ],
+                timestamp: new Date().toISOString(),
+            };
+            history.push(msg);
+            if (opts.session && opts.persistSessionMessages !== false) {
+                await opts.session.manager.append(opts.session.id, msg);
+            }
+        };
+        /** Record a gate refusal as both a tool result (the model sees it) and an event (the host does). */
+        const recordBlocked = (toolUse, reason, verdict) => {
+            resultsById.set(toolUse.id, {
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: `Tool call blocked: ${reason}`,
+                is_error: true,
+            });
+            opts.onEvent?.({
+                type: 'tool_result',
+                id: toolUse.id,
+                result: {
+                    content: reason,
+                    isError: true,
+                    data: { dispatchSource: verdict.source, decision: verdict.decision },
+                },
+            });
+        };
+        // Phase 1 — sequential gate + approval.
+        for (const toolUse of toolBlocks) {
+            // Counted before the gate, so a model hammering a denied call is caught
+            // by the same chain as one hammering an allowed one.
+            const repeat = repeatGuard?.observe(toolUse.name, toolUse.input);
+            if (repeat)
+                guardReminders.push(repeat.text);
+            const handler = !allowedToolNames || allowedToolNames.has(toolUse.name)
+                ? opts.tools.get(toolUse.name)
+                : undefined;
+            if (!handler) {
+                resultsById.set(toolUse.id, {
+                    type: 'tool_result',
+                    tool_use_id: toolUse.id,
+                    content: allowedToolNames
+                        ? `Error: tool not allowed in this turn: ${toolUse.name}`
+                        : `Error: tool not found: ${toolUse.name}`,
+                    is_error: true,
+                });
+                continue;
+            }
+            // Every call goes through the central mode + permissions + hook gate.
+            const verdict = await dispatchToolCall({
+                tool: toolUse.name,
+                input: toolUse.input,
+                mode: runtimePolicy.mode,
+                rules: runtimePolicy.permissions,
+                contract: opts.contract,
+                hooks: opts.hooks,
+                cwd: opts.cwd,
+                autoMode: opts.autoMode,
+                autoModeProvider: opts.provider,
+            });
+            let allowed = verdict.decision === 'allow';
+            let blockReason = verdict.reason;
+            if (verdict.decision === 'ask' && opts.unattended) {
+                // No human can answer, so don't pretend to ask. Say so explicitly —
+                // "requires approval" in an unattended log reads like a transient
+                // condition when it is in fact terminal for this call.
+                blockReason = `approval required for ${toolUse.name}, but this run is unattended (no approver attached)`;
+                if (opts.onApprovalRequired === 'abort') {
+                    recordBlocked(toolUse, blockReason, verdict);
+                    await flushToolResults();
+                    return finish('blocked');
+                }
+            }
+            else if (verdict.decision === 'ask' && opts.approval) {
+                const decision = await waitForApproval(opts.approval, toolUse.name, toolUse.input, verdict, opts.signal);
+                if (opts.signal?.aborted) {
+                    return finish('aborted');
+                }
+                // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
+                allowed = decision === true || decision === 'always';
+            }
+            if (!allowed) {
+                recordBlocked(toolUse, blockReason, verdict);
+                continue;
+            }
+            ready.push({ toolUse, handler });
+        }
+        /**
+         * Run a tool, abandoning the wait if it blows past its backstop deadline.
+         *
+         * Abandoning the wait is not the same as stopping the work: the signal asks
+         * the tool to stop, but a tool that ignores it keeps running. That is why
+         * the message for a side-effecting tool says the effect is unknown rather
+         * than claiming nothing happened.
+         */
+        const withDeadline = async (toolUse, handler) => {
+            const ms = resolveToolDeadlineMs(toolUse.name, toolUse.input, opts.toolDeadlines);
+            if (ms === undefined)
+                return handler.execute(toolUse.input, toolCtx);
+            const deadline = new AbortController();
+            const signal = opts.signal
+                ? AbortSignal.any([opts.signal, deadline.signal])
+                : deadline.signal;
+            let timer;
+            const expired = new Promise((resolve) => {
+                timer = setTimeout(() => {
+                    // Settle the race BEFORE aborting. A tool that honors its signal
+                    // resolves synchronously from the abort listener, and if that landed
+                    // first the race would return the tool's own "I was cancelled"
+                    // result — losing the deadline message, including its warning that a
+                    // side effect may be half-applied.
+                    resolve('deadline');
+                    deadline.abort();
+                }, ms);
+            });
+            try {
+                const outcome = await Promise.race([
+                    handler.execute(toolUse.input, { ...toolCtx, signal }),
+                    expired,
+                ]);
+                return outcome === 'deadline'
+                    ? { content: deadlineMessage(toolUse.name, ms), isError: true }
+                    : outcome;
+            }
+            finally {
+                clearTimeout(timer);
+            }
+        };
+        // Runs one approved tool end-to-end: pre-snapshot, execute, PostToolUse
+        // hook, post-snapshot, event + result. Side-effect-free tools call this
+        // concurrently; mutating tools call it one at a time (see partition below).
+        const execOne = async ({ toolUse, handler }) => {
+            const isFileMutation = toolUse.name === 'Edit' || toolUse.name === 'Write';
+            // Remembered so a ledger record can point at the checkpoint taken for
+            // this specific call rather than at "whatever was last captured".
+            let preSeq;
+            if (opts.enableSnapshots !== false && opts.session && isFileMutation) {
+                const filePath = toolUse.input.file_path;
+                if (filePath) {
+                    preSeq = ++snapshotSeq;
+                    await opts.session.manager.snapshot({
+                        sessionId: opts.session.id,
+                        cwd: opts.cwd,
+                        filePath,
+                        reason: `pre-${toolUse.name}`,
+                        seq: preSeq,
+                        turnId: opts.session.turnId,
+                    });
+                }
+            }
+            // Bash can mutate arbitrary files we can't name ahead of time, so capture
+            // a git working-tree checkpoint instead (no-op outside a git repo). This
+            // lets `/rewind <seq> code` revert what the command changed.
+            if (opts.enableSnapshots !== false && opts.session && toolUse.name === 'Bash') {
+                preSeq = ++snapshotSeq;
+                await opts.session.manager.gitCheckpoint({
+                    sessionId: opts.session.id,
+                    cwd: opts.cwd,
+                    reason: 'pre-Bash',
+                    seq: preSeq,
+                    turnId: opts.session.turnId,
+                });
+            }
+            let tr;
+            try {
+                tr = await withDeadline(toolUse, handler);
+            }
+            catch (err) {
+                tr = { content: `Error: ${err.message}`, isError: true };
+            }
+            // Every result passes the spill policy on its way to the model, so no
+            // single tool can flood the context regardless of what it returns.
+            tr = await applySpillPolicy(tr, {
+                source: { toolName: toolUse.name, callId: toolUse.id, label: 'result' },
+                store: await spillStore(),
+                thresholdChars: opts.spillThresholdChars,
+            });
+            // PostToolUse hook (M3) — observation only; can inject additionalContext
+            if (opts.hooks) {
+                await opts.hooks.dispatch({
+                    event: 'PostToolUse',
+                    cwd: opts.cwd,
+                    triggeredAt: new Date().toISOString(),
+                    payload: {
+                        tool: toolUse.name,
+                        input: toolUse.input,
+                        result_content: tr.content.slice(0, 1000),
+                        is_error: tr.isError ?? false,
+                    },
+                });
+            }
+            if (opts.enableSnapshots !== false && opts.session && isFileMutation && !tr.isError) {
+                const filePath = toolUse.input.file_path;
+                if (filePath) {
+                    await opts.session.manager.snapshot({
+                        sessionId: opts.session.id,
+                        cwd: opts.cwd,
+                        filePath,
+                        reason: `post-${toolUse.name}`,
+                        seq: ++snapshotSeq,
+                        turnId: opts.session.turnId,
+                    });
+                }
+            }
+            // Reads observed so far in this run become the provenance of whatever
+            // this turn writes next. Recorded here, at the one place every completed
+            // tool call passes through, for the same reason the ledger append is
+            // here: a per-tool hook is a hook a new tool forgets.
+            if (!tr.isError) {
+                const readPath = readPathFor(toolUse.name, toolUse.input);
+                if (readPath)
+                    readsThisTurn.add(readPath);
+            }
+            // One write point for the whole loop. Per-tool writes are exactly the
+            // shape AGENTS.md rules out — a new mutating tool would silently go
+            // unrecorded if each site had to remember.
+            if (opts.ledger && !tr.isError) {
+                const kind = ledgerKindForTool(toolUse.name);
+                const record = kind &&
+                    buildToolCallRecord({
+                        tool: toolUse.name,
+                        input: toolUse.input,
+                        cwd: opts.cwd,
+                        intent: opts.userMessage,
+                        threadId: opts.session?.id,
+                        turnId: opts.session?.turnId,
+                        snapshotSeq: preSeq,
+                        readPaths: [...readsThisTurn],
+                    });
+                // Never let bookkeeping fail a completed edit; FileLedger already
+                // swallows its own I/O errors, this covers a host-supplied sink.
+                if (kind && record)
+                    await opts.ledger.append(kind, record).catch(() => undefined);
+            }
+            opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result: tr });
+            resultsById.set(toolUse.id, {
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: tr.content,
+                is_error: tr.isError,
+            });
+        };
+        // Phase 2 — execute. Read-only tools have no side effects and don't touch
+        // snapshotSeq, so they're safe to run concurrently; everything else stays
+        // sequential to keep snapshot ordering deterministic.
+        const parallel = ready.filter((r) => READ_ONLY_TOOLS.has(r.toolUse.name));
+        const serial = ready.filter((r) => !READ_ONLY_TOOLS.has(r.toolUse.name));
+        await Promise.all(parallel.map(execOne));
+        for (const r of serial)
+            await execOne(r);
+        await flushToolResults();
+        await flushGuardReminders();
+        // M3c: auto-compact if the *current* context crossed the threshold.
+        //
+        // Use this turn's usage (result.usage), NOT the cumulative totalUsage.
+        // `result.usage.inputTokens` is exactly the size of the history we just
+        // sent to the model, so it is the true current-context proxy. Cumulative
+        // usage is wrong on two counts: it sums every turn's input (each turn
+        // re-sends the whole history, so it inflates far past the real window and
+        // crosses the threshold too early), and it never shrinks after a compaction
+        // — meaning once over the line it would re-compact the already-compacted
+        // history on every subsequent turn. The next turn's inputTokens naturally
+        // reflects the freshly-compacted (smaller) context, so this self-corrects.
+        if (opts.autoCompact &&
+            shouldCompact({
+                inputTokens: result.usage.inputTokens,
+                outputTokens: result.usage.outputTokens,
+                contextWindow: opts.autoCompact.contextWindow,
+                threshold: opts.autoCompact.threshold,
+            })) {
+            try {
+                if (opts.hooks) {
+                    await opts.hooks.dispatch({
+                        event: 'PreCompact',
+                        cwd: opts.cwd,
+                        triggeredAt: new Date().toISOString(),
+                        payload: { messages: history.length, trigger: 'auto' },
+                    });
+                }
+                const compactResult = await compact(history, {
+                    provider: opts.provider,
+                    summarizerModel: opts.autoCompact.summarizerModel,
+                    keepFirstPairs: opts.autoCompact.keepFirstPairs,
+                    keepLastMessages: opts.autoCompact.keepLastMessages,
+                });
+                history = compactResult.history;
+                totalUsage.inputTokens += compactResult.usage.inputTokens;
+                totalUsage.outputTokens += compactResult.usage.outputTokens;
+                opts.onEvent?.({
+                    type: 'usage',
+                    inputTokens: compactResult.usage.inputTokens,
+                    outputTokens: compactResult.usage.outputTokens,
+                    reasoningTokens: 0,
+                    cacheReadTokens: 0,
+                });
+                if (opts.hooks) {
+                    await opts.hooks.dispatch({
+                        event: 'PostCompact',
+                        cwd: opts.cwd,
+                        triggeredAt: new Date().toISOString(),
+                        payload: { messages: history.length, trigger: 'auto' },
+                    });
+                }
+            }
+            catch {
+                // compaction failure is non-fatal — continue with full history
+            }
+        }
+    }
+    return finish('max_turns');
+}
+export const AGENT_MODULE_VERSION = '0.1.0';
+//# sourceMappingURL=agent.js.map

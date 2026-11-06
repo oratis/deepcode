@@ -1,0 +1,119 @@
+// DNS proxy for sandbox `network.allowedDomains` enforcement.
+// Spec: docs/security-model.md (M3.5-ext)
+//
+// Without OS-level DNS hooking, we can't truly intercept every connect()
+// call from sandboxed processes. What we CAN do: run a local UDP DNS
+// resolver that ONLY answers queries for whitelisted domains, and have the
+// sandbox's resolv.conf point at us. Anything else returns NXDOMAIN.
+//
+// This is M3.5-ext scaffold. Full integration with `sandbox-exec` /
+// `bwrap` requires writing a resolv.conf into the sandbox + plumbing
+// 127.0.0.1:<port> in. The resolver itself is straightforward.
+import { createSocket } from 'node:dgram';
+export async function startDnsProxy(opts) {
+    const allowed = new Set(opts.allowedDomains.map((d) => d.toLowerCase()));
+    const upstream = opts.upstream ?? '1.1.1.1';
+    const log = opts.log ?? (() => { });
+    const sock = createSocket('udp4');
+    sock.on('message', (msg, rinfo) => {
+        const domain = parseQName(msg);
+        if (!domain) {
+            sock.send(buildNxDomain(msg), rinfo.port, rinfo.address);
+            return;
+        }
+        const norm = domain.toLowerCase().replace(/\.$/, '');
+        if (!allowed.has(norm)) {
+            log(`[dns-proxy] DENY ${norm}`);
+            sock.send(buildNxDomain(msg), rinfo.port, rinfo.address);
+            return;
+        }
+        log(`[dns-proxy] ALLOW ${norm} → ${upstream}`);
+        forward(sock, msg, rinfo, upstream).catch((err) => {
+            log(`[dns-proxy] forward error: ${err.message}`);
+            sock.send(buildNxDomain(msg), rinfo.port, rinfo.address);
+        });
+    });
+    await new Promise((resolve, reject) => {
+        sock.once('error', reject);
+        sock.bind(opts.bindPort ?? 0, opts.bindAddr ?? '127.0.0.1', () => {
+            sock.removeListener('error', reject);
+            resolve();
+        });
+    });
+    const port = sock.address().port;
+    return {
+        port,
+        close: () => new Promise((resolve) => {
+            try {
+                sock.close(() => resolve());
+            }
+            catch {
+                resolve();
+            }
+        }),
+    };
+}
+// ──────────────────────────────────────────────────────────────────────────
+// Tiny DNS wire-format helpers
+// ──────────────────────────────────────────────────────────────────────────
+/** Extract the QNAME from a DNS request packet. Returns null on parse error. */
+export function parseQName(buf) {
+    if (buf.length < 13)
+        return null; // header(12) + at least one length byte
+    let pos = 12; // skip 12-byte header
+    const parts = [];
+    while (pos < buf.length) {
+        const len = buf[pos];
+        if (len === undefined)
+            return null;
+        // The root label ends the name. `pos` is not read after the loop, so
+        // there is nothing left to consume it for.
+        if (len === 0)
+            break;
+        if (len > 63)
+            return null; // compression / invalid
+        pos++;
+        if (pos + len > buf.length)
+            return null;
+        parts.push(buf.toString('utf8', pos, pos + len));
+        pos += len;
+    }
+    return parts.join('.');
+}
+/** Build an NXDOMAIN response that matches the query's transaction ID. */
+export function buildNxDomain(query) {
+    if (query.length < 12)
+        return Buffer.alloc(0);
+    const resp = Buffer.from(query);
+    // Set flags: QR=1 (response), Opcode=0, RA=1, RCODE=3 (NXDOMAIN)
+    resp[2] = 0x81; // QR=1, AA=0, TC=0, RD=1
+    resp[3] = 0x83; // RA=1, Z=0, RCODE=3
+    return resp;
+}
+/** Forward the query to the upstream DNS and pipe the response back. */
+function forward(serverSock, query, reply, upstream) {
+    return new Promise((resolve, reject) => {
+        const upSock = createSocket('udp4');
+        const timer = setTimeout(() => {
+            upSock.close();
+            reject(new Error('upstream timeout'));
+        }, 5000);
+        upSock.once('message', (msg) => {
+            clearTimeout(timer);
+            serverSock.send(msg, reply.port, reply.address, (err) => {
+                upSock.close();
+                if (err)
+                    reject(err);
+                else
+                    resolve();
+            });
+        });
+        upSock.once('error', (err) => {
+            clearTimeout(timer);
+            upSock.close();
+            reject(err);
+        });
+        upSock.send(query, 53, upstream);
+    });
+}
+//# sourceMappingURL=dns-proxy.js.map

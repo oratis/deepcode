@@ -1,0 +1,227 @@
+import { describe, expect, it } from 'vitest';
+import { helpText, parseArgs, resolveEffort } from './parse-args.js';
+describe('parseArgs', () => {
+    it('parses empty argv', () => {
+        const p = parseArgs([]);
+        expect(p.showHelp).toBe(false);
+        expect(p.showVersion).toBe(false);
+        expect(p.outputFormat).toBe('text');
+    });
+    it('--help / -h', () => {
+        expect(parseArgs(['--help']).showHelp).toBe(true);
+        expect(parseArgs(['-h']).showHelp).toBe(true);
+    });
+    it('--version / -v', () => {
+        expect(parseArgs(['--version']).showVersion).toBe(true);
+        expect(parseArgs(['-v']).showVersion).toBe(true);
+    });
+    it('doctor / upgrade subcommands', () => {
+        expect(parseArgs(['doctor']).doctor).toBe(true);
+        expect(parseArgs(['upgrade']).upgrade).toBe(true);
+    });
+    it('-C / --cd <dir> sets working directory', () => {
+        expect(parseArgs(['-C', '/work/dir']).cwd).toBe('/work/dir');
+        expect(parseArgs(['--cd', '/another']).cwd).toBe('/another');
+    });
+    it('cwd is undefined without -C/--cd', () => {
+        expect(parseArgs([]).cwd).toBeUndefined();
+        expect(parseArgs(['--mode', 'plan']).cwd).toBeUndefined();
+    });
+    it('-p "prompt"', () => {
+        expect(parseArgs(['-p', 'do the thing']).prompt).toBe('do the thing');
+        expect(parseArgs(['--print', 'foo']).prompt).toBe('foo');
+    });
+    it('--resume without id', () => {
+        const p = parseArgs(['--resume']);
+        expect(p.resume).toBe(true);
+        expect(p.resumeId).toBeUndefined();
+    });
+    it('--resume <id>', () => {
+        const p = parseArgs(['--resume', 'sess-abc']);
+        expect(p.resume).toBe(true);
+        expect(p.resumeId).toBe('sess-abc');
+    });
+    it('--resume followed by next flag has no id', () => {
+        const p = parseArgs(['--resume', '--mode', 'plan']);
+        expect(p.resume).toBe(true);
+        expect(p.resumeId).toBeUndefined();
+        expect(p.mode).toBe('plan');
+    });
+    it('--mode validation', () => {
+        expect(parseArgs(['--mode', 'plan']).mode).toBe('plan');
+        expect(parseArgs(['--mode', 'bypassPermissions']).mode).toBe('bypassPermissions');
+        const p = parseArgs(['--mode', 'invalid']);
+        expect(p.mode).toBeUndefined();
+        expect(p.unknownFlags).toContain('--mode invalid');
+    });
+    it('--permission-mode is a true alias for --mode (sets mode, is wired)', () => {
+        // Regression: previously parsed into a separate field that cli.ts never read,
+        // so --permission-mode was silently ignored. It must set `mode` like --mode.
+        expect(parseArgs(['--permission-mode', 'plan']).mode).toBe('plan');
+        expect(parseArgs(['--permission-mode', 'bypassPermissions']).mode).toBe('bypassPermissions');
+        const p = parseArgs(['--permission-mode', 'invalid']);
+        expect(p.mode).toBeUndefined();
+        expect(p.unknownFlags).toContain('--permission-mode invalid');
+    });
+    it('--mode and --permission-mode: last flag wins', () => {
+        expect(parseArgs(['--mode', 'plan', '--permission-mode', 'acceptEdits']).mode).toBe('acceptEdits');
+        expect(parseArgs(['--permission-mode', 'acceptEdits', '--mode', 'plan']).mode).toBe('plan');
+    });
+    it('--effort validation', () => {
+        expect(parseArgs(['--effort', 'high']).effort).toBe('high');
+        expect(parseArgs(['--effort', 'wrong']).unknownFlags).toContain('--effort wrong');
+    });
+    it('--max-turns parses to number', () => {
+        expect(parseArgs(['--max-turns', '5']).maxTurns).toBe(5);
+        expect(parseArgs(['--max-turns', 'NaN']).unknownFlags).toContain('--max-turns NaN');
+    });
+    it('--allowedTools / --disallowedTools comma-list', () => {
+        expect(parseArgs(['--allowedTools', 'Read,Grep,Edit']).allowedTools).toEqual([
+            'Read',
+            'Grep',
+            'Edit',
+        ]);
+        expect(parseArgs(['--disallowedTools', 'Bash, WebFetch']).disallowedTools).toEqual([
+            'Bash',
+            'WebFetch',
+        ]);
+    });
+    it('--output-format validation', () => {
+        expect(parseArgs(['--output-format', 'json']).outputFormat).toBe('json');
+        expect(parseArgs(['--output-format', 'stream-json']).outputFormat).toBe('stream-json');
+        expect(parseArgs(['--output-format', 'wrong']).unknownFlags).toContain('--output-format wrong');
+    });
+    it('boolean flags', () => {
+        const p = parseArgs([
+            '--bare',
+            '--no-plugins',
+            '--strict',
+            '--verbose',
+            '--include-partial-messages',
+            '--fork-session',
+            '--continue',
+        ]);
+        expect(p.bare).toBe(true);
+        expect(p.noPlugins).toBe(true);
+        expect(p.strict).toBe(true);
+        expect(p.verbose).toBe(true);
+        expect(p.includePartialMessages).toBe(true);
+        expect(p.forkSession).toBe(true);
+        expect(p.continue).toBe(true);
+    });
+    it('captures unknown flags', () => {
+        const p = parseArgs(['--made-up-flag']);
+        expect(p.unknownFlags).toEqual(['--made-up-flag']);
+    });
+    it('collects positional args', () => {
+        const p = parseArgs(['foo', 'bar']);
+        expect(p.positional).toEqual(['foo', 'bar']);
+    });
+    it('combo: realistic invocation', () => {
+        const p = parseArgs([
+            '--mode',
+            'acceptEdits',
+            '--model',
+            'deepseek-reasoner',
+            '--effort',
+            'high',
+            '--max-turns',
+            '12',
+        ]);
+        expect(p.mode).toBe('acceptEdits');
+        expect(p.model).toBe('deepseek-reasoner');
+        expect(p.effort).toBe('high');
+        expect(p.maxTurns).toBe(12);
+        expect(p.unknownFlags).toEqual([]);
+    });
+});
+describe('resolveEffort (precedence)', () => {
+    it('cli flag wins over env and settings', () => {
+        expect(resolveEffort({ cliFlag: 'high', envVar: 'low', settingsLevel: 'max' })).toBe('high');
+    });
+    it('env var wins when no cli flag', () => {
+        expect(resolveEffort({ envVar: 'xhigh', settingsLevel: 'low' })).toBe('xhigh');
+    });
+    it('settings wins when no cli flag and no env', () => {
+        expect(resolveEffort({ settingsLevel: 'low' })).toBe('low');
+    });
+    it('defaults to medium when nothing is set', () => {
+        expect(resolveEffort({})).toBe('medium');
+    });
+    it('ignores invalid env var', () => {
+        expect(resolveEffort({ envVar: 'ultra', settingsLevel: 'low' })).toBe('low');
+    });
+    it('trims whitespace in env var', () => {
+        expect(resolveEffort({ envVar: '  high  ' })).toBe('high');
+    });
+    it('ignores empty env var', () => {
+        expect(resolveEffort({ envVar: '', settingsLevel: 'max' })).toBe('max');
+    });
+});
+describe('flags that parse but do nothing', () => {
+    it('reports each inert flag instead of silently ignoring it', () => {
+        const p = parseArgs([
+            '--agents',
+            '/tmp/a',
+            '--mcp-config',
+            '/tmp/m.json',
+            '--plugin-dir',
+            '/tmp/p',
+            '--plugin-url',
+            'gh:o/r',
+            '--strict',
+        ]);
+        expect(p.unimplementedFlags).toEqual([
+            '--agents',
+            '--mcp-config',
+            '--plugin-dir',
+            '--plugin-url',
+            '--strict',
+        ]);
+        // Still accepted, so existing scripts keep running rather than exiting 2.
+        expect(p.unknownFlags).toEqual([]);
+    });
+    it('leaves implemented flags out of the report', () => {
+        const p = parseArgs(['--settings', '/tmp/s.json', '--no-plugins', '--bare']);
+        expect(p.unimplementedFlags).toEqual([]);
+        expect(p.settingsFile).toBe('/tmp/s.json');
+        expect(p.noPlugins).toBe(true);
+        expect(p.bare).toBe(true);
+    });
+});
+describe('helpText', () => {
+    const help = helpText('9.9.9');
+    it('does not advertise flags nothing consumes', () => {
+        for (const flag of ['--agents', '--mcp-config', '--plugin-dir', '--plugin-url', '--strict']) {
+            expect(help).not.toContain(flag);
+        }
+    });
+    it('still documents the overrides that work', () => {
+        expect(help).toContain('--settings');
+        expect(help).toContain('--no-plugins');
+    });
+    it('describes --bare as what it actually does', () => {
+        expect(help).toMatch(/--bare\s+Suppress the REPL startup banner/);
+    });
+});
+describe('--sandbox', () => {
+    it('accepts each mode', () => {
+        expect(parseArgs(['--sandbox', 'read-only']).sandbox).toBe('read-only');
+        expect(parseArgs(['--sandbox', 'workspace-write']).sandbox).toBe('workspace-write');
+        expect(parseArgs(['--sandbox', 'danger-full-access']).sandbox).toBe('danger-full-access');
+    });
+    it('rejects anything else instead of silently ignoring it', () => {
+        const p = parseArgs(['--sandbox', 'yolo']);
+        expect(p.sandbox).toBeUndefined();
+        expect(p.unknownFlags).toEqual(['--sandbox yolo']);
+    });
+    it('is independent of --mode', () => {
+        const p = parseArgs(['--mode', 'bypassPermissions', '--sandbox', 'read-only']);
+        expect(p.mode).toBe('bypassPermissions');
+        expect(p.sandbox).toBe('read-only');
+    });
+    it('is documented in --help', () => {
+        expect(helpText('1.0.0')).toContain('--sandbox');
+    });
+});
+//# sourceMappingURL=parse-args.test.js.map

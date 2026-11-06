@@ -1,0 +1,6 @@
+export { installLocal, discoverPlugins, collectPluginContributions, readManifest, computeSourceHash, loadTrustState, saveTrustState, pluginsDir, trustFilePath, type PluginManifest, type InstalledPlugin, type PluginTrust, type TrustState, type InstallOptions, type DiscoverOptions, } from './manifest.js';
+export { PluginSubprocess, spawnAllPlugins, shutdownAllPlugins, generatePluginToken, type RpcRequest, type RpcResponse, type PluginSubprocessOpts, type SpawnAllOpts, } from './runtime/subprocess.js';
+export { wirePlugins, hasInstalledPlugins, type WirePluginsOpts, type WiredPlugin, type WireResult, type PluginCapabilityBridge, } from './wireup.js';
+export { installFromGithub, installFromNpm, installFromSpec, uninstallPlugin, type RemoteInstallOpts, } from './install.js';
+export { verifyEntrySignature, isRevoked, fetchIndex, fetchRevoked, resolveEntry, loadMarketplaceConfig, saveMarketplaceConfig, addMarketplace, marketplacesPath, type MarketplaceEntry, type MarketplaceIndex, type RevokedEntry, type RevokedList, type MarketplaceConfig, } from './marketplace.js';
+//# sourceMappingURL=index.d.ts.map

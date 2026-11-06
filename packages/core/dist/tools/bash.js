@@ -1,0 +1,285 @@
+// Bash tool — execute a shell command with timeout, capture stdout+stderr+exitCode.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.2 (P0) + run_in_background param
+// M3.5: optionally wrapped under platform sandbox via ctx.sandboxConfig
+// M3.5-ext: when network.allowedDomains is a non-empty allowlist on Linux, run
+//   under the slirp4netns selective-network sandbox (spawnNetworkSandbox). If
+//   that can't be set up (e.g. can't bind the DNS proxy on :53), fail CLOSED to
+//   deny-all-net rather than running unrestricted.
+import { spawn } from 'node:child_process';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { denyAllNetwork, needsNetworkSandbox, NetworkSandboxUnavailable, spawnNetworkSandbox, wrapBashCommand, } from '../sandbox/index.js';
+import { BoundedCapture } from '../spill/bound.js';
+const DEFAULT_TIMEOUT_MS = 120_000; // 2 minutes
+// What one stream keeps in memory. This is NOT the model-visible limit — the
+// spill policy bounds that centrally and saves the rest to a file the model can
+// read. Capture has to exceed that limit for there to be anything worth saving,
+// while staying small enough that a runaway command cannot exhaust memory.
+const CAPTURE_HEAD_CHARS = 1_000_000;
+const CAPTURE_TAIL_CHARS = 3_000_000;
+// Monotonic suffix so two background spawns in the same millisecond from the
+// same pid don't collide on a log filename.
+let bgSeq = 0;
+function newCapture() {
+    return new BoundedCapture(CAPTURE_HEAD_CHARS, CAPTURE_TAIL_CHARS);
+}
+/** Build the standard Bash ToolResult from captured output + exit info. */
+function summarize(out, err, terminationReason, code, timeoutMs, note) {
+    const parts = [];
+    const stdout = out.text();
+    const stderr = err.text();
+    if (note)
+        parts.push(note);
+    if (stdout)
+        parts.push(`<stdout>\n${stdout}\n</stdout>`);
+    if (stderr)
+        parts.push(`<stderr>\n${stderr}\n</stderr>`);
+    if (terminationReason === 'timeout')
+        parts.push(`[killed by timeout after ${timeoutMs}ms]`);
+    if (terminationReason === 'aborted')
+        parts.push('[aborted by user]');
+    parts.push(`exit: ${code ?? 'unknown'}`);
+    return {
+        content: parts.join('\n'),
+        data: {
+            exitCode: code,
+            killed: terminationReason !== undefined,
+            terminationReason,
+            stdoutBytes: out.total,
+            stderrBytes: err.total,
+        },
+        isError: terminationReason !== undefined || (code !== null && code !== 0),
+    };
+}
+/** Kill the whole foreground process group on POSIX, not just its shell. */
+function killProcessTree(child, signal) {
+    if (process.platform !== 'win32' && child.pid !== undefined) {
+        try {
+            process.kill(-child.pid, signal);
+            return;
+        }
+        catch {
+            // The group may already have exited; fall back to the direct child.
+        }
+    }
+    try {
+        child.kill(signal);
+    }
+    catch {
+        // Process already exited.
+    }
+}
+/**
+ * Foreground run under the slirp4netns selective-network sandbox. Rejects with
+ * NetworkSandboxUnavailable if setup fails (caller falls back to deny-all-net).
+ */
+async function runForegroundNet(command, ctx, config, timeoutMs, spawnFn) {
+    const handle = await spawnFn({ userCommand: command, cwd: ctx.cwd, config });
+    return new Promise((resolve) => {
+        const stdout = newCapture();
+        const stderr = newCapture();
+        let terminationReason;
+        let settled = false;
+        const finish = (r) => {
+            if (!settled) {
+                settled = true;
+                resolve(r);
+            }
+        };
+        const timer = setTimeout(() => {
+            terminationReason = 'timeout';
+            void handle.close();
+        }, timeoutMs);
+        const onAbort = () => {
+            terminationReason = 'aborted';
+            void handle.close();
+        };
+        ctx.signal?.addEventListener('abort', onAbort, { once: true });
+        handle.child.stdout?.on('data', (c) => {
+            stdout.push(c.toString('utf8'));
+        });
+        handle.child.stderr?.on('data', (c) => {
+            stderr.push(c.toString('utf8'));
+        });
+        handle.exited
+            .then((code) => {
+            clearTimeout(timer);
+            ctx.signal?.removeEventListener('abort', onAbort);
+            finish(summarize(stdout, stderr, terminationReason, code, timeoutMs));
+        })
+            .catch((err) => {
+            clearTimeout(timer);
+            ctx.signal?.removeEventListener('abort', onAbort);
+            finish({ content: `Error running sandboxed command: ${String(err)}`, isError: true });
+        });
+    });
+}
+export const BashTool = {
+    name: 'Bash',
+    definition: {
+        name: 'Bash',
+        render: 'terminal',
+        description: 'Executes a shell command. Captures stdout/stderr/exitCode. Default timeout 2 min.',
+        inputSchema: {
+            type: 'object',
+            properties: {
+                command: { type: 'string', description: 'Command line to execute via /bin/sh -c.' },
+                timeout: { type: 'number', description: 'Milliseconds (default 120000).' },
+                description: {
+                    type: 'string',
+                    description: 'Short description shown to user during approval.',
+                },
+                run_in_background: {
+                    type: 'boolean',
+                    description: 'Run detached and return immediately. Output streams to a log file whose path is in the result — Read that file to see progress/results. Use for long-running or watch processes (dev servers, tail -f, test watchers).',
+                },
+            },
+            required: ['command'],
+        },
+    },
+    async execute(rawInput, ctx) {
+        const input = rawInput;
+        if (!input?.command || typeof input.command !== 'string') {
+            return { content: 'Error: command is required (string).', isError: true };
+        }
+        if (ctx.signal?.aborted) {
+            return {
+                content: '[aborted by user]',
+                isError: true,
+                data: { terminationReason: 'aborted' },
+            };
+        }
+        const timeoutMs = Math.max(1_000, input.timeout ?? DEFAULT_TIMEOUT_MS);
+        // M3.5: wrap under platform sandbox if configured. ctx.sandboxConfig is
+        // populated by the agent loop owner (CLI REPL passes settings.sandbox).
+        const sctx = ctx;
+        const sandboxCfg = sctx.sandboxConfig;
+        const platform = sctx.sandboxPlatform ?? process.platform;
+        // M3.5-ext: does this command want the selective-allowlist network sandbox?
+        const useNet = needsNetworkSandbox(sandboxCfg, platform);
+        // Background: spawn detached, stream stdout+stderr into a log file, and
+        // return immediately. The agent reads the log path later (via Read) to see
+        // progress/output. The process survives this turn (own process group).
+        if (input.run_in_background) {
+            // The selective allowlist needs a slirp4netns helper that must outlive the
+            // turn — not supported for detached background commands. Fail CLOSED to
+            // deny-all-net so a background command can't escape the allowlist.
+            let bgCfg = sandboxCfg;
+            let bgNote = '';
+            if (useNet && sandboxCfg) {
+                bgCfg = denyAllNetwork(sandboxCfg);
+                bgNote =
+                    '[sandbox] selective network allowlist is not supported for background commands; running with NO network.\n';
+            }
+            const wrapped = await wrapBashCommand({
+                userCommand: input.command,
+                cwd: ctx.cwd,
+                config: bgCfg,
+                defaultMode: sctx.sandboxDefaultMode,
+            });
+            const dir = join(ctx.sessionDir ?? tmpdir(), 'bg');
+            const id = `bg-${Date.now().toString(36)}-${process.pid}-${bgSeq++}`;
+            const logPath = join(dir, `${id}.log`);
+            try {
+                await fs.mkdir(dir, { recursive: true });
+                await fs.writeFile(logPath, `${bgNote}$ ${input.command}\n`, 'utf8');
+                const fh = await fs.open(logPath, 'a');
+                try {
+                    const child = spawn(wrapped.command, wrapped.args, {
+                        cwd: ctx.cwd,
+                        detached: true,
+                        stdio: ['ignore', fh.fd, fh.fd],
+                    });
+                    const pid = child.pid;
+                    child.unref();
+                    return {
+                        content: `${bgNote}Started in background (pid ${pid ?? 'unknown'}). Output streams to:\n${logPath}\nRead that file to check progress or results.`,
+                        data: { background: true, pid, logPath, id },
+                    };
+                }
+                finally {
+                    await fh.close(); // child holds its own dup of the fd
+                }
+            }
+            catch (err) {
+                return {
+                    content: `Error starting background command: ${err.message}`,
+                    isError: true,
+                };
+            }
+        }
+        // Foreground. Effective config + an optional note (set on fail-closed).
+        let effectiveCfg = sandboxCfg;
+        let failNote;
+        if (useNet && sandboxCfg) {
+            const spawnFn = sctx.sandboxNetSpawn ?? spawnNetworkSandbox;
+            try {
+                return await runForegroundNet(input.command, sctx, sandboxCfg, timeoutMs, spawnFn);
+            }
+            catch (err) {
+                if (!(err instanceof NetworkSandboxUnavailable)) {
+                    return { content: `Error spawning sandboxed command: ${String(err)}`, isError: true };
+                }
+                // Fail CLOSED: run with no network rather than unrestricted.
+                effectiveCfg = denyAllNetwork(sandboxCfg);
+                failNote = `[sandbox] selective network allowlist unavailable (${err.message}); ran with NO network. See docs/security-model.md.`;
+            }
+        }
+        const wrapped = await wrapBashCommand({
+            userCommand: input.command,
+            cwd: ctx.cwd,
+            config: effectiveCfg,
+            defaultMode: sctx.sandboxDefaultMode,
+        });
+        return new Promise((resolvePromise) => {
+            const child = spawn(wrapped.command, wrapped.args, {
+                cwd: ctx.cwd,
+                detached: process.platform !== 'win32',
+            });
+            const stdout = newCapture();
+            const stderr = newCapture();
+            let terminationReason;
+            let settled = false;
+            const finish = (result) => {
+                if (settled)
+                    return;
+                settled = true;
+                clearTimeout(timer);
+                ctx.signal?.removeEventListener('abort', onAbort);
+                resolvePromise(result);
+            };
+            const terminate = (reason) => {
+                if (terminationReason)
+                    return;
+                terminationReason = reason;
+                killProcessTree(child, 'SIGKILL');
+                // Descendants can inherit these descriptors; destroying them also
+                // prevents an orphan from keeping the Promise open indefinitely.
+                child.stdout?.destroy();
+                child.stderr?.destroy();
+            };
+            const timer = setTimeout(() => {
+                terminate('timeout');
+            }, timeoutMs);
+            const onAbort = () => terminate('aborted');
+            ctx.signal?.addEventListener('abort', onAbort, { once: true });
+            child.stdout.on('data', (chunk) => {
+                stdout.push(chunk.toString('utf8'));
+            });
+            child.stderr.on('data', (chunk) => {
+                stderr.push(chunk.toString('utf8'));
+            });
+            child.on('error', (err) => {
+                finish({
+                    content: `Error spawning command: ${err.message}`,
+                    isError: true,
+                });
+            });
+            child.on('close', (code) => {
+                finish(summarize(stdout, stderr, terminationReason, code, timeoutMs, failNote));
+            });
+        });
+    },
+};
+//# sourceMappingURL=bash.js.map

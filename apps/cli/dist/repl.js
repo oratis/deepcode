@@ -1,0 +1,878 @@
+// CLI REPL — readline-based interactive loop.
+// Spec: docs/DEVELOPMENT_PLAN.md §5
+import { BashTool, CredentialsStore, DeepSeekProvider, EFFORT_PARAMS, HookDispatcher, HookTrustStore, ReadTool, RuntimeHost, SessionManager, ShellRegistry, TaskManager, ToolRegistry, WebFetchTool, WriteTool, appendAllowMatcher, applyStyle, buildSkillsDescriptionBlock, closeAllMcpServers, connectAllMcpServers, expandMcpResourceRefs, getMcpPrompt, mcpPromptCommands, resolveMcpPromptInvocation, expandCommandBody, findCustomCommand, findStyle, installToolSearch, loadMemory, rememberFact, loadOutputStyles, loadSettings, gateUntrustedSettings, loadSkills, loadSlashCommands, contextWindowFor, makeSkillTool, resolveCredentials, settingsPaths, wirePlugins, withAdditionalWritableDirs, withSandboxMode, collectPluginContributions, } from '@deepcode/core';
+import { createInterface } from 'node:readline/promises';
+import { CommandRegistry } from './commands.js';
+import { captureVoice } from './voice-capture.js';
+import { resolveEffort } from './parse-args.js';
+import { TrustStore } from './trust.js';
+import { resolveBuiltinSkillsDir } from './builtin-skills.js';
+import { ThinkingStream, colorEnabled, makePalette, renderApprovalPreview, renderToolCall, renderToolResult, } from './render.js';
+const DEFAULT_SYSTEM_PROMPT = `You are DeepCode, an AI coding assistant powered by DeepSeek. Help the user with their codebase using the available tools (Read, Write, Edit, Bash, Grep, Glob). Be concise and accurate. When you modify files, briefly explain what you changed and why.`;
+/**
+ * Decide which session a REPL launch should use:
+ *   - `resumeId`        → resume that exact session (append to it)
+ *   - `continueSession` → resume the most-recently-updated session in `cwd`
+ *   - `forkSession`     → resume into a NEW session seeded with a copy of the
+ *                         source history, leaving the original untouched
+ *   - otherwise         → a fresh session
+ * Pure over a `SessionManager`, so it's unit-testable without a live REPL.
+ */
+export async function resolveSession(sessions, cwd, model, opts) {
+    let sourceId = opts.resumeId;
+    if (!sourceId && opts.continueSession) {
+        // Most recent session in THIS directory (list() is updatedAt-desc).
+        const inCwd = (await sessions.list()).filter((m) => m.cwd === cwd);
+        if (inCwd.length === 0) {
+            return {
+                session: await sessions.create(cwd, { model }),
+                seededHistory: [],
+                notice: 'No previous session in this directory — starting a new one.',
+            };
+        }
+        sourceId = inCwd[0].id;
+    }
+    if (sourceId) {
+        const loaded = await sessions.load(sourceId);
+        if (!loaded) {
+            return {
+                session: await sessions.create(cwd, { model }),
+                seededHistory: [],
+                notice: `Session ${sourceId} not found — starting a new one.`,
+            };
+        }
+        const n = loaded.messages.length;
+        const plural = n === 1 ? '' : 's';
+        if (opts.forkSession) {
+            const forked = await sessions.create(cwd, {
+                model: loaded.meta.model ?? model,
+                title: loaded.meta.title,
+            });
+            for (const m of loaded.messages)
+                await sessions.append(forked.id, m);
+            return {
+                session: forked,
+                seededHistory: loaded.messages,
+                notice: `⎇ Forked ${sourceId} → ${forked.id} (${n} message${plural} copied).`,
+            };
+        }
+        return {
+            session: loaded.meta,
+            seededHistory: loaded.messages,
+            notice: `↻ Resumed ${sourceId} (${n} message${plural}).`,
+        };
+    }
+    return { session: await sessions.create(cwd, { model }), seededHistory: [] };
+}
+/**
+ * Interactive `--resume` with no id: list recent sessions and read a choice.
+ * Returns the chosen session id, or undefined to start fresh.
+ */
+async function pickSessionId(sessions, input, output) {
+    const list = (await sessions.list()).slice(0, 20);
+    if (list.length === 0) {
+        output.write('  No sessions to resume — starting a new one.\n');
+        return undefined;
+    }
+    output.write('\n  Resume which session?\n');
+    list.forEach((m, i) => {
+        const when = m.updatedAt.slice(0, 16).replace('T', ' ');
+        const label = m.title?.trim() ? m.title.trim() : m.id;
+        output.write(`    ${String(i + 1).padStart(2)}. ${label}  ·  ${when}\n`);
+    });
+    const picker = createInterface({ input, output, terminal: false });
+    const answer = (await picker.question('  Number (blank = new session): ')).trim();
+    picker.close();
+    const n = Number(answer);
+    if (!Number.isInteger(n) || n < 1 || n > list.length) {
+        if (answer)
+            output.write('  No match — starting a new one.\n');
+        return undefined;
+    }
+    return list[n - 1].id;
+}
+/**
+ * Run the interactive REPL.
+ *
+ * The persistent-shell registry is owned here, one per REPL session, so a shell
+ * the agent opens in one turn is still there in the next — which is the whole
+ * point of a shell that keeps its working directory. The wrapper closes every
+ * one of them on the way out, including when the session throws: these are real
+ * OS processes in their own process group, so they do not die with the CLI and
+ * "the loop will remember" is not a guarantee.
+ *
+ * @param opts REPL configuration.
+ * @returns Process exit code.
+ */
+export async function startRepl(opts) {
+    const shells = new ShellRegistry();
+    try {
+        return await runReplSession(opts, shells);
+    }
+    finally {
+        await shells.closeAll();
+    }
+}
+async function runReplSession(opts, shells) {
+    const { output, cwd } = opts;
+    // Load config + creds. Trust-gate first: in an untrusted directory, project
+    // /local hooks·mcpServers·apiKeyHelper·statusLine are stripped (the user-global
+    // layer is always trusted) so a freshly-cloned repo can't run code on launch.
+    const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
+    const trustStore = new TrustStore({ home: opts.home });
+    const trustStatus = await trustStore.statusFor(cwd);
+    const gate = gateUntrustedSettings(loaded, trustStatus);
+    let settings = gate.settings;
+    const gated = gate.gated;
+    if (gated.length > 0) {
+        output.write(`  ⚠ Untrusted directory — ignoring project ${gated.join(', ')} (can execute code).\n` +
+            `    Run \`deepcode trust\` here to enable them.\n`);
+    }
+    const hookReview = await new HookTrustStore({ home: opts.home }).review(cwd, loaded, settings.hooks);
+    settings = { ...settings, hooks: hookReview.hooks };
+    const pendingHooks = hookReview.reviews.filter((review) => !review.trusted);
+    if (pendingHooks.length > 0) {
+        output.write(`  ⚠ ${pendingHooks.length} project command hook(s) disabled; review with \`deepcode hooks list\`.\n`);
+    }
+    const credsStore = new CredentialsStore({ home: opts.home });
+    const creds = await resolveCredentials({
+        store: credsStore,
+        apiKeyHelper: settings.apiKeyHelper,
+    });
+    if (!creds.apiKey && !creds.authToken) {
+        output.write('No DeepSeek credentials found. Run `deepcode` (no args) to onboard, or set DEEPSEEK_API_KEY.\n');
+        return 1;
+    }
+    const model = opts.model ?? settings.model ?? 'deepseek-chat';
+    const mode = (opts.mode ?? settings.permissions?.defaultMode ?? 'default');
+    // Precedence: --effort flag → DEEPCODE_EFFORT_LEVEL env → settings.effortLevel → default.
+    // Spec: docs/DEVELOPMENT_PLAN.md §3.13c. (/effort runtime switch and skill
+    // frontmatter override happen later in the loop, not at construction time.)
+    const effort = resolveEffort({
+        cliFlag: opts.effort,
+        envVar: process.env.DEEPCODE_EFFORT_LEVEL,
+        settingsLevel: settings.effortLevel,
+    });
+    const { maxTokens, temperature } = EFFORT_PARAMS[effort] ?? EFFORT_PARAMS.medium;
+    const sessions = new SessionManager();
+    // Resolve which session to use: resume an explicit id, continue the most
+    // recent in this cwd, fork either into a new session, or start fresh.
+    let resumeId = opts.resumeId;
+    if (opts.resume && !resumeId && !opts.continueSession) {
+        resumeId = await pickSessionId(sessions, opts.input, output);
+    }
+    const resolved = await resolveSession(sessions, cwd, model, {
+        resumeId,
+        continueSession: opts.continueSession,
+        forkSession: opts.forkSession,
+    });
+    const session = resolved.session;
+    if (resolved.notice)
+        output.write(`  ${resolved.notice}\n`);
+    const provider = new DeepSeekProvider({
+        apiKey: creds.apiKey ?? '',
+        authToken: creds.authToken,
+        baseURL: creds.baseURL ?? settings.baseURL,
+    });
+    // M3c: --allowedTools / --disallowedTools filtering BEFORE registry construction
+    let tools;
+    if (opts.allowedTools || opts.disallowedTools) {
+        const { BUILTIN_TOOLS } = await import('@deepcode/core');
+        const allowSet = opts.allowedTools ? new Set(opts.allowedTools) : null;
+        const denySet = new Set(opts.disallowedTools ?? []);
+        const filtered = BUILTIN_TOOLS.filter((t) => {
+            if (denySet.has(t.name))
+                return false;
+            if (allowSet && !allowSet.has(t.name))
+                return false;
+            return true;
+        });
+        tools = new ToolRegistry(filtered);
+    }
+    else {
+        tools = new ToolRegistry();
+    }
+    const commands = new CommandRegistry();
+    // Trusted+enabled plugins contribute skills / sub-agents / commands (their
+    // dirs) + MCP servers. Hooks are merged separately by wirePlugins.
+    // `--no-plugins` skips discovery entirely (faster start / bypass a bad plugin).
+    const emptyContrib = {
+        dirs: [],
+        mcpServers: {},
+    };
+    const pluginContrib = opts.noPlugins
+        ? emptyContrib
+        : await collectPluginContributions({
+            home: opts.home,
+            disabled: settings.disabledPlugins,
+        });
+    // Custom prompt-template commands from plugin + user + project commands dirs.
+    const customCommands = await loadSlashCommands({
+        cwd,
+        home: opts.home,
+        pluginDirs: pluginContrib.dirs,
+    });
+    // M5: load memory, skills, output style — assemble final system prompt
+    const memory = await loadMemory({
+        cwd,
+        home: opts.home,
+        maxBytes: (settings.memoryLoadCapKB ?? 100) * 1024,
+    });
+    // Locate built-in skills dir (packaged with @deepcode/core)
+    const builtinSkillsDir = await resolveBuiltinSkillsDir();
+    const skills = await loadSkills({
+        cwd,
+        home: opts.home,
+        builtinDir: builtinSkillsDir,
+        pluginDirs: pluginContrib.dirs,
+        overrides: settings.skillOverrides,
+    });
+    const styles = await loadOutputStyles({ cwd, home: opts.home });
+    const activeStyle = findStyle(styles, settings.outputStyle ?? 'default');
+    // Register Skill tool (M5)
+    if (skills.length > 0) {
+        tools.register(makeSkillTool(skills));
+    }
+    // M3c: connect MCP servers (best-effort; individual failures don't abort)
+    let mcpServers = [];
+    let mcpErrors = [];
+    // Elicitation handler holder — filled once the readline interface exists
+    // (below). Until then (and there's nothing to elicit at connect time) it
+    // cancels. Servers see the `elicitation` capability via this passthrough.
+    const elicitHolder = {};
+    const elicitForServers = (req) => elicitHolder.fn ? elicitHolder.fn(req) : Promise.resolve({ action: 'cancel' });
+    // Plugin-contributed MCP servers + the user's settings (user wins on a clash).
+    const allMcpServers = { ...pluginContrib.mcpServers, ...(settings.mcpServers ?? {}) };
+    if (Object.keys(allMcpServers).length > 0) {
+        const enabled = settings.enabledMcpjsonServers;
+        const disabled = settings.disabledMcpjsonServers ?? [];
+        const result = await connectAllMcpServers(allMcpServers, {
+            enabledOnly: enabled,
+            disabled,
+            elicit: elicitForServers,
+        });
+        mcpServers = result.handles;
+        mcpErrors = result.errors;
+        // Register MCP tools. Servers default to eager; a server with
+        // `alwaysLoad: false` (the opt-out) has its tools deferred behind ToolSearch
+        // so a large toolkit doesn't bloat the tool list — the agent loads them on
+        // demand. The servers are already connected, so expand() just returns the
+        // already-built handler.
+        const deferredMcpTools = [];
+        for (const handle of mcpServers) {
+            const defer = settings.mcpServers?.[handle.serverName]?.alwaysLoad === false;
+            for (const tool of handle.tools) {
+                if (defer) {
+                    deferredMcpTools.push({
+                        name: tool.name,
+                        description: tool.definition.description,
+                        expand: () => tool,
+                    });
+                }
+                else {
+                    tools.register(tool);
+                }
+            }
+        }
+        const deferredNames = installToolSearch(tools, deferredMcpTools);
+        if (mcpServers.length > 0) {
+            const eager = mcpServers.reduce((n, h) => n + h.tools.length, 0) - deferredNames.length;
+            const resourceCount = mcpServers.reduce((n, h) => n + h.resources.length, 0);
+            const promptCmds = mcpPromptCommands(mcpServers);
+            output.write(`  ⊞ MCP: ${mcpServers.length} server(s) connected (${eager} tools` +
+                (deferredNames.length > 0 ? `, ${deferredNames.length} deferred behind ToolSearch` : '') +
+                (resourceCount > 0 ? `, ${resourceCount} resources` : '') +
+                (promptCmds.length > 0 ? `, ${promptCmds.length} prompts` : '') +
+                `)\n`);
+            if (promptCmds.length > 0) {
+                output.write(`  ⊞ MCP prompts: ${promptCmds.map((c) => c.command).join(', ')}\n`);
+            }
+        }
+        if (mcpErrors.length > 0) {
+            output.write(`  ⊞ MCP: ${mcpErrors.length} server(s) failed (see /mcp)\n`);
+        }
+    }
+    // Build the composite system prompt
+    // M3c: honor --system-prompt (replaces default) + --append-system-prompt /
+    // --append-system-prompt-file (appended after memory/skills/style).
+    let systemPrompt = opts.systemPromptOverride ?? DEFAULT_SYSTEM_PROMPT;
+    if (memory.text)
+        systemPrompt += '\n\n' + memory.text;
+    const skillsBlock = buildSkillsDescriptionBlock(skills);
+    if (skillsBlock)
+        systemPrompt += '\n\n' + skillsBlock;
+    systemPrompt = applyStyle(systemPrompt, activeStyle);
+    if (opts.appendSystemPrompt)
+        systemPrompt += '\n\n' + opts.appendSystemPrompt;
+    if (opts.appendSystemPromptFile) {
+        try {
+            const { readFile } = await import('node:fs/promises');
+            systemPrompt += '\n\n' + (await readFile(opts.appendSystemPromptFile, 'utf8'));
+        }
+        catch (err) {
+            output.write(`⚠ Could not read --append-system-prompt-file: ${err.message}\n`);
+        }
+    }
+    // Hook dispatcher (M3 + M3c-ext)
+    const hooks = new HookDispatcher({
+        hooks: settings.hooks,
+        disableAllHooks: settings.disableAllHooks,
+        allowedHttpHookUrls: settings.allowedHttpHookUrls,
+    });
+    // M5.2: wire installed plugins (discover + spawn + merge contributed hooks).
+    // `--no-plugins` skips this entirely.
+    let pluginsWire = null;
+    if (!opts.noPlugins) {
+        try {
+            pluginsWire = await wirePlugins({
+                home: opts.home,
+                disabled: settings.disabledPlugins,
+                hooks,
+                capabilities: buildPluginCapabilities(cwd),
+                sandbox: withAdditionalWritableDirs(withSandboxMode(settings.sandbox, opts.sandbox), settings.permissions?.additionalDirectories, cwd),
+                log: (s) => output.write(s + '\n'),
+            });
+        }
+        catch (err) {
+            output.write(`  ⊞ Plugins: wire-up failed — ${err.message}\n`);
+        }
+    }
+    let history = resolved.seededHistory;
+    const runtime = new RuntimeHost({
+        provider,
+        tools,
+        cwd,
+        mode,
+        permissions: settings.permissions,
+        hooks,
+        pluginDirs: pluginContrib.dirs,
+        autoMode: settings.autoMode,
+        sandboxConfig: withAdditionalWritableDirs(withSandboxMode(settings.sandbox, opts.sandbox), settings.permissions?.additionalDirectories, cwd),
+        home: opts.home,
+    });
+    // Surfaced at startup rather than on first refusal: a read `deny` running with
+    // the sandbox off looks like protection and is not, and the user should learn
+    // that before they rely on it.
+    for (const warning of await runtime.contractWarnings(cwd)) {
+        output.write(`Warning: ${warning}\n`);
+    }
+    const ctx = {
+        cwd,
+        model,
+        mode,
+        effort,
+        settings,
+        creds,
+        credsStore,
+        userSettingsPath: settingsPaths({ cwd, home: opts.home }).userPath,
+        home: opts.home,
+        sessionId: session.id,
+        sessions,
+        usage: { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 },
+        mcpServers,
+        mcpErrors,
+        wiredPlugins: pluginsWire?.plugins.map((p) => ({
+            name: p.plugin.manifest.name,
+            version: p.plugin.manifest.version,
+            contributedHookEvents: p.contributedHookEvents,
+        })),
+        pluginWarnings: [
+            ...(pluginsWire?.hashMismatches ?? []),
+            ...(pluginsWire?.spawnFailures.map((n) => `${n}: failed to start`) ?? []),
+        ],
+        initFlow: () => runInitFlow({ cwd, output, rl, provider, model, maxTokens, temperature }),
+        // M8: /voice records from the mic + transcribes via whisper.cpp, then the
+        // loop pre-fills the next input line with the transcript (rl is created below).
+        voiceCapture: () => captureVoice({ rl, output, settings, home: opts.home }),
+        // M7: /rewind needs access to history + provider.
+        provider,
+        history,
+    };
+    // Session-scoped background-task manager (M3.15.3 / parity: /tasks, /background).
+    // ONE manager for the whole REPL session so tasks persist across turns and are
+    // visible to both the agent (via TaskCreate) and slash commands. Each turn's
+    // runAgent attaches a richer runner (named sub-agents + SubagentStop). This
+    // baseline runner only handles `/background` started before the first turn:
+    // it runs the prompt as a depth-1 sub-agent (clean context, no nested tasks),
+    // reading ctx.model/ctx.mode live so /model and /mode switches are honored.
+    const tasks = new TaskManager((spec) => {
+        const ac = new AbortController();
+        const done = runtime
+            .run({
+            systemPrompt,
+            userMessage: spec.prompt,
+            model: ctx.model,
+            maxTokens,
+            temperature,
+            cwd: ctx.cwd,
+            signal: ac.signal,
+            modeOverride: ctx.mode,
+            subAgentDepth: 1,
+            systemReminders: false,
+        })
+            .then((r) => assistantText(r.history));
+        return { done, abort: () => ac.abort() };
+    });
+    ctx.tasks = tasks;
+    ctx.shells = shells;
+    // Colour resolves once: a --no-color flag, NO_COLOR/FORCE_COLOR, or whether
+    // stdout is actually a terminal. Piped output stays plain.
+    const palette = makePalette(!opts.noColor && colorEnabled(process.env, output.isTTY === true));
+    if (!opts.bare) {
+        output.write(`\n  ▎ DeepCode  ·  ${ctx.model}  ·  mode: ${ctx.mode}  ·  effort: ${ctx.effort}\n`);
+        output.write(`  Working in ${cwd}\n`);
+        output.write(`  Type /help for commands, /exit to quit.\n\n`);
+    }
+    const rl = createInterface({ input: opts.input, output, terminal: true });
+    // Now that readline exists, let MCP servers elicit structured input from the
+    // user: print the server's message, prompt for each requested field.
+    elicitHolder.fn = async (req) => {
+        output.write(`\n  ⊞ ${req.server} requests input: ${req.message}\n`);
+        const props = (req.requestedSchema.properties ?? {});
+        const content = {};
+        for (const [key, spec] of Object.entries(props)) {
+            const label = spec.description ? `${key} (${spec.description})` : key;
+            const ans = (await rl.question(`     ${label}: `)).trim();
+            if (ans)
+                content[key] = ans;
+        }
+        return Object.keys(content).length > 0 ? { action: 'accept', content } : { action: 'cancel' };
+    };
+    let ctrlCCount = 0;
+    rl.on('SIGINT', () => {
+        ctrlCCount++;
+        if (ctrlCCount >= 2) {
+            output.write('\nGoodbye.\n');
+            rl.close();
+            return;
+        }
+        output.write('\n(Press Ctrl+C again to exit.)\n');
+        setTimeout(() => {
+            ctrlCCount = 0;
+        }, 2000);
+    });
+    // Session-lifecycle hooks (the agent loop fires the per-turn ones).
+    const fireLifecycle = async (event, payload = {}) => {
+        try {
+            await hooks.dispatch({
+                event,
+                cwd: ctx.cwd,
+                triggeredAt: new Date().toISOString(),
+                payload,
+            });
+        }
+        catch {
+            /* hook failure must not break the REPL */
+        }
+    };
+    await fireLifecycle('SessionStart', { sessionId: session.id, source: 'cli' });
+    // Text to inject into the next prompt's input buffer (e.g. a /voice transcript
+    // the user can edit before submitting). Written right after the prompt renders.
+    let pendingPrefill;
+    while (true) {
+        let userInput;
+        try {
+            const question = rl.question('› ');
+            if (pendingPrefill !== undefined) {
+                rl.write(pendingPrefill);
+                pendingPrefill = undefined;
+            }
+            userInput = await question;
+        }
+        catch {
+            break;
+        }
+        ctrlCCount = 0;
+        if (!userInput.trim())
+            continue;
+        // `#<text>` — remember a fact to project memory (no agent turn).
+        if (userInput.trim().startsWith('#')) {
+            const fact = userInput.trim().slice(1).trim();
+            if (fact) {
+                try {
+                    const path = await rememberFact(ctx.cwd, fact, opts.home);
+                    output.write(`  ✓ Remembered to ${path}\n\n`);
+                }
+                catch (e) {
+                    output.write(`  ⚠ Could not save memory: ${e.message}\n\n`);
+                }
+            }
+            continue;
+        }
+        // Slash command?
+        const match = commands.match(userInput);
+        if (match) {
+            // Refresh ctx.history snapshot before running — /rewind reads it.
+            ctx.history = history;
+            const lines = await Promise.resolve(match.cmd.run(match.args, ctx));
+            for (const line of lines)
+                output.write(line + '\n');
+            output.write('\n');
+            if (ctx.clearHistory) {
+                history = [];
+                ctx.clearHistory = false;
+            }
+            if (ctx.newHistory) {
+                history = ctx.newHistory;
+                ctx.newHistory = undefined;
+            }
+            if (ctx.prefillInput) {
+                pendingPrefill = ctx.prefillInput;
+                ctx.prefillInput = undefined;
+            }
+            if (ctx.exitRequested)
+                break;
+            continue;
+        }
+        // MCP prompt command (`/mcp__<server>__<prompt> [args]`)? Fetch the rendered
+        // prompt from the server and submit it as the user prompt.
+        if (userInput.trim().startsWith('/mcp__') && mcpServers.length > 0) {
+            const inv = resolveMcpPromptInvocation(userInput, mcpServers);
+            if (inv) {
+                try {
+                    userInput = await getMcpPrompt(inv.handle, inv.prompt, inv.args);
+                    output.write(`  ▸ /mcp__${inv.handle.serverName}__${inv.prompt} (MCP prompt)\n\n`);
+                }
+                catch (err) {
+                    output.write(`  ⚠ MCP prompt failed: ${err.message}\n`);
+                    continue;
+                }
+            }
+        }
+        // Custom prompt-template command (.deepcode/commands/<name>.md)? Expand its
+        // body with the args and submit it to the agent as the user prompt.
+        if (userInput.trim().startsWith('/')) {
+            const parts = userInput.trim().split(/\s+/);
+            const custom = findCustomCommand(customCommands, parts[0]);
+            if (custom) {
+                userInput = expandCommandBody(custom.body, parts.slice(1));
+                output.write(`  ▸ ${custom.name} (${custom.source} command)\n\n`);
+            }
+        }
+        // Expand `@server:scheme://path` MCP resource references — read each resource
+        // and append its content as a tagged block the model can use.
+        if (mcpServers.length > 0) {
+            const { text, resolved, errors } = await expandMcpResourceRefs(userInput, mcpServers);
+            userInput = text;
+            for (const r of resolved)
+                output.write(`  ⊞ resource @${r.server}:${r.uri}\n`);
+            for (const e of errors) {
+                output.write(`  ⚠ resource @${e.ref.server}:${e.ref.uri} — ${e.error}\n`);
+            }
+        }
+        // One reasoning stream per turn: it owns the "am I mid-line inside the
+        // thinking gutter" state, which must not leak across turns.
+        const thinking = opts.hideThinking ? null : new ThinkingStream(palette);
+        // Otherwise: send to agent (with mode/permission/hooks gating from M3b)
+        const result = await runtime.run({
+            systemPrompt,
+            userMessage: userInput,
+            history,
+            model: ctx.model,
+            maxTokens,
+            temperature,
+            maxTurns: opts.maxTurns,
+            cwd: ctx.cwd,
+            // ctx.sessionId (not the launch `session.id`) so a live `/resume <id>`
+            // switch redirects new messages to the resumed session.
+            session: { manager: sessions, id: ctx.sessionId },
+            modeOverride: ctx.mode,
+            autoCompact: { contextWindow: contextWindowFor(ctx.model), threshold: 0.8 },
+            // Session-scoped manager: the agent's TaskCreate calls land here too, so
+            // background tasks persist across turns and show up in /tasks.
+            taskManager: tasks,
+            // Session-scoped too, for the same reason: a shell opened this turn has to
+            // still be there next turn or it is just a slower Bash. Deliberately NOT
+            // given to the background-task runner below — two agents interleaving
+            // commands in one shell would each be wrong about its state.
+            shells,
+            approval: async (toolName, input, verdict) => {
+                output.write(`\n  ${palette.yellow('⏸')} Approve ${palette.bold(toolName)}?  ${palette.dim(verdict.reason)}\n`);
+                // Show what is about to happen. A Write gets diffed against the file on
+                // disk when it already exists, so an overwrite doesn't look like a
+                // creation.
+                let existing;
+                if (toolName === 'Write' && typeof input.file_path === 'string') {
+                    try {
+                        const { readFile } = await import('node:fs/promises');
+                        existing = await readFile(input.file_path, 'utf8');
+                    }
+                    catch {
+                        /* new file — no baseline */
+                    }
+                }
+                output.write(renderApprovalPreview(toolName, input, palette, existing));
+                const answer = (await rl.question('     [y]es / [n]o / [a]lways: ')).trim().toLowerCase();
+                if (answer === 'a' || answer === 'always') {
+                    // Persist a bare-tool matcher to project-local settings so the next
+                    // run of this tool from this project skips the prompt.
+                    try {
+                        const { localPath } = settingsPaths({ cwd: ctx.cwd });
+                        await appendAllowMatcher(localPath, toolName);
+                        output.write(`     ✓ Added "${toolName}" to ${localPath} permissions.allow\n`);
+                    }
+                    catch (err) {
+                        output.write(`     ⚠ Could not persist always-allow: ${err.message}\n`);
+                    }
+                    return 'always';
+                }
+                return answer === 'y' || answer === 'yes';
+            },
+            askUser: async (req) => {
+                output.write(`\n  ❓ ${req.question}\n`);
+                const opts = req.options ?? [];
+                opts.forEach((o, i) => {
+                    output.write(`     ${i + 1}. ${o.label}${o.description ? ` — ${o.description}` : ''}\n`);
+                });
+                if (opts.length === 0) {
+                    return (await rl.question('     Answer: ')).trim();
+                }
+                const reply = (await rl.question(`     Pick 1-${opts.length} (or type free text): `)).trim();
+                const n = Number(reply);
+                if (Number.isInteger(n) && n >= 1 && n <= opts.length) {
+                    return opts[n - 1].label;
+                }
+                return `Other: ${reply}`;
+            },
+            onEvent: (e) => formatEvent(output, e, palette, thinking),
+        });
+        if (thinking)
+            output.write(thinking.close());
+        history = result.history;
+        ctx.usage.inputTokens += result.usage.inputTokens;
+        ctx.usage.outputTokens += result.usage.outputTokens;
+        ctx.usage.reasoningTokens += result.usage.reasoningTokens;
+        ctx.usage.cacheReadTokens += result.usage.cacheReadTokens;
+        // M3c-rest: honor ExitPlanMode tool signal — flip plan → default
+        if (result.modeSignal?.exitPlanMode && ctx.mode === 'plan') {
+            ctx.mode = 'default';
+            output.write('\n  ▶ Exited plan mode (agent will now execute).\n');
+        }
+        // Honor EnterPlanMode tool signal — flip into plan mode (writes blocked).
+        if (result.modeSignal?.enterPlanMode && ctx.mode !== 'plan') {
+            ctx.mode = 'plan';
+            output.write('\n  ◐ Entered plan mode (write tools blocked until you exit).\n');
+        }
+        output.write('\n');
+        if (result.stopReason === 'error') {
+            output.write('  ✕ Error during agent loop. Try again or /status to inspect.\n\n');
+        }
+        // Notification hook — the turn finished and control returns to the user.
+        await fireLifecycle('Notification', {
+            message: 'DeepCode finished responding — awaiting your input.',
+            stopReason: result.stopReason,
+        });
+    }
+    await fireLifecycle('SessionEnd', { sessionId: session.id });
+    rl.close();
+    // Clean up MCP server connections
+    if (mcpServers.length > 0) {
+        await closeAllMcpServers(mcpServers);
+    }
+    // Shut down plugin subprocesses
+    if (pluginsWire)
+        await pluginsWire.shutdown();
+    return 0;
+}
+/**
+ * Renders one agent event. Reasoning is a dim side channel that has to be
+ * closed before anything else prints, so this needs the per-turn
+ * `ThinkingStream` rather than being a pure function of the event.
+ */
+function formatEvent(out, e, palette, thinking) {
+    const closeThinking = () => {
+        if (thinking)
+            out.write(thinking.close());
+    };
+    switch (e.type) {
+        case 'text_delta':
+            closeThinking();
+            out.write(e.text);
+            return;
+        case 'thinking_delta':
+            if (thinking)
+                out.write(thinking.delta(e.text));
+            return;
+        case 'tool_use':
+            closeThinking();
+            out.write(renderToolCall(e.name, e.input, palette));
+            // Show the change itself, not just "Edit src/a.ts" — in acceptEdits mode
+            // there is no approval prompt, so this is the only place the user sees it.
+            if (e.name === 'Edit' || e.name === 'Write') {
+                out.write(renderApprovalPreview(e.name, e.input, palette));
+            }
+            return;
+        case 'tool_result':
+            closeThinking();
+            out.write(renderToolResult(e.result.content, e.result.isError === true, palette));
+            return;
+        case 'usage':
+        case 'model_step_complete':
+            return;
+        case 'error':
+            closeThinking();
+            out.write(`\n  ${palette.red('✕')} ${e.error}\n`);
+            return;
+        case 'turn_complete':
+            return;
+    }
+}
+/** Flatten an agent run's assistant text — the result of a background task. */
+function assistantText(history) {
+    return history
+        .filter((m) => m.role === 'assistant')
+        .flatMap((m) => m.content)
+        .filter((b) => b.type === 'text')
+        .map((b) => b.text)
+        .join('\n')
+        .trim();
+}
+/**
+ * Multi-phase /init flow — scans the project, asks the LLM to draft an
+ * AGENTS.md, shows the draft, and asks the user to approve. Returns the
+ * path written, or null if the user said no.
+ */
+async function runInitFlow(args) {
+    const { cwd, output, rl, provider, model, maxTokens, temperature } = args;
+    const path = await import('node:path');
+    const fsp = await import('node:fs/promises');
+    const target = path.join(cwd, 'AGENTS.md');
+    // Phase 1: scan
+    output.write('  ▎ /init — Phase 1/3: scanning project...\n');
+    const summary = await buildProjectSummary(cwd);
+    // Phase 2: propose
+    output.write('  ▎ /init — Phase 2/3: asking model to draft AGENTS.md...\n');
+    const draft = await draftAgentsMd(provider, model, summary, maxTokens, temperature);
+    // Phase 3: approve
+    output.write('\n  ▎ Proposed AGENTS.md:\n');
+    output.write('  ┌─────────────────────────────────────────\n');
+    for (const line of draft.split('\n').slice(0, 40)) {
+        output.write(`  │ ${line}\n`);
+    }
+    if (draft.split('\n').length > 40)
+        output.write('  │ ... (truncated)\n');
+    output.write('  └─────────────────────────────────────────\n');
+    let exists = false;
+    try {
+        await fsp.access(target);
+        exists = true;
+    }
+    catch {
+        /* none */
+    }
+    const verb = exists ? 'Overwrite' : 'Write';
+    const ans = (await rl.question(`     ${verb} ${target}? [y]es / [n]o: `)).trim().toLowerCase();
+    if (ans !== 'y' && ans !== 'yes')
+        return null;
+    await fsp.writeFile(target, draft, 'utf8');
+    return target;
+}
+async function buildProjectSummary(cwd) {
+    const path = await import('node:path');
+    const fsp = await import('node:fs/promises');
+    const parts = [];
+    // Top-level listing
+    try {
+        const entries = await fsp.readdir(cwd, { withFileTypes: true });
+        parts.push('Top-level entries:');
+        for (const e of entries.slice(0, 40)) {
+            parts.push(`  ${e.isDirectory() ? 'd' : '-'} ${e.name}`);
+        }
+    }
+    catch {
+        /* ignore */
+    }
+    // Pick up to 3 well-known files
+    for (const f of ['package.json', 'README.md', 'pyproject.toml', 'Cargo.toml', 'go.mod']) {
+        try {
+            const raw = await fsp.readFile(path.join(cwd, f), 'utf8');
+            parts.push(`\n=== ${f} (first 30 lines) ===`);
+            parts.push(raw.split('\n').slice(0, 30).join('\n'));
+        }
+        catch {
+            /* not present */
+        }
+    }
+    return parts.join('\n');
+}
+async function draftAgentsMd(provider, model, summary, maxTokens, temperature) {
+    const sys = `You are drafting an AGENTS.md (the per-project agent-instructions file). Output ONLY the Markdown — no preface, no fences. Sections to include:
+
+1. Project name and one-line description
+2. Tech stack
+3. How to install / build / test
+4. Code style conventions (if discernible)
+5. Where the entry points / important files live
+6. Any "do/don't" notes specific to this project
+
+Keep it under 80 lines.`;
+    const r = await provider.runTurn({
+        model,
+        systemPrompt: sys,
+        tools: [],
+        messages: [
+            {
+                role: 'user',
+                content: [{ type: 'text', text: `Project scan:\n${summary}` }],
+            },
+        ],
+        maxTokens: maxTokens ?? 2048,
+        temperature: temperature ?? 0.3,
+    });
+    const text = r.content
+        .filter((c) => c.type === 'text')
+        .map((c) => c.text)
+        .join('');
+    return text.trim() || '# AGENTS.md\n\n(The model returned an empty draft.)\n';
+}
+/**
+ * Build the capability bridge passed to plugin subprocesses (M5.2).
+ *
+ * Each capability invokes the host's existing tool implementation — which
+ * means plugin calls flow through the SAME read/write/exec gates as the
+ * agent. (mode + permissions + sandbox come from the ToolContext we pass in.)
+ *
+ * NOTE: this bridge does NOT carry mode/permissions yet — that's M5.2-ext.
+ * Today the plugin's `bash` calls are unsandboxed because we don't have a
+ * sandboxConfig in ctx here. Callers wanting hardening should set
+ * settings.sandbox.enabled and pass sandboxConfig in a later iteration.
+ */
+function buildPluginCapabilities(cwd) {
+    const ctx = { cwd };
+    return {
+        fs_read: async (path) => {
+            const r = await ReadTool.execute({ file_path: path }, ctx);
+            if (r.isError)
+                throw new Error(r.content);
+            return r.content;
+        },
+        fs_write: async (path, content) => {
+            const r = await WriteTool.execute({ file_path: path, content }, ctx);
+            if (r.isError)
+                throw new Error(r.content);
+        },
+        bash: async (cmd) => {
+            const r = await BashTool.execute({ command: cmd }, ctx);
+            const d = (r.data ?? {});
+            return {
+                stdout: r.content ?? '',
+                stderr: d.stderr ?? '',
+                exitCode: d.exitCode ?? (r.isError ? 1 : 0),
+            };
+        },
+        fetch: async (url, fopts) => {
+            void fopts; // method/body deferred — WebFetch is GET-only
+            const r = await WebFetchTool.execute({ url }, ctx);
+            if (r.isError)
+                throw new Error(r.content);
+            return r.content;
+        },
+    };
+}
+/**
+ * Find the bundled built-in skills directory.
+ * In dev: <repo>/packages/core/skills/.
+ * In published package: packaged inside @deepcode/core/skills/.
+ * Returns undefined if not found.
+ */
+//# sourceMappingURL=repl.js.map

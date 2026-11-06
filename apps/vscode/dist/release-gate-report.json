@@ -1,0 +1,58 @@
+{
+  "status": "ok",
+  "platform": "darwin-arm64",
+  "budgets": {
+    "extensionBytes": 65536,
+    "appServerBytes": 786432,
+    "vsixBytes": 262144,
+    "initializeMs": 5000,
+    "metadataRequestMs": 2000,
+    "workspaceDiffMs": 10000
+  },
+  "bundles": {
+    "extensionBytes": 31814,
+    "appServerBytes": 661919,
+    "vsixBytes": 203975
+  },
+  "journeys": [
+    {
+      "name": "create-and-read",
+      "threadId": "thread-mt8srpdm-wah8m9",
+      "timings": {
+        "initializeMs": 124.18,
+        "threadStartMs": 4.05,
+        "threadReadMs": 1.23,
+        "configDiagnosticsMs": 1.82,
+        "workspaceDiffMs": 101.25
+      }
+    },
+    {
+      "name": "restart-and-resume",
+      "threadId": "thread-mt8srpdm-wah8m9",
+      "timings": {
+        "initializeMs": 117.19,
+        "threadReadMs": 4.52,
+        "threadResumeMs": 1.11
+      }
+    }
+  ],
+  "architectureScan": {
+    "filesChecked": 59,
+    "violations": []
+  },
+  "desktopCapabilities": {
+    "permissions": [
+      "core:default",
+      "core:window:default",
+      "core:window:allow-set-title",
+      "core:window:allow-minimize",
+      "core:window:allow-maximize",
+      "core:window:allow-close",
+      "dialog:allow-open",
+      "opener:allow-default-urls",
+      "updater:default",
+      "process:allow-restart"
+    ],
+    "providerNetworkAccess": false
+  }
+}
