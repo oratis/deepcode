@@ -1,0 +1,198 @@
+// Memory loader — assembles the system-prompt-relevant context from:
+//   1. DEEPCODE.md (project-root + parent dirs walking upward)
+//   2. ~/.deepcode/DEEPCODE.md (user-level)
+//   3. AGENTS.md (auto-imported at top of merged DEEPCODE.md)
+//   4. @-import expansion (recursive, max 4 hops with cycle detection)
+//   5. .deepcode/rules/*.md with optional path frontmatter
+//
+// Spec: docs/DEVELOPMENT_PLAN.md §3.6a
+import { promises as fs } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { parseFrontmatter } from '../skills/frontmatter.js';
+/** Slugify an absolute project path into a stable per-repo key (mirrors the
+ *  harness layout `~/.deepcode/projects/<key>/memory/MEMORY.md`). */
+export function projectMemoryKey(cwd) {
+    return resolve(cwd).replace(/[/\\]+/g, '-');
+}
+/** Path to the agent/user-written project memory file for `cwd`. */
+export function projectMemoryPath(home, cwd) {
+    return join(home, '.deepcode', 'projects', projectMemoryKey(cwd), 'memory', 'MEMORY.md');
+}
+/**
+ * Append a remembered fact to the project memory file (the `#` store). Creates
+ * the file with a header on first write. Returns the file path.
+ */
+export async function rememberFact(cwd, fact, home = homedir()) {
+    const path = projectMemoryPath(home, cwd);
+    await fs.mkdir(dirname(path), { recursive: true });
+    let header = '';
+    try {
+        await fs.access(path);
+    }
+    catch {
+        header = `# Project memory\n\nFacts DeepCode should remember for this project.\n\n`;
+    }
+    await fs.appendFile(path, `${header}- ${fact.trim()}\n`, 'utf8');
+    return path;
+}
+const DEFAULT_MAX_BYTES = 100 * 1024;
+const DEFAULT_MAX_DEPTH = 4;
+export async function loadMemory(opts) {
+    const home = opts.home ?? homedir();
+    const directory = opts.directory ?? join(home, '.deepcode');
+    const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
+    const maxDepth = opts.maxImportDepth ?? DEFAULT_MAX_DEPTH;
+    const sources = [];
+    const unresolvedImports = [];
+    const visited = new Set();
+    let bytes = 0;
+    // Process already-read content: expand @-imports, enforce the byte cap, push.
+    const addRaw = async (abs, label, raw, depth) => {
+        const expanded = depth < maxDepth ? await expandImports(raw, abs, depth + 1, addFile, unresolvedImports) : raw;
+        if (bytes + expanded.length > maxBytes) {
+            const remaining = Math.max(0, maxBytes - bytes);
+            const truncated = expanded.slice(0, remaining) + '\n... [truncated by memoryLoadCapKB]';
+            sources.push({ label, path: abs, content: truncated });
+            bytes += truncated.length;
+            return;
+        }
+        sources.push({ label, path: abs, content: expanded });
+        bytes += expanded.length;
+    };
+    const addFile = async (path, label, depth) => {
+        const abs = resolve(path);
+        if (visited.has(abs))
+            return; // cycle
+        visited.add(abs);
+        const raw = await readMaybe(abs);
+        if (raw === null)
+            return;
+        await addRaw(abs, label, raw, depth);
+    };
+    // 0. ~/.claude/CLAUDE.md — a Claude Code user's existing global instructions.
+    //    Read first so DeepCode's own files can override it, and read in place
+    //    rather than requiring `mv ~/.claude ~/.deepcode`: the migration guide's
+    //    five-step copy was the largest piece of grit in the way of trying this.
+    await addFile(join(home, '.claude', 'CLAUDE.md'), 'CLAUDE.md (Claude Code)', 0);
+    // 1. ~/.deepcode/DEEPCODE.md (user-level)
+    await addFile(join(directory, 'DEEPCODE.md'), 'user memory', 0);
+    // 1b. Agent/user-written project memory (the `#` remember store).
+    await addFile(join(directory, 'projects', projectMemoryKey(opts.cwd), 'memory', 'MEMORY.md'), 'project memory', 0);
+    // 2. CLAUDE.md / DEEPCODE.md walking from cwd → root, deepest first.
+    // Reverse so root-most first, deepest last (later overrides via concat — Claude Code semantics)
+    const upwards = walkUpwards(opts.cwd, home);
+    for (const dir of upwards.reverse()) {
+        // CLAUDE.md before DEEPCODE.md at each level: same-directory DeepCode
+        // instructions win over the Claude Code ones they were derived from.
+        await addFile(join(dir, 'CLAUDE.md'), `${dir}/CLAUDE.md`, 0);
+        await addFile(join(dir, 'DEEPCODE.md'), `${dir}/DEEPCODE.md`, 0);
+    }
+    // 3. AGENTS.md (project root only — co-located with DEEPCODE.md)
+    await addFile(join(opts.cwd, 'AGENTS.md'), 'AGENTS.md (cross-tool)', 0);
+    // 4. .deepcode/rules/*.md — path-scoped via frontmatter. A rule's `globs`
+    //    (or `applyTo`/`paths`) is surfaced in its header so the model applies it
+    //    only when editing matching files; the frontmatter block itself is stripped.
+    const rulesDir = join(opts.cwd, '.deepcode', 'rules');
+    try {
+        const entries = await fs.readdir(rulesDir);
+        for (const e of entries.sort()) {
+            if (!e.endsWith('.md'))
+                continue;
+            const rulePath = resolve(join(rulesDir, e));
+            if (visited.has(rulePath))
+                continue;
+            visited.add(rulePath);
+            const raw = await readMaybe(rulePath);
+            if (raw === null)
+                continue;
+            const { fields, body } = parseFrontmatter(raw);
+            const globs = fields.globs ?? fields.applyTo ?? fields.paths;
+            const scope = globs !== undefined
+                ? ` (applies to: ${Array.isArray(globs) ? globs.join(', ') : String(globs)})`
+                : '';
+            await addRaw(rulePath, `rule: ${e}${scope}`, body.trim() || raw, 0);
+        }
+    }
+    catch (err) {
+        if (err.code !== 'ENOENT')
+            throw err;
+    }
+    const text = sources.map((s) => `# ${s.label}\n\n${s.content}`).join('\n\n---\n\n');
+    return { sources, text, bytes, unresolvedImports };
+}
+async function readMaybe(path) {
+    try {
+        return await fs.readFile(path, 'utf8');
+    }
+    catch (err) {
+        if (err.code === 'ENOENT')
+            return null;
+        throw err;
+    }
+}
+/**
+ * Walk from `start` up to (but not including) `boundary`.
+ * If start is outside boundary, returns just [start].
+ */
+export function walkUpwards(start, boundary) {
+    const out = [];
+    let cur = resolve(start);
+    const boundaryAbs = resolve(boundary);
+    const root = sep; // '/' on POSIX
+    // include boundary itself? we exclude $HOME because user-level loaded separately
+    while (true) {
+        out.push(cur);
+        if (cur === boundaryAbs)
+            break;
+        if (cur === root)
+            break;
+        const parent = dirname(cur);
+        if (parent === cur)
+            break;
+        cur = parent;
+    }
+    return out;
+}
+/**
+ * Expand `@<path>` references in markdown. Paths are resolved relative to the
+ * file containing the @-import. Supports `@~/path` (home-relative) and absolute.
+ */
+async function expandImports(content, sourcePath, depth, addFile, unresolved) {
+    // Match @<path>  where <path> doesn't contain whitespace
+    const importPattern = /(^|\s)@([\w./~-]+(?:\.md|\.txt)?)/g;
+    const matches = [...content.matchAll(importPattern)];
+    if (matches.length === 0)
+        return content;
+    // Use the FIRST import recursively (then we drop the @-import line from output)
+    for (const m of matches) {
+        const ref = m[2];
+        const target = resolveImportPath(ref, sourcePath);
+        const exists = await fileExists(target);
+        if (!exists) {
+            unresolved.push(`${sourcePath}: @${ref}`);
+            continue;
+        }
+        await addFile(target, `@${ref} (from ${sourcePath})`, depth);
+    }
+    // Strip @-import markers from the inlined content (they're handled separately)
+    return content.replace(importPattern, (_full, lead) => lead);
+}
+function resolveImportPath(ref, sourcePath) {
+    if (ref.startsWith('~/')) {
+        return join(homedir(), ref.slice(2));
+    }
+    if (isAbsolute(ref))
+        return ref;
+    return join(dirname(sourcePath), ref);
+}
+async function fileExists(path) {
+    try {
+        await fs.access(path);
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+//# sourceMappingURL=loader.js.map

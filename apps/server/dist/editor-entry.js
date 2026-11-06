@@ -1,0 +1,8 @@
+import process from 'node:process';
+import { runAppServer } from './run.js';
+const home = process.env.DEEPCODE_HOME ?? `${process.env.HOME ?? process.cwd()}/.deepcode`;
+runAppServer({ input: process.stdin, output: process.stdout, home }).catch((error) => {
+    process.stderr.write(`DeepCode app-server fatal: ${error.message ?? String(error)}\n`);
+    process.exitCode = 1;
+});
+//# sourceMappingURL=editor-entry.js.map

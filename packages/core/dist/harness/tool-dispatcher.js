@@ -1,0 +1,168 @@
+// Tool dispatcher — the central gate. Combines mode + permission + hook decision
+// into a single allow/ask/deny verdict.
+// Spec: docs/design/sandbox-plan-worktree.md §5.1
+//       docs/DEVELOPMENT_PLAN.md §3.8 / §3.15
+import { classifyAutoMode } from '../auto-mode/index.js';
+import { evaluateMode } from '../modes/index.js';
+import { evaluatePermission, } from '../config/permissions.js';
+import { evaluateContract, mostRestrictive } from '../config/contract-dispatch.js';
+/**
+ * Evaluate a tool call against contract + mode + permission + PreToolUse hook.
+ *
+ * Decision order (per docs/design/sandbox-plan-worktree.md §5.1):
+ *   0. File contract `deny` (absolute — see below)
+ *   1. Mode policy (plan-blocked / deny short-circuit immediately)
+ *   2. Permission rules, tightened by the contract's path verdict
+ *   3. PreToolUse hook chain (can override the prior decision via JSON output)
+ *
+ * A contract `deny` is checked first and cannot be waived, including by
+ * `bypassPermissions`. It is a standing statement about a path ("never read
+ * .env"), not a per-call prompt, so a mode that exists to skip prompts has no
+ * business clearing it — otherwise the contract's strongest sentence would also
+ * be its easiest to disable. Contract `ask` is ordinary and follows mode.
+ *
+ * Sandbox (M3.5) is enforced separately at the OS layer — not here.
+ */
+export async function dispatchToolCall(req) {
+    // Step 0: Contract path verdict
+    const contractVerdict = evaluateContract(req.contract, {
+        tool: req.tool,
+        input: req.input,
+        cwd: req.cwd,
+    });
+    if (contractVerdict.verdict === 'deny') {
+        return {
+            decision: 'deny',
+            source: 'contract',
+            reason: contractVerdict.reason
+                ? `denied by file contract (${contractVerdict.rule}): ${contractVerdict.reason}`
+                : `denied by file contract (${contractVerdict.rule})`,
+            permissionVerdict: 'deny',
+        };
+    }
+    // Step 1: Permission verdict, tightened by the contract. Most-restrictive-wins
+    // means an absent contract yields `no-match` and collapses to the tool verdict
+    // exactly, so adding this step changed nothing for anyone without a contract.
+    const permReq = { tool: req.tool, input: req.input };
+    const permVerdict = mostRestrictive(evaluatePermission(permReq, req.rules), contractVerdict.verdict);
+    // Step 2: Mode policy (incorporates permission verdict)
+    const modeReq = {
+        tool: req.tool,
+        input: req.input,
+        permissionVerdict: permVerdict,
+    };
+    const modeVerdict = evaluateMode(req.mode, modeReq);
+    // Plan-block short-circuits — hook doesn't even fire
+    if (modeVerdict === 'plan-blocked') {
+        return {
+            decision: 'plan-blocked',
+            source: 'mode',
+            reason: `Tool "${req.tool}" blocked: mode=plan (read-only); call would write.`,
+            modeVerdict,
+            permissionVerdict: permVerdict,
+        };
+    }
+    // Auto mode: when no static rule decided + no explicit permission allow,
+    // invoke the LLM classifier. The classifier's verdict overrides the mode's
+    // default of 'ask'.
+    if (req.mode === 'auto' && permVerdict === 'no-match') {
+        const autoVerdict = await classifyAutoMode({
+            toolName: req.tool,
+            toolInput: req.input,
+            config: req.autoMode,
+            provider: req.autoModeProvider,
+        });
+        if (autoVerdict === 'deny') {
+            return {
+                decision: 'deny',
+                source: 'mode',
+                reason: `auto-mode classifier rejected ${req.tool}.`,
+                modeVerdict: 'deny',
+                permissionVerdict: permVerdict,
+            };
+        }
+        if (autoVerdict === 'allow') {
+            return {
+                decision: 'allow',
+                source: 'mode',
+                reason: `auto-mode classifier approved ${req.tool}.`,
+                modeVerdict: 'allow',
+                permissionVerdict: permVerdict,
+            };
+        }
+        // 'ask' falls through to the normal hook + return path below
+    }
+    // Step 3: PreToolUse hook (only if mode didn't outright deny)
+    let hookResult;
+    if (req.hooks && modeVerdict !== 'deny') {
+        hookResult = await req.hooks.dispatch({
+            event: 'PreToolUse',
+            cwd: req.cwd,
+            triggeredAt: new Date().toISOString(),
+            payload: { tool: req.tool, input: req.input },
+        });
+        // Hook JSON output may override
+        if (hookResult.json?.decision === 'deny' || hookResult.json?.permissionDecision === 'deny') {
+            return {
+                decision: 'deny',
+                source: 'hook',
+                reason: hookResult.json.systemMessage ?? 'Hook denied this tool call.',
+                hook: hookResult,
+                modeVerdict,
+                permissionVerdict: permVerdict,
+            };
+        }
+        if (hookResult.json?.decision === 'ask' || hookResult.json?.permissionDecision === 'ask') {
+            return {
+                decision: 'ask',
+                source: 'hook',
+                reason: hookResult.json.systemMessage ?? 'Hook requested approval.',
+                hook: hookResult,
+                modeVerdict,
+                permissionVerdict: permVerdict,
+            };
+        }
+        // Hook exited non-zero → treat as deny
+        if (hookResult.anyBlocked) {
+            return {
+                decision: 'deny',
+                source: 'hook',
+                reason: 'A PreToolUse hook exited non-zero — blocking call.',
+                hook: hookResult,
+                modeVerdict,
+                permissionVerdict: permVerdict,
+            };
+        }
+    }
+    // Otherwise use mode verdict. When the contract is what forced an approval,
+    // attribute it — "requires approval" alone leaves the user hunting for which
+    // of two rule sets asked, and its `reason` is the whole point of writing one.
+    const contractDroveAsk = modeVerdict === 'ask' && contractVerdict.verdict === 'ask';
+    return {
+        decision: modeVerdict,
+        source: contractDroveAsk
+            ? 'contract'
+            : modeVerdict === 'allow' && permVerdict === 'allow'
+                ? 'permission'
+                : 'mode',
+        reason: contractDroveAsk
+            ? `file contract (${contractVerdict.rule}) requires approval` +
+                (contractVerdict.reason ? `: ${contractVerdict.reason}` : '')
+            : explain(modeVerdict, permVerdict, req.mode),
+        hook: hookResult,
+        modeVerdict,
+        permissionVerdict: permVerdict,
+    };
+}
+function explain(mode, perm, modeName) {
+    if (mode === 'allow' && perm === 'allow')
+        return 'allowed by permission rules';
+    if (mode === 'allow')
+        return `auto-allowed by mode "${modeName}"`;
+    if (mode === 'ask')
+        return 'requires approval';
+    if (mode === 'deny')
+        return `denied by mode "${modeName}"`;
+    return 'unknown';
+}
+//# sourceMappingURL=tool-dispatcher.js.map

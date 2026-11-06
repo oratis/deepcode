@@ -1,0 +1,1 @@
+{"version":3,"file":"shell.d.ts","sourceRoot":"","sources":["../../src/tools/shell.ts"],"names":[],"mappings":"AAIA,OAAO,KAAK,EAAe,WAAW,EAAc,MAAM,aAAa,CAAC;AAaxE,eAAO,MAAM,aAAa,EAAE,WAuC3B,CAAC;AAEF,eAAO,MAAM,YAAY,EAAE,WAkE1B,CAAC;AAEF,eAAO,MAAM,cAAc,EAAE,WAuB5B,CAAC;AAEF,eAAO,MAAM,aAAa,EAAE,WAsB3B,CAAC;AAEF,qDAAqD;AACrD,eAAO,MAAM,WAAW,EAAE,WAAW,EAKpC,CAAC"}

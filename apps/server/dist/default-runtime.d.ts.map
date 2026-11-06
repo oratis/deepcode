@@ -1,0 +1,1 @@
+{"version":3,"file":"default-runtime.d.ts","sourceRoot":"","sources":["../src/default-runtime.ts"],"names":[],"mappings":"AAWA,OAAO,EAAE,mBAAmB,EAAE,MAAM,uBAAuB,CAAC;AAG5D,wBAAgB,yBAAyB,CACvC,IAAI,CAAC,EAAE,MAAM,EACb,OAAO,GAAE;IAAE,oBAAoB,CAAC,EAAE,OAAO,CAAA;CAAO,GAC/C,mBAAmB,CAmErB"}

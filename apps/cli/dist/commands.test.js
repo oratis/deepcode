@@ -1,0 +1,539 @@
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { SessionManager, gitSpawnEnv } from '@deepcode/core';
+import { CommandRegistry } from './commands.js';
+const exec = promisify(execFile);
+// Strip inherited GIT_* so this test's `git init` can't be hijacked by a leaked
+// GIT_DIR when the suite runs inside a git hook (which would re-init the real
+// repo as bare).
+const gitEnv = gitSpawnEnv;
+function makeContext(overrides = {}) {
+    return {
+        cwd: '/tmp/x',
+        model: 'deepseek-chat',
+        mode: 'default',
+        effort: 'medium',
+        settings: {},
+        creds: { apiKey: 'sk-abcdefghij' },
+        sessionId: 'sess-xyz',
+        sessions: new SessionManager({ root: '/tmp/x' }),
+        usage: { inputTokens: 100, outputTokens: 50, reasoningTokens: 0, cacheReadTokens: 0 },
+        ...overrides,
+    };
+}
+describe('CommandRegistry', () => {
+    const reg = new CommandRegistry();
+    it('matches /help', () => {
+        expect(reg.match('/help')).toMatchObject({ cmd: { name: '/help' } });
+    });
+    it('matches alias /?', () => {
+        expect(reg.match('/?')).toMatchObject({ cmd: { name: '/help' } });
+    });
+    it('matches with args', () => {
+        const m = reg.match('/model deepseek-reasoner');
+        expect(m?.cmd.name).toBe('/model');
+        expect(m?.args).toEqual(['deepseek-reasoner']);
+    });
+    it('returns null for non-slash input', () => {
+        expect(reg.match('not a command')).toBeNull();
+        expect(reg.match('hello /world')).toBeNull();
+    });
+    it('returns null for unknown command', () => {
+        expect(reg.match('/nope')).toBeNull();
+    });
+    it('list() includes all built-ins (deduped by alias)', () => {
+        const names = reg.list().map((c) => c.name);
+        expect(names).toContain('/help');
+        expect(names).toContain('/model');
+        expect(names).toContain('/mode');
+        expect(names).toContain('/exit');
+        expect(new Set(names).size).toBe(names.length); // no dupes
+    });
+});
+describe('built-in command behavior', () => {
+    let sessRoot;
+    beforeEach(async () => {
+        sessRoot = await mkdtemp(join(tmpdir(), 'dc-cmd-'));
+    });
+    afterEach(async () => {
+        await rm(sessRoot, { recursive: true, force: true });
+    });
+    it('/help lists commands', async () => {
+        const reg = new CommandRegistry();
+        const m = reg.match('/help');
+        const out = await m.cmd.run([], makeContext());
+        expect(out.join('\n')).toMatch(/\/help/);
+        expect(out.join('\n')).toMatch(/\/exit/);
+    });
+    it('/clear sets clearHistory flag', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        const m = reg.match('/clear');
+        await m.cmd.run([], ctx);
+        expect(ctx.clearHistory).toBe(true);
+    });
+    it('/exit sets exitRequested', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        await reg.match('/exit').cmd.run([], ctx);
+        expect(ctx.exitRequested).toBe(true);
+    });
+    it('/model switches model when valid', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        await reg.match('/model deepseek-reasoner').cmd.run(['deepseek-reasoner'], ctx);
+        expect(ctx.model).toBe('deepseek-reasoner');
+    });
+    it('/model rejects invalid name', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        const out = await reg.match('/model wrong').cmd.run(['wrong'], ctx);
+        expect(out.join('\n')).toMatch(/Unknown model/);
+        expect(ctx.model).toBe('deepseek-chat'); // unchanged
+    });
+    it('/mode switches when valid', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        await reg.match('/mode plan').cmd.run(['plan'], ctx);
+        expect(ctx.mode).toBe('plan');
+    });
+    it('/effort switches when valid', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext();
+        await reg.match('/effort high').cmd.run(['high'], ctx);
+        expect(ctx.effort).toBe('high');
+    });
+    it('/effort table reflects core EFFORT_PARAMS (single source of truth)', async () => {
+        const { EFFORT_PARAMS } = await import('@deepcode/core');
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/effort').cmd.run([], makeContext())).join('\n');
+        // Every tier renders the maxTokens/temperature the provider actually uses.
+        for (const tier of ['low', 'medium', 'high', 'xhigh', 'max']) {
+            expect(out).toContain(String(EFFORT_PARAMS[tier].maxTokens));
+            expect(out).toContain(EFFORT_PARAMS[tier].temperature.toFixed(1));
+        }
+        // The old divergent hardcoded numbers must never resurface.
+        expect(out).not.toContain('32768');
+        expect(out).not.toContain('16384');
+    });
+    it('/status emits session info', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({ sessions: new SessionManager({ root: sessRoot }) });
+        const out = await reg.match('/status').cmd.run([], ctx);
+        const joined = out.join('\n');
+        expect(joined).toMatch(/Session/);
+        expect(joined).toMatch(/Model/);
+        expect(joined).toMatch(/sk-a…ghij/); // redacted key
+    });
+    it('/cost computes pricing', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({
+            usage: {
+                inputTokens: 1_000_000,
+                outputTokens: 500_000,
+                reasoningTokens: 0,
+                cacheReadTokens: 400_000,
+            },
+        });
+        const out = await reg.match('/cost').cmd.run([], ctx);
+        const text = out.join('\n');
+        expect(text).toMatch(/Tokens/);
+        expect(text).toMatch(/Total/);
+        // Cache-aware: 400k of 1M input were cache hits → shown + credited.
+        expect(text).toMatch(/cache hits: 400,000/);
+        expect(text).toMatch(/40%/);
+        expect(text).toMatch(/cache saved/i);
+    });
+    it('/context shows window usage', async () => {
+        const reg = new CommandRegistry();
+        const out = await reg.match('/context').cmd.run([], makeContext());
+        expect(out.join('\n')).toMatch(/128,000/);
+        expect(out.join('\n')).toMatch(/Context:/);
+    });
+    it('/bug prints a prefilled GitHub issue link', async () => {
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/bug it crashed').cmd.run(['it', 'crashed'], makeContext())).join('\n');
+        expect(out).toMatch(/github\.com\/oratis\/deepcode\/issues/);
+        expect(out).toMatch(/title=it\+crashed/);
+    });
+    it('/feedback is an alias for /bug', () => {
+        const reg = new CommandRegistry();
+        expect(reg.match('/feedback')?.cmd.name).toBe('/bug');
+    });
+    it('/release-notes prints the latest CHANGELOG section only', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'dc-cl-'));
+        await writeFile(join(dir, 'CHANGELOG.md'), '# Changelog\n\n## 1.2.0\n\n- new thing\n\n## 1.1.0\n\n- old thing\n');
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/release-notes').cmd.run([], makeContext({ cwd: dir }))).join('\n');
+        expect(out).toMatch(/## 1\.2\.0/);
+        expect(out).toMatch(/new thing/);
+        expect(out).not.toMatch(/old thing/);
+        await rm(dir, { recursive: true, force: true });
+    });
+    it('/release-notes reports a missing CHANGELOG cleanly', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'dc-nocl-'));
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/release-notes').cmd.run([], makeContext({ cwd: dir }))).join('\n');
+        expect(out).toMatch(/No CHANGELOG/);
+        await rm(dir, { recursive: true, force: true });
+    });
+    it('/diff shows uncommitted changes (tracked edit + untracked file)', async () => {
+        const repo = await mkdtemp(join(tmpdir(), 'dc-diff-'));
+        const GIT = { cwd: repo, env: gitEnv() };
+        await exec('git', ['init', '-q'], GIT);
+        await exec('git', ['config', 'user.email', 't@t'], GIT);
+        await exec('git', ['config', 'user.name', 't'], GIT);
+        await writeFile(join(repo, 'f.txt'), 'one\n');
+        await exec('git', ['add', '-A'], GIT);
+        await exec('git', ['commit', '-qm', 'init'], GIT);
+        await writeFile(join(repo, 'f.txt'), 'two\n'); // tracked modification
+        await writeFile(join(repo, 'new.txt'), 'fresh\n'); // untracked
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/diff').cmd.run([], makeContext({ cwd: repo }))).join('\n');
+        expect(out).toMatch(/Uncommitted changes/);
+        expect(out).toMatch(/f\.txt/);
+        expect(out).toMatch(/new\.txt/);
+        await rm(repo, { recursive: true, force: true });
+    });
+    it('/diff handles a non-git directory', async () => {
+        const dir = await mkdtemp(join(tmpdir(), 'dc-nogit-'));
+        const reg = new CommandRegistry();
+        const out = (await reg.match('/diff').cmd.run([], makeContext({ cwd: dir }))).join('\n');
+        expect(out).toMatch(/Not a git repository/);
+        await rm(dir, { recursive: true, force: true });
+    });
+    it('/config dumps settings', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({ settings: { model: 'deepseek-chat' } });
+        const out = await reg.match('/config').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/Current settings/);
+        expect(out.join('\n')).toMatch(/deepseek-chat/);
+    });
+    it('/resume reports no sessions cleanly', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({ sessions: new SessionManager({ root: sessRoot }) });
+        const out = await reg.match('/resume').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/No previous sessions/);
+    });
+    it('/resume lists known sessions', async () => {
+        const reg = new CommandRegistry();
+        const sm = new SessionManager({ root: sessRoot });
+        await sm.create('/foo');
+        await sm.create('/bar');
+        const ctx = makeContext({ sessions: sm });
+        const out = await reg.match('/resume').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/Recent sessions/);
+    });
+    it('/plugins shows empty + install hint when none wired', async () => {
+        const reg = new CommandRegistry();
+        const out = await reg.match('/plugins').cmd.run([], makeContext());
+        expect(out.join('\n')).toMatch(/No plugins installed/);
+        expect(out.join('\n')).toMatch(/deepcode plugin install/);
+    });
+    it('/plugins lists wired plugins + contributed hook events', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({
+            wiredPlugins: [
+                { name: 'demo', version: '1.0.0', contributedHookEvents: ['PostToolUse'] },
+                { name: 'silent', version: '0.1.0', contributedHookEvents: [] },
+            ],
+        });
+        const out = await reg.match('/plugins').cmd.run([], ctx);
+        const joined = out.join('\n');
+        expect(joined).toMatch(/Active plugins \(2\)/);
+        expect(joined).toMatch(/demo@1\.0\.0/);
+        expect(joined).toMatch(/PostToolUse/);
+        expect(joined).toMatch(/silent@0\.1\.0/);
+    });
+    it('/plugins surfaces warnings (hash drift / spawn failure)', async () => {
+        const reg = new CommandRegistry();
+        const ctx = makeContext({
+            pluginWarnings: ['drifty: hash drift (was abc, now def)', 'bad: failed to start'],
+        });
+        const out = await reg.match('/plugins').cmd.run([], ctx);
+        const joined = out.join('\n');
+        expect(joined).toMatch(/Warnings/);
+        expect(joined).toMatch(/hash drift/);
+        expect(joined).toMatch(/failed to start/);
+    });
+    it('/todos returns "No active todos" when none stored', async () => {
+        const reg = new CommandRegistry();
+        const sm = new SessionManager({ root: sessRoot });
+        const meta = await sm.create('/foo');
+        const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+        const out = await reg.match('/todos').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/No active todos/);
+    });
+    describe('/rewind', () => {
+        it('reports empty when no snapshots exist', async () => {
+            const reg = new CommandRegistry();
+            const sm = new SessionManager({ root: sessRoot });
+            const meta = await sm.create('/foo');
+            const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+            const out = await reg.match('/rewind').cmd.run([], ctx);
+            expect(out.join('\n')).toMatch(/No snapshots in this session yet/);
+        });
+        it('lists snapshots and explains action menu', async () => {
+            const fs = await import('node:fs/promises');
+            const reg = new CommandRegistry();
+            const sm = new SessionManager({ root: sessRoot });
+            const meta = await sm.create(sessRoot);
+            // Create a real file + capture
+            const file = join(sessRoot, 'a.txt');
+            await fs.writeFile(file, 'v1');
+            await sm.snapshot({
+                sessionId: meta.id,
+                cwd: sessRoot,
+                filePath: file,
+                reason: 'pre-Edit',
+                seq: 1,
+            });
+            const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+            const out = await reg.match('/rewind').cmd.run([], ctx);
+            const joined = out.join('\n');
+            expect(joined).toMatch(/Snapshots \(1\)/);
+            expect(joined).toMatch(/pre-Edit/);
+            expect(joined).toMatch(/code/);
+            expect(joined).toMatch(/conversation/);
+            expect(joined).toMatch(/summarize-from/);
+            expect(joined).toMatch(/summarize-up-to/);
+        });
+        it('restores file content with `code` action', async () => {
+            const fs = await import('node:fs/promises');
+            const reg = new CommandRegistry();
+            const sm = new SessionManager({ root: sessRoot });
+            const meta = await sm.create(sessRoot);
+            const file = join(sessRoot, 'a.txt');
+            await fs.writeFile(file, 'original');
+            const snap = await sm.snapshot({
+                sessionId: meta.id,
+                cwd: sessRoot,
+                filePath: file,
+                reason: 'pre-Edit',
+                seq: 1,
+            });
+            // Modify the file after snapshot
+            await fs.writeFile(file, 'changed');
+            const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+            const out = await reg
+                .match(`/rewind ${snap.seq} code`)
+                .cmd.run([String(snap.seq), 'code'], ctx);
+            expect(out.join('\n')).toMatch(/Restored/);
+            const after = await fs.readFile(file, 'utf8');
+            expect(after).toBe('original');
+        });
+        it('trims conversation with `conversation` action by capture timestamp', async () => {
+            const fs = await import('node:fs/promises');
+            const reg = new CommandRegistry();
+            const sm = new SessionManager({ root: sessRoot });
+            const meta = await sm.create(sessRoot);
+            const file = join(sessRoot, 'a.txt');
+            await fs.writeFile(file, 'v1');
+            // history: 1 message BEFORE snapshot, 1 AFTER
+            const before = {
+                role: 'user',
+                content: [{ type: 'text', text: 'first' }],
+                timestamp: new Date(Date.now() - 60_000).toISOString(),
+            };
+            // capture
+            const snap = await sm.snapshot({
+                sessionId: meta.id,
+                cwd: sessRoot,
+                filePath: file,
+                reason: 'pre-Edit',
+                seq: 1,
+            });
+            const after = {
+                role: 'user',
+                content: [{ type: 'text', text: 'second' }],
+                timestamp: new Date(Date.now() + 60_000).toISOString(),
+            };
+            const ctx = makeContext({
+                sessions: sm,
+                sessionId: meta.id,
+                history: [before, after],
+            });
+            const out = await reg
+                .match(`/rewind ${snap.seq} conversation`)
+                .cmd.run([String(snap.seq), 'conversation'], ctx);
+            expect(out.join('\n')).toMatch(/kept 1 of 2 messages/);
+            expect(ctx.newHistory).toEqual([before]);
+        });
+        it('rejects bad seq numbers', async () => {
+            const fs = await import('node:fs/promises');
+            const reg = new CommandRegistry();
+            const sm = new SessionManager({ root: sessRoot });
+            const meta = await sm.create(sessRoot);
+            const file = join(sessRoot, 'a.txt');
+            await fs.writeFile(file, 'v1');
+            // Capture at least one snapshot so we move past the early-exit.
+            await sm.snapshot({
+                sessionId: meta.id,
+                cwd: sessRoot,
+                filePath: file,
+                reason: 'pre-Edit',
+                seq: 1,
+            });
+            const ctx = makeContext({ sessions: sm, sessionId: meta.id });
+            const out = await reg.match('/rewind 999 code').cmd.run(['999', 'code'], ctx);
+            expect(out.join('\n')).toMatch(/No snapshot with seq #999/);
+        });
+    });
+});
+describe('inspector + export commands', () => {
+    const reg = new CommandRegistry();
+    let cwd;
+    beforeEach(async () => {
+        cwd = await mkdtemp(join(tmpdir(), 'dc-cmds-'));
+    });
+    afterEach(async () => {
+        await rm(cwd, { recursive: true, force: true });
+    });
+    it('/hooks lists configured events or reports none', async () => {
+        const none = await reg.match('/hooks').cmd.run([], makeContext());
+        expect(none.join('\n')).toMatch(/No hooks configured/);
+        const ctx = makeContext({
+            settings: {
+                hooks: { Stop: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'echo hi' }] }] },
+            },
+        });
+        const out = await reg.match('/hooks').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/Stop:/);
+        expect(out.join('\n')).toMatch(/command \(match: Bash\)/);
+    });
+    it('/permissions shows rules + default mode', async () => {
+        const none = await reg.match('/permissions').cmd.run([], makeContext());
+        expect(none.join('\n')).toMatch(/No permission rules/);
+        const ctx = makeContext({
+            settings: {
+                permissions: { defaultMode: 'plan', allow: ['Bash(npm test:*)'], deny: ['Bash(rm:*)'] },
+            },
+        });
+        const out = (await reg.match('/permissions').cmd.run([], ctx)).join('\n');
+        expect(out).toMatch(/default mode: plan/);
+        expect(out).toMatch(/Bash\(npm test:\*\)/);
+        expect(out).toMatch(/Bash\(rm:\*\)/);
+    });
+    it('/agents lists a project sub-agent', async () => {
+        const dir = join(cwd, '.deepcode', 'agents');
+        const fs = await import('node:fs/promises');
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(join(dir, 'explorer.md'), '---\nname: explorer\ndescription: read-only explorer\n---\nExplore.\n');
+        const out = (await reg.match('/agents').cmd.run([], makeContext({ cwd }))).join('\n');
+        expect(out).toMatch(/explorer/);
+        expect(out).toMatch(/read-only explorer/);
+    });
+    it('/skills lists a project skill', async () => {
+        const dir = join(cwd, '.deepcode', 'skills', 'greet');
+        const fs = await import('node:fs/promises');
+        await fs.mkdir(dir, { recursive: true });
+        await fs.writeFile(join(dir, 'SKILL.md'), '---\nname: greet\ndescription: say hi\n---\nGreet.\n');
+        const out = (await reg.match('/skills').cmd.run([], makeContext({ cwd }))).join('\n');
+        expect(out).toMatch(/greet/);
+        expect(out).toMatch(/\[project\]/);
+    });
+    it('/export writes a markdown file and reports the path', async () => {
+        const fs = await import('node:fs/promises');
+        const ctx = makeContext({
+            cwd,
+            history: [
+                { role: 'user', content: [{ type: 'text', text: 'hello' }] },
+                { role: 'assistant', content: [{ type: 'text', text: 'hi there' }] },
+            ],
+        });
+        const out = (await reg.match('/export').cmd.run([], ctx)).join('\n');
+        expect(out).toMatch(/Exported 2 messages/);
+        const written = await fs.readFile(join(cwd, 'deepcode-sess-xyz.md'), 'utf8');
+        expect(written).toContain('## User');
+        expect(written).toContain('hi there');
+    });
+    it('/export reports nothing to export with empty history', async () => {
+        const out = await reg.match('/export').cmd.run([], makeContext({ history: [] }));
+        expect(out.join('\n')).toMatch(/Nothing to export/);
+    });
+    it('/compact needs a provider', async () => {
+        const ctx = makeContext({
+            history: [{ role: 'user', content: [{ type: 'text', text: 'x' }] }],
+        });
+        const out = await reg.match('/compact').cmd.run([], ctx);
+        expect(out.join('\n')).toMatch(/needs a provider/);
+    });
+    it('/compact reports nothing with empty history', async () => {
+        const out = await reg
+            .match('/compact')
+            .cmd.run([], makeContext({ provider: { name: 'm', runTurn: async () => ({}) } }));
+        expect(out.join('\n')).toMatch(/Nothing to compact/);
+    });
+});
+describe('/combo', () => {
+    let cwd;
+    let home;
+    beforeEach(async () => {
+        cwd = await mkdtemp(join(tmpdir(), 'dc-combo-cwd-'));
+        home = await mkdtemp(join(tmpdir(), 'dc-combo-home-'));
+    });
+    afterEach(async () => {
+        await rm(cwd, { recursive: true, force: true });
+        await rm(home, { recursive: true, force: true });
+    });
+    const reg = new CommandRegistry();
+    function threadContext() {
+        return makeContext({
+            cwd,
+            home,
+            history: [
+                { role: 'user', content: [{ type: 'text', text: 'fix the auth bug' }], timestamp: 'now' },
+                {
+                    role: 'assistant',
+                    content: [
+                        { type: 'tool_use', id: 't1', name: 'Read', input: { file_path: 'src/auth.ts' } },
+                        { type: 'tool_use', id: 't2', name: 'Edit', input: { file_path: 'src/auth.ts' } },
+                    ],
+                    timestamp: 'now',
+                },
+            ],
+        });
+    }
+    async function run(args, ctx = threadContext()) {
+        const match = reg.match('/combo');
+        if (!match)
+            throw new Error('/combo not registered');
+        return { lines: await match.cmd.run(args, ctx), ctx };
+    }
+    it('previews without writing anything', async () => {
+        // A skill is a shareable artifact built from a transcript. The user reads it
+        // before it exists on disk.
+        const { lines } = await run([]);
+        expect(lines.join('\n')).toContain('Draft skill');
+        expect(lines.join('\n')).toContain('--write');
+        await expect(readFile(join(cwd, '.deepcode', 'skills', 'fix-the-auth-bug', 'SKILL.md'), 'utf8')).rejects.toThrow();
+    });
+    it('shows the derived allowed-tools in the preview', async () => {
+        const { lines } = await run([]);
+        expect(lines.join('\n')).toContain('Edit, Read');
+    });
+    it('writes the skill on --write and logs it as governance', async () => {
+        const { lines } = await run(['--write']);
+        expect(lines.join('\n')).toContain('Wrote');
+        const written = await readFile(join(cwd, '.deepcode', 'skills', 'fix-the-auth-bug', 'SKILL.md'), 'utf8');
+        expect(written).toContain('allowed-tools');
+        expect(written).toContain('TODO: review before use');
+        const { readProjectLedger } = await import('@deepcode/core');
+        const gov = await readProjectLedger(cwd, 'governance', home);
+        expect(gov[0]?.summary).toContain('created skill');
+    });
+    it('refuses to overwrite an existing skill', async () => {
+        await run(['--write']);
+        const { lines } = await run(['--write']);
+        expect(lines.join('\n')).toContain('already exists');
+    });
+    it('says there is nothing to distil on an empty thread', async () => {
+        const { lines } = await run([], makeContext({ cwd, home, history: [] }));
+        expect(lines.join('\n')).toContain('Nothing to distil');
+    });
+});
+//# sourceMappingURL=commands.test.js.map

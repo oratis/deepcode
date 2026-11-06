@@ -1,0 +1,27 @@
+// Plugins subsystem entry — manifest parsing, hash pinning, local install, discovery.
+// Spec: docs/DEVELOPMENT_PLAN.md §3.14
+// Milestone: M5
+//
+// What's IN this milestone:
+//   - plugin.json manifest parsing
+//   - SHA-256 source hash + ~/.deepcode/plugins-trust.json
+//   - installLocal() — copy a directory + record trust
+//   - discoverPlugins() — scan ~/.deepcode/plugins/ + verify hashes
+//
+// What's NOT in this milestone (see docs/design/plugin-security.md):
+//   - Sandbox subprocess execution (RPC over stdio)
+//   - GitHub URL install (gh:user/repo)
+//   - Marketplace index + ed25519 signature verification
+//   - Revoke list pull + enforcement
+//   - "Trust ladder" UI tiers
+//
+// IMPORTANT: until subprocess sandbox lands (planned M5.1), plugins are
+// effectively untrusted code with full host access. The trust system records
+// what the user *thought* they were installing, but cannot enforce it.
+// Treat M5 as a foundation, not a security boundary.
+export { installLocal, discoverPlugins, collectPluginContributions, readManifest, computeSourceHash, loadTrustState, saveTrustState, pluginsDir, trustFilePath, } from './manifest.js';
+export { PluginSubprocess, spawnAllPlugins, shutdownAllPlugins, generatePluginToken, } from './runtime/subprocess.js';
+export { wirePlugins, hasInstalledPlugins, } from './wireup.js';
+export { installFromGithub, installFromNpm, installFromSpec, uninstallPlugin, } from './install.js';
+export { verifyEntrySignature, isRevoked, fetchIndex, fetchRevoked, resolveEntry, loadMarketplaceConfig, saveMarketplaceConfig, addMarketplace, marketplacesPath, } from './marketplace.js';
+//# sourceMappingURL=index.js.map

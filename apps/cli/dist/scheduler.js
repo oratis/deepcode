@@ -1,0 +1,200 @@
+// `deepcode scheduler run` + `deepcode cron <install|uninstall|list|status>`
+// Spec: docs/DEVELOPMENT_PLAN.md §3.15 / §0.1
+//
+// The scheduler is fired once a minute by a launchd LaunchAgent (macOS). On each
+// tick it loads ~/.deepcode/cron.json, finds jobs due *this minute*, and runs
+// each one headlessly in its own project dir, appending output to a per-job log.
+//
+// `cron install` writes the LaunchAgent plist (pointing at THIS node + cli entry,
+// so it survives `nvm`/path quirks) and best-effort `launchctl load`s it.
+import { dueJobsWithTriggers, resolveTrigger, installPlist, launchdPlistPath, listCronJobs, loadCronStore, saveCronStore, describeClamp, loadSettings, resolveTriggerMode, resolveUnattendedApproval, tightenSandbox, uninstallPlist, } from '@deepcode/core';
+import { execFile } from 'node:child_process';
+import { createWriteStream, promises as fs } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { promisify } from 'node:util';
+import { runHeadless } from './headless.js';
+const execFileAsync = promisify(execFile);
+/** Execute every job due at `now`, update lastRunAt, persist. Returns ids run. */
+export async function runSchedulerRun(deps = {}) {
+    const now = deps.now ?? new Date();
+    const home = deps.home ?? homedir();
+    const out = deps.output ?? process.stdout;
+    const store = await loadCronStore(home);
+    const due = await dueJobsWithTriggers(store.jobs, now);
+    const ran = [];
+    // A file trigger compares mtimes against `lastRunAt`, so a job that has never
+    // run has nothing to compare against and deliberately does not fire. Stamp
+    // the baseline here — otherwise it has no way to ever acquire one, and the
+    // job stays silent forever while looking configured.
+    let stamped = false;
+    for (const job of store.jobs) {
+        if (!job.enabled || job.lastRunAt)
+            continue;
+        if (resolveTrigger(job).kind !== 'file')
+            continue;
+        job.lastRunAt = now.toISOString();
+        stamped = true;
+        out.write(`[scheduler] ${job.id}: watching from ${job.lastRunAt}\n`);
+    }
+    if (due.length === 0) {
+        if (stamped)
+            await saveCronStore(store, home);
+        return { ran };
+    }
+    out.write(`[scheduler] ${now.toISOString()} — ${due.length} job(s) due\n`);
+    for (const { job, verdict } of due) {
+        // Say what the calendar could not express, next to the job it belongs to.
+        for (const note of verdict.diagnostics ?? []) {
+            out.write(`[scheduler] ${job.id}: ${note}\n`);
+        }
+        try {
+            await (deps.runJob ?? ((j) => defaultRunJob(j, home)))(job);
+            job.lastRunAt = now.toISOString();
+            ran.push(job.id);
+            out.write(`[scheduler] ran ${job.id}${verdict.reason ? ` — ${verdict.reason}` : ''}\n`);
+        }
+        catch (err) {
+            out.write(`[scheduler] job ${job.id} failed: ${err.message}\n`);
+        }
+    }
+    // Persist lastRunAt updates (the in-memory jobs are the same objects in store).
+    await saveCronStore(store, home);
+    return { ran };
+}
+/** Default execution: run the prompt headlessly in the job's cwd, logging to a file. */
+async function defaultRunJob(job, home) {
+    const logPath = join(home, '.deepcode', 'cron-logs', `${job.id}.log`);
+    await fs.mkdir(dirname(logPath), { recursive: true });
+    const log = createWriteStream(logPath, { flags: 'a' });
+    try {
+        const onApprovalRequired = resolveUnattendedApproval(job);
+        // Resolve the posture here rather than letting headless inherit it, so the
+        // job log states what it ran as instead of leaving it implied.
+        const { merged } = await loadSettings({ cwd: job.cwd, home });
+        const resolvedMode = resolveTriggerMode(job.profile, merged.permissions?.defaultMode ?? 'default');
+        const sandbox = tightenSandbox(merged.sandbox?.mode, job.profile?.sandbox);
+        log.write(`\n===== ${new Date().toISOString()} =====\n`);
+        log.write(`[job] mode=${resolvedMode.mode} onApprovalRequired=${onApprovalRequired}\n`);
+        const clamp = describeClamp(resolvedMode);
+        if (clamp)
+            log.write(`[job] ${clamp}\n`);
+        const code = await runHeadless({
+            output: log,
+            errOutput: log,
+            cwd: job.cwd,
+            home,
+            prompt: job.prompt,
+            outputFormat: 'text',
+            onApprovalRequired,
+            mode: resolvedMode.mode,
+            modeResolvedByCaller: true,
+            ...(sandbox ? { sandbox } : {}),
+            ...(job.profile?.permissions ? { permissionsOverride: job.profile.permissions } : {}),
+        });
+        // Exit 6 means the run stopped because a call needed an approver. Surface it
+        // as a failure so the scheduler log does not read like a clean run.
+        if (code === 6) {
+            throw new Error('stopped: a tool call required approval and onApprovalRequired=abort');
+        }
+    }
+    finally {
+        log.end();
+    }
+}
+export async function runCronCommand(sub, deps = {}) {
+    const home = deps.home ?? homedir();
+    const out = deps.output ?? process.stdout;
+    const err = deps.errOutput ?? process.stderr;
+    const cmd = sub[0];
+    switch (cmd) {
+        case 'install':
+            return cronInstall(home, out, err, deps);
+        case 'uninstall':
+            return cronUninstall(home, out, deps);
+        case 'list':
+            return cronList(home, out);
+        case 'status':
+            return cronStatus(home, out);
+        default:
+            out.write(cronHelp());
+            return cmd ? 2 : 0;
+    }
+}
+async function cronInstall(home, out, err, deps) {
+    const argv = deps.argv ?? process.argv;
+    const node = argv[0] ?? process.execPath;
+    const script = argv[1] ?? '';
+    if (!script) {
+        err.write('cron install: could not determine the deepcode entry script.\n');
+        return 1;
+    }
+    // Embed the absolute node + cli.js so the agent runs even outside a login shell.
+    const programArgs = [node, script, 'scheduler', 'run'];
+    const path = await installPlist({ home, binPath: node, programArgs, intervalSec: 60 });
+    out.write(`Wrote LaunchAgent: ${path}\n`);
+    if (!deps.skipLaunchctl && process.platform === 'darwin') {
+        try {
+            // Reload: unload first (ignore failure), then load -w to enable at login.
+            await execFileAsync('launchctl', ['unload', path]).catch(() => undefined);
+            await execFileAsync('launchctl', ['load', '-w', path]);
+            out.write('Loaded into launchd (fires every 60s).\n');
+        }
+        catch (e) {
+            out.write(`Wrote plist but launchctl load failed: ${e.message}\n`);
+            out.write(`Load it manually: launchctl load -w "${path}"\n`);
+        }
+    }
+    else if (process.platform !== 'darwin') {
+        out.write('Note: automatic scheduling is macOS-only. On Linux, add a cron entry:\n');
+        out.write(`  * * * * * "${node}" "${script}" scheduler run\n`);
+    }
+    return 0;
+}
+async function cronUninstall(home, out, deps) {
+    const path = launchdPlistPath(home);
+    if (!deps.skipLaunchctl && process.platform === 'darwin') {
+        await execFileAsync('launchctl', ['unload', path]).catch(() => undefined);
+    }
+    const removed = await uninstallPlist(home);
+    out.write(removed ? `Removed LaunchAgent: ${path}\n` : 'No LaunchAgent was installed.\n');
+    return 0;
+}
+async function cronList(home, out) {
+    const jobs = await listCronJobs(home);
+    if (jobs.length === 0) {
+        out.write('No scheduled jobs. Create one with the CronCreate tool in a session.\n');
+        return 0;
+    }
+    for (const j of jobs) {
+        out.write(`${j.id}  [${j.schedule}]${j.enabled ? '' : ' (disabled)'}  ${j.cwd}\n` +
+            `    ${j.prompt.slice(0, 100)}\n` +
+            (j.lastRunAt ? `    last run: ${j.lastRunAt}\n` : ''));
+    }
+    return 0;
+}
+async function cronStatus(home, out) {
+    const path = launchdPlistPath(home);
+    const installed = await fs
+        .access(path)
+        .then(() => true)
+        .catch(() => false);
+    const jobs = await listCronJobs(home);
+    out.write(`Scheduler: ${installed ? `installed (${path})` : 'NOT installed — run `deepcode cron install`'}\n`);
+    out.write(`Jobs: ${jobs.length} (${jobs.filter((j) => j.enabled).length} enabled)\n`);
+    return 0;
+}
+function cronHelp() {
+    return [
+        'Usage: deepcode cron <command>',
+        '',
+        '  install     Install the launchd scheduler (fires every 60s)',
+        '  uninstall   Remove the launchd scheduler',
+        '  list        List scheduled jobs',
+        '  status      Show scheduler + job status',
+        '',
+        'Create/delete jobs from inside a session with the CronCreate / CronDelete tools.',
+        '',
+    ].join('\n');
+}
+//# sourceMappingURL=scheduler.js.map

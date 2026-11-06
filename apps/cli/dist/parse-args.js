@@ -1,0 +1,318 @@
+// CLI argv parser — minimal, dependency-free, designed for the flag set in
+// docs/DEVELOPMENT_PLAN.md §5.
+// Returns a strongly-typed shape. Unknown flags are collected into `unknown` for
+// graceful "did you mean..." errors.
+import { SANDBOX_MODES } from '@deepcode/core';
+const VALID_MODES = [
+    'default',
+    'acceptEdits',
+    'plan',
+    'auto',
+    'dontAsk',
+    'bypassPermissions',
+];
+const VALID_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
+/**
+ * Resolve the effective effort level from all precedence layers.
+ * Order (high → low): cli flag → DEEPCODE_EFFORT_LEVEL env → settings → default.
+ * Spec: docs/DEVELOPMENT_PLAN.md §3.13c.
+ *
+ * Returns `'medium'` if nothing produces a valid value.
+ */
+export function resolveEffort(args) {
+    const candidates = [
+        args.cliFlag,
+        args.envVar?.trim(),
+        args.settingsLevel,
+    ];
+    for (const c of candidates) {
+        if (c && VALID_EFFORTS.includes(c)) {
+            return c;
+        }
+    }
+    return 'medium';
+}
+export function parseArgs(argv) {
+    const out = {
+        showHelp: false,
+        showVersion: false,
+        doctor: false,
+        upgrade: false,
+        resume: false,
+        continue: false,
+        forkSession: false,
+        bare: false,
+        outputFormat: 'text',
+        includePartialMessages: false,
+        verbose: false,
+        json: false,
+        noPlugins: false,
+        strict: false,
+        noColor: false,
+        noThinking: false,
+        unknownFlags: [],
+        unimplementedFlags: [],
+        positional: [],
+    };
+    for (let i = 0; i < argv.length; i++) {
+        const a = argv[i];
+        const next = () => argv[++i];
+        switch (true) {
+            case a === '-h' || a === '--help':
+                out.showHelp = true;
+                break;
+            case a === '-v' || a === '--version':
+                out.showVersion = true;
+                break;
+            case a === 'doctor':
+                out.doctor = true;
+                break;
+            case a === 'upgrade':
+                out.upgrade = true;
+                break;
+            case a === '-p' || a === '--print':
+                out.prompt = next();
+                break;
+            case a === '--resume' || a === '-r': {
+                const maybeId = argv[i + 1];
+                if (maybeId && !maybeId.startsWith('-')) {
+                    out.resumeId = maybeId;
+                    i++;
+                }
+                out.resume = true;
+                break;
+            }
+            case a === '--continue' || a === '-c':
+                out.continue = true;
+                break;
+            case a === '--fork-session':
+                out.forkSession = true;
+                break;
+            case a === '--mode': {
+                const v = next();
+                if (v && VALID_MODES.includes(v))
+                    out.mode = v;
+                else
+                    out.unknownFlags.push(`--mode ${v ?? ''}`);
+                break;
+            }
+            // Claude Code alias for --mode: set out.mode directly so it's actually
+            // wired through cli.ts (which only forwards args.mode). Last flag wins if
+            // both --mode and --permission-mode are given.
+            case a === '--permission-mode': {
+                const v = next();
+                if (v && VALID_MODES.includes(v))
+                    out.mode = v;
+                else
+                    out.unknownFlags.push(`--permission-mode ${v ?? ''}`);
+                break;
+            }
+            case a === '--model':
+                out.model = next();
+                break;
+            case a === '--effort': {
+                const v = next();
+                if (v && VALID_EFFORTS.includes(v))
+                    out.effort = v;
+                else
+                    out.unknownFlags.push(`--effort ${v ?? ''}`);
+                break;
+            }
+            case a === '--max-turns': {
+                const v = next();
+                const n = v ? Number.parseInt(v, 10) : NaN;
+                if (Number.isFinite(n) && n > 0)
+                    out.maxTurns = n;
+                else
+                    out.unknownFlags.push(`--max-turns ${v ?? ''}`);
+                break;
+            }
+            case a === '--bare':
+                out.bare = true;
+                break;
+            case a === '--sandbox': {
+                const v = next();
+                if (v && SANDBOX_MODES.includes(v))
+                    out.sandbox = v;
+                else
+                    out.unknownFlags.push(`--sandbox ${v ?? ''}`);
+                break;
+            }
+            case a === '-C' || a === '--cd':
+                out.cwd = next();
+                break;
+            case a === '--system-prompt':
+                out.systemPrompt = next();
+                break;
+            case a === '--append-system-prompt':
+                out.appendSystemPrompt = next();
+                break;
+            case a === '--append-system-prompt-file':
+                out.appendSystemPromptFile = next();
+                break;
+            case a === '--allowedTools': {
+                const v = next();
+                if (v)
+                    out.allowedTools = v
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                break;
+            }
+            case a === '--disallowedTools': {
+                const v = next();
+                if (v)
+                    out.disallowedTools = v
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean);
+                break;
+            }
+            case a === '--output-format': {
+                const v = next();
+                if (v === 'text' || v === 'json' || v === 'stream-json')
+                    out.outputFormat = v;
+                else
+                    out.unknownFlags.push(`--output-format ${v ?? ''}`);
+                break;
+            }
+            case a === '--json-schema':
+                out.jsonSchema = next();
+                break;
+            case a === '--include-partial-messages':
+                out.includePartialMessages = true;
+                break;
+            case a === '--json':
+                out.json = true;
+                break;
+            case a === '--verbose':
+                out.verbose = true;
+                break;
+            case a === '--no-color':
+                out.noColor = true;
+                break;
+            case a === '--no-thinking':
+                out.noThinking = true;
+                break;
+            case a === '--settings':
+                out.settingsFile = next();
+                break;
+            // The four override flags below and `--strict` are still parsed so old
+            // invocations don't hard-fail, but nothing consumes them yet. Record them
+            // so the CLI can say so instead of pretending they took effect.
+            case a === '--agents':
+                out.agentsDir = next();
+                out.unimplementedFlags.push('--agents');
+                break;
+            case a === '--mcp-config':
+                out.mcpConfig = next();
+                out.unimplementedFlags.push('--mcp-config');
+                break;
+            case a === '--plugin-dir':
+                out.pluginDir = next();
+                out.unimplementedFlags.push('--plugin-dir');
+                break;
+            case a === '--plugin-url':
+                out.pluginUrl = next();
+                out.unimplementedFlags.push('--plugin-url');
+                break;
+            case a === '--no-plugins':
+                out.noPlugins = true;
+                break;
+            case a === '--strict':
+                out.strict = true;
+                out.unimplementedFlags.push('--strict');
+                break;
+            case a.startsWith('--'):
+                out.unknownFlags.push(a);
+                break;
+            case a.startsWith('-'):
+                out.unknownFlags.push(a);
+                break;
+            default:
+                out.positional.push(a);
+                break;
+        }
+    }
+    return out;
+}
+export function helpText(version) {
+    return `DeepCode v${version} — DeepSeek-powered AI coding agent
+
+USAGE
+  deepcode                              Interactive REPL
+  deepcode -p "<prompt>"                Headless one-shot
+  deepcode --resume, -r [<id>]          Resume a session (picker if no id)
+  deepcode --continue, -c               Continue most recent session here
+  deepcode --resume <id> --fork-session Resume into a new session (keep original)
+  deepcode doctor                       Diagnostic checks
+  deepcode upgrade                      Self-update (CLI; Mac client auto-updates)
+  deepcode setup-token [<token>]        Store a long-lived DeepSeek auth token (CI)
+  deepcode cron <cmd>                   Scheduled tasks: install/uninstall/list/status
+  deepcode contract <show|init|check>   Inspect or create the path-axis file contract
+  deepcode ledger <list|show|export>    Audit what the agent changed
+  deepcode scheduler run                Run due scheduled jobs (invoked by launchd)
+  deepcode mcp serve                    Expose DeepCode tools as an MCP server (stdio)
+  deepcode app-server                  Run the experimental lifecycle server (JSONL stdio)
+  deepcode diagnostics export           Write a redacted app-server support bundle
+  deepcode trust [--plan-only]          Trust this directory's project config (hooks/MCP/...)
+  deepcode hooks list|trust|revoke      Review exact project command-hook definitions
+  deepcode plugins list [--json]        List installed plugins
+  deepcode plugins install <spec>       Install a plugin (gh:owner/repo | name@npm | ./path)
+  deepcode plugins uninstall <name>     Remove an installed plugin
+  deepcode skills list [--json]         List available skills
+  deepcode completion <shell>           Print a bash/zsh/fish shell-completion script
+
+MODE
+  --mode <name>                         default / acceptEdits / plan / auto / dontAsk / bypassPermissions
+  --permission-mode <name>              Alias for --mode (Claude Code compatibility)
+  --bare                                Suppress the REPL startup banner (scripting / minimal output)
+
+WORKING DIRECTORY
+  -C, --cd <dir>                        Change to <dir> before running (default: current dir)
+
+SANDBOX (what commands may touch — independent of --mode, which is how they're approved)
+  --sandbox <mode>                      read-only | workspace-write | danger-full-access
+                                        Default: workspace-write
+
+MODEL & EFFORT
+  --model <id>                          deepseek-chat | deepseek-reasoner
+  --effort <tier>                       low | medium | high | xhigh | max
+  --max-turns <n>                       Cap agent loop turns
+
+SYSTEM PROMPT
+  --system-prompt "<text>"              Replace default system prompt
+  --append-system-prompt "<text>"       Append to default
+  --append-system-prompt-file <path>    Append from a file
+
+TOOLS
+  --allowedTools "Tool,..."             Whitelist
+  --disallowedTools "Tool,..."          Blacklist
+
+HEADLESS / CI (-p mode only)
+  --output-format text|json|stream-json Default text. json = single object at exit; stream-json = NDJSON events.
+  --json-schema <path>                  Constrain final output to a JSON schema
+  --include-partial-messages            Stream partial deltas
+  --verbose                             Print LLM/tool call traces
+
+Exit codes (headless): 0 ok · 1 generic · 2 bad-input · 3 api/auth · 4 max-turns · 5 aborted
+
+OVERRIDES
+  --settings <path>                     Override settings.json discovery (highest-precedence layer)
+  --no-plugins                          Disable all plugins for this run
+
+TERMINAL OUTPUT
+  --no-color                            No ANSI colour (NO_COLOR / a pipe do this too)
+  --no-thinking                         Hide the model's reasoning stream
+
+DIAGNOSTICS
+  -h, --help                            Show this
+  -v, --version                         Show version
+
+Configuration:  ~/.deepcode/settings.json  ·  <project>/.deepcode/settings.json  ·  <project>/.deepcode/settings.local.json
+Credentials:    macOS Keychain (service=deepcode)  ·  ~/.deepcode/credentials.json (chmod 600)
+Sessions:       ~/.deepcode/sessions/
+Docs:           https://github.com/oratis/deepcode#docs
+`;
+}
+//# sourceMappingURL=parse-args.js.map

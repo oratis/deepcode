@@ -1,0 +1,1 @@
+{"version":3,"file":"index.d.ts","sourceRoot":"","sources":["../../src/spill/index.ts"],"names":[],"mappings":"AAOA,OAAO,EAAE,SAAS,EAAE,cAAc,EAAE,KAAK,WAAW,EAAE,MAAM,YAAY,CAAC;AACzE,OAAO,EACL,gBAAgB,EAChB,6BAA6B,EAC7B,KAAK,kBAAkB,EACvB,KAAK,YAAY,GAClB,MAAM,aAAa,CAAC;AACrB,YAAY,EAAE,eAAe,EAAE,QAAQ,EAAE,WAAW,EAAE,UAAU,EAAE,MAAM,YAAY,CAAC"}
