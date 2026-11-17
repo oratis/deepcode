@@ -119,7 +119,10 @@ spctl --assess --type execute --verbose "$APP_PATH"
 # notarization ticket. Always replace it with the final app before signing it.
 if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]; then
   UPDATE_PATH="$APP_PATH.tar.gz"
-  tar -czf "$UPDATE_PATH" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+  # AppleDouble ._ entries break Tauri's extraction (it strips the app root
+  # from every entry). The notarization ticket is Contents/CodeResources,
+  # which is a regular file and remains in this archive.
+  COPYFILE_DISABLE=1 tar -czf "$UPDATE_PATH" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
   pnpm --filter @deepcode/desktop exec tauri signer sign "$ROOT/$UPDATE_PATH"
   test -s "$UPDATE_PATH.sig"
 fi

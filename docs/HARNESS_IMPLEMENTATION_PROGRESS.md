@@ -232,3 +232,15 @@ v0.5.1 独立复核无 P1/P2；Node 22 本机全仓 **2017 passed / 23 skipped**
 凭据通过既有本机 Keychain 使用，没有导出到仓库、发行包或 GitHub。npm registry 认证和 DeepCode updater 私钥分别验证，不把 Apple 签名凭据视为其替代。本地证据见 [v0.5.2 验证记录](research/harness-v052-validation.json)；最终产物、公证 ID、校验值和线上下载复验记录在发布 PR 与 [v0.5.2 发布页](https://github.com/oratis/deepcode/releases/tag/v0.5.2)。
 
 此版本不修改 journal 格式和迁移策略。回滚可重新安装前版客户端；旧会话继续遵守只读源文件及 dual-read/single-write 规则。
+
+## v0.5.3：自动更新密钥迁移与完整发布（2026-11-18）
+
+用户明确授权在原 updater 私钥无法找回时生成新的 DeepCode 专用密钥。Apple Developer ID PEM 和 CSR 只用于 macOS 签名，不用于 Tauri 更新签名。本次私钥保存在本机受限目录，仓库只提交新公钥；历史标签不改变，也没有关闭签名检查。**0.5.2 及更早用户必须从签名 DMG 手动安装 v0.5.3 一次**，之后才接受新密钥签名的自动更新。回滚旧客户端会恢复旧公钥，重新进入新版仍须手动迁移。
+
+独立 review 另修复首次启用 feed 时暴露的 UI 时序：Tauri 的 Finished 仅表示下载完成，随后还会验签和安装。界面现在等待 downloadAndInstall 成功返回才允许重启；签名失败、安装失败和成功三个回归用例覆盖该边界。
+
+发布验收必须包括：最终 app 签名及公证后重建更新 tar；以已提交公钥验证签名；旧公钥、篡改包与篡改签名均拒绝；解包后的 app 票据、Gatekeeper、内置 runtime 和会话恢复通过。清单固定版本 URL，并验证与实际上传资产的签名和版本相同。npm 使用已恢复的账号认证发布经过独立安装测试的同版 tarball。实际线上结果记录在本轮发布 PR 和 [v0.5.3 发布页](https://github.com/oratis/deepcode/releases/tag/v0.5.3)。
+
+最终本地产物已通过新公钥验签、旧公钥拒绝、归档篡改拒绝、签名篡改拒绝；更新 tar 解包后 App 版本/内嵌公钥、签名、公证票据、Gatekeeper 和真实 native 审批/取消/恢复均通过。Mac App 与 DMG 均获 Apple Accepted。桌面端 158 项测试通过，其中新增 3 项更新就绪回归；另有实际脚本的 AppleDouble 归档回归，确保票据文件保留且不生成 `._` 条目。证据见 [v0.5.3 验证记录](research/harness-v053-validation.json)。
+
+独立 agent 对最终发行资产的 10 项只读复验全部通过，并确认 DMG 内 app 与更新 tar 解包后的 app 逐文件哈希完全一致。

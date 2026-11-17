@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-18",
+  "version": "0.5.3",
+  "scope": "Complete publication and explicitly approved updater key migration",
+  "updater": {
+    "newPublicKeySha256": "e4f5c0131ecc464ca9d9753ad67e9b07031212d94d71b82f8b0338222ad77813",
+    "migration": "Versions <=0.5.2 require one manual DMG installation; old tags unchanged; no signature bypass.",
+    "privateKey": "Local restricted storage only; never committed or uploaded.",
+    "validation": {
+      "status": "passed",
+      "version": "0.5.3",
+      "archiveSha256": "bb35959f3324baea114c0ca666e6e6d6ac7fb2519a2cf0fb30492a89f4cda6f8",
+      "archiveBytes": 38257217,
+      "newPublicKeySignature": "passed",
+      "oldKeyRejected": true,
+      "tamperedArchiveRejected": true,
+      "tamperedSignatureRejected": true,
+      "embeddedNewPublicKey": true,
+      "extractedAppSignature": "passed",
+      "extractedAppTicket": "validated",
+      "extractedAppGatekeeper": "accepted",
+      "extractedRuntimeSmoke": "passed",
+      "nativeTurn": {
+        "status": "passed",
+        "checks": [
+          "native loopback streamed provider response",
+          "Write blocked until explicit approval",
+          "workspace file write and tool result",
+          "assistant final response",
+          "cancellation drains pending approval",
+          "late approval rejected; no cancelled write",
+          "provider cancellation closes loopback stream",
+          "journal tool/final message and interruption states survive process restart",
+          "empty PATH and isolated HOME",
+          "fake key; loopback only; no vendor API"
+        ],
+        "providerCalls": 4
+      }
+    }
+  },
+  "mac": {
+    "appNotarization": {
+      "id": "603a94f2-3183-4bc1-a60e-9a65dd76f615",
+      "status": "Accepted"
+    },
+    "dmgNotarization": {
+      "id": "3cf23cab-416c-4d4a-9eb1-3123e309dff1",
+      "status": "Accepted"
+    },
+    "gatekeeper": "Notarized Developer ID; accepted",
+    "teamIdentifier": "9LH9NBX7P4"
+  },
+  "assets": {
+    "DeepCode-0.5.3-arm64.dmg": {
+      "bytes": 38225526,
+      "sha256": "2cd7ba12de5648c70dc71c118f17d722810b1f2d8c9e1e56add59e9fd8eb88ec"
+    },
+    "DeepCode.app.tar.gz": {
+      "bytes": 38257217,
+      "sha256": "bb35959f3324baea114c0ca666e6e6d6ac7fb2519a2cf0fb30492a89f4cda6f8"
+    },
+    "DeepCode.app.tar.gz.sig": {
+      "bytes": 408,
+      "sha256": "9e2c3374a5b1b4704318abe9d030f304271baca23620cd057c01891e9a26d6ab"
+    },
+    "latest.json": {
+      "bytes": 777,
+      "sha256": "6ce8bb25fbff0e1dfa12b18a295cb4a1fba86f846980f4b7b79cc4c8be9583cc"
+    }
+  },
+  "cli": {
+    "version": "0.5.3",
+    "integrity": "sha512-f1pe11QXWvBnbOqIK6UrvNZad2fsurKc20RZaOTpqIle9AciektAWoBqT0fihnLM055deQuLaYUtNTLQ8nqhAA==",
+    "size": 329899,
+    "unpackedSize": 1075798,
+    "validation": {
+      "status": "passed",
+      "node": "v22.23.4",
+      "platform": "darwin-arm64",
+      "checks": [
+        "isolated offline tarball install",
+        "version/help",
+        "all builtin skills",
+        "schema asset/profile",
+        "stdio session lifecycle",
+        "restart durability",
+        "optional SDK absent/present"
+      ]
+    }
+  },
+  "tests": {
+    "desktop": 158,
+    "updaterReadinessRegressions": 3,
+    "archiveRegression": "macOS AppleDouble metadata rejection and notarization-ticket preservation",
+    "fixtureProvider": "loopback only; no vendor requests"
+  },
+  "finalEvidence": "Final cross-platform CI, npm registry readback and downloaded GitHub artifact verification are recorded on the release PR and release page.",
+  "independentArtifactReview": {
+    "checksPassed": 10,
+    "newKeyAccepted": true,
+    "oldKeyRejected": "UnexpectedKeyId",
+    "tamperedArchiveRejected": "InvalidSignature",
+    "tamperedSignatureRejected": "InvalidSignature",
+    "archiveEntries": 43,
+    "appleDoubleEntries": 0,
+    "dmgAndUpdaterAppFilesIdentical": true,
+    "notarizedSignaturesAndGatekeeper": "passed"
+  }
+}

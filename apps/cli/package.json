@@ -1,6 +1,6 @@
 {
   "name": "@oratis/deepcode",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "DeepCode CLI — DeepSeek-powered AI coding agent for real codebases",
   "license": "MIT",
   "type": "module",

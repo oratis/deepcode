@@ -24,17 +24,17 @@ H01–H04 统一执行、Cordis、bootstrap/profile 与 session journal 的实�
 
 ## 快速上手
 
-v0.5.2 的 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.2) 提供 macOS Apple Silicon 签名公证 DMG、VSIX 和独立 CLI 安装包。
+v0.5.3 的 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.3) 提供 macOS Apple Silicon 签名公证 DMG、VSIX 和独立 CLI 安装包。
 
-- macOS：下载 `DeepCode-0.5.2-arm64.dmg`，将 DeepCode 拖入 Applications。
-- VS Code：下载 `deepcode-0.5.2.vsix`，运行 **Extensions: Install from VSIX…**。
-- CLI：安装 Node 22，下载 `oratis-deepcode-0.5.2.tgz`，运行 `npm install -g --omit=optional ./oratis-deepcode-0.5.2.tgz`。
+- macOS：下载 `DeepCode-0.5.3-arm64.dmg`，将 DeepCode 拖入 Applications。
+- VS Code：下载 `deepcode-0.5.3.vsix`，运行 **Extensions: Install from VSIX…**。
+- CLI：安装 Node 22，下载 `oratis-deepcode-0.5.3.tgz`，运行 `npm install -g --omit=optional ./oratis-deepcode-0.5.3.tgz`。
 
 CLI 从源码运行：
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.2 https://github.com/oratis/deepcode.git
+git clone --branch v0.5.3 https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build
@@ -47,7 +47,7 @@ deepcode -p "fix the bug in src/auth.ts"
 deepcode --mode plan
 ```
 
-`deepcode` 函数在当前 shell 中有效，也可以直接用 Node 执行构建后的 CLI 绝对路径。CLI tarball 可直接安装，无需发布者的 npm registry 凭据；npm registry 和自动更新是否启用以发布页为准。DMG 内置原生引擎，实验性 Claude SDK 不随桌面包提供。桌面开发启动与发布配置见 [发布说明](docs/RELEASING.md)。升级旧会话前请读 [兼容与回滚说明](docs/HARNESS_RUNTIME_GUIDE.md)。
+`deepcode` 函数在当前 shell 中有效，也可以直接用 Node 执行构建后的 CLI 绝对路径。CLI 也可通过 `npm install -g @oratis/deepcode@0.5.3` 安装。0.5.2 及更早版本须手动安装 v0.5.3 DMG 一次，以迁移到新的自动更新公钥；之后可接收使用新密钥签名的更新。DMG 内置原生引擎，实验性 Claude SDK 不随桌面包提供。桌面开发启动与发布配置见 [发布说明](docs/RELEASING.md)。升级旧会话前请读 [兼容与回滚说明](docs/HARNESS_RUNTIME_GUIDE.md)。
 
 ## 当前工程基线
 

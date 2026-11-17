@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] — 2026-11-18
+
+### Added
+
+- Signed macOS automatic-update archive and feed, using a new dedicated DeepCode updater key. Apple signing and notarization remain separate from updater signature verification.
+- Complete standalone CLI, VSIX and notarized Apple Silicon DMG release, including npm registry publication.
+
+### Fixed
+
+- The desktop only offers to relaunch after updater signature verification and installation have completed successfully; a finished download alone is not treated as an installed update.
+- macOS updater archives omit AppleDouble metadata entries so Tauri can extract the single app root while preserving its notarization ticket.
+
+### Upgrade note
+
+- Versions 0.5.2 and earlier contain the previous updater public key. **Install v0.5.3 manually from the signed DMG once.** Future releases signed by the new key can then use automatic updates. Old tags and public-key verification stay intact; there is no signature bypass or transparent cross-key update.
+
 ## [0.5.2] — 2026-11-17
 
 ### Fixed

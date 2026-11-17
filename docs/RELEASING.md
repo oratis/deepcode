@@ -170,7 +170,9 @@ and update release notes to reflect the artifacts that were actually published.
 The DMG includes the native runtime; the experimental Claude SDK is not bundled.
 
 For automatic updates, `sign-and-notarize.sh` rebuilds and signs the update archive
-**after** the app is stapled. Verify the signature against the committed public key
+**after** the app is stapled, with `COPYFILE_DISABLE=1` to exclude AppleDouble
+entries that Tauri cannot unpack. The `Contents/CodeResources` notarization ticket
+remains a regular archive entry. Verify the signature against the committed public key
 and inspect the extracted app before uploading a feed. Never publish Tauri's earlier
 build-time archive after re-signing the app. An unavailable updater private key does
 not block manual DMG distribution and must not trigger an undocumented key rotation.
@@ -208,6 +210,17 @@ lost, regenerating changes the public key, and **existing installs will refuse
 every update signed by the new one** — they verify against the key they shipped
 with. That is a clean break requiring a manual re-download, so treat the private
 key as unrecoverable-if-lost, not as something to regenerate casually.
+
+### v0.5.3 updater key migration
+
+The prior updater private key could not be recovered. With explicit owner approval,
+v0.5.3 introduces a new dedicated updater key; only its public half is committed.
+Existing 0.5.2-or-earlier installs must install the signed v0.5.3 DMG manually once.
+No old signature check is disabled and no historical tag is changed. Future updates
+must use this same new private key, held in restricted local operator storage.
+Back up that private key securely; the Apple Developer ID PEM/CSR cannot substitute
+for a Tauri updater key. Rollback to an older app also restores its older public key
+and requires another manual upgrade to return to the new update stream.
 
 ### What the pipeline does with it
 
