@@ -2,8 +2,8 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §4b
 //
 // On app start, we silently poll the GitHub Releases feed. When a newer
-// release is available, we download it in the background and fire an
-// `update-downloaded` event the renderer listens for (UpdateBanner UI).
+// release is available, we download and install it in the background, then
+// notify the renderer only after signature verification and installation succeed.
 //
 // Privacy: only a single HEAD-equivalent JSON fetch to the GitHub
 // releases endpoint. No telemetry beyond that.
@@ -46,7 +46,7 @@ export function startUpdaterPolling(): void {
 }
 
 async function checkAndDownloadOnce(): Promise<void> {
-  let update: Update | null = null;
+  let update: Update | null;
   try {
     update = await check();
   } catch (err) {
@@ -59,7 +59,8 @@ async function checkAndDownloadOnce(): Promise<void> {
     return;
   }
   console.info(`[updater] new version available: ${update.version}`);
-  // Stream-download with progress; finishOnLoad triggers immediately.
+  // Finished only means the download ended. Tauri still has to verify the
+  // signature and install the archive before it is safe to offer a relaunch.
   let downloaded = 0;
   await update.downloadAndInstall((event) => {
     if (event.event === 'Started') {
@@ -67,12 +68,12 @@ async function checkAndDownloadOnce(): Promise<void> {
     } else if (event.event === 'Progress') {
       downloaded += event.data.chunkLength;
     } else if (event.event === 'Finished') {
-      console.info(`[updater] downloaded ${downloaded} bytes — ready`);
-      emit({
-        version: update?.version ?? '',
-        releaseNotes: update?.body ?? undefined,
-      });
+      console.info(`[updater] downloaded ${downloaded} bytes — verifying and installing`);
     }
+  });
+  emit({
+    version: update.version,
+    releaseNotes: update.body ?? undefined,
   });
 }
 
