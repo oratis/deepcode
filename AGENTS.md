@@ -3,9 +3,15 @@
 ## North star
 
 DeepCode is a DeepSeek-powered coding agent with CLI, Tauri desktop, VS Code,
-and LSP surfaces. The active modernization plan is
-[`docs/CODEX_ALIGNMENT_PLAN.md`](docs/CODEX_ALIGNMENT_PLAN.md). It supersedes
-the original milestone plan for new architecture decisions.
+and LSP surfaces. The active architecture plan is
+[`docs/HARNESS_TRANSFORMATION_PLAN.md`](docs/HARNESS_TRANSFORMATION_PLAN.md),
+with decisions in [`ADR 0003`](docs/adr/0003-plugin-composed-harness.md).
+H01–H04 foundations are implemented; see [`implementation progress`](docs/HARNESS_IMPLEMENTATION_PROGRESS.md)
+for verified scope and remaining work. The existing runtime baseline and
+prior modernization history remain in
+[`docs/CODEX_ALIGNMENT_PLAN.md`](docs/CODEX_ALIGNMENT_PLAN.md). For future
+Harness work, use the new plan's current-code comparison and migration gates;
+do not treat the old plan's historical gaps as current defects.
 
 ## Layout
 

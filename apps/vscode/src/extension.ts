@@ -3,7 +3,6 @@
 import type * as vscode from 'vscode';
 import {
   isReviewFindingPayload,
-  ProtocolClient,
   type ProtocolEvent,
   type ReviewActionPayload,
   type ReviewFindingPayload,
@@ -11,6 +10,9 @@ import {
 import { SpawnedAppServerConnection } from '@deepcode/app-server/client';
 
 import { EditorProtocolRuntime } from './protocol-runtime.js';
+import { EditorAppServerClient } from './editor-client.js';
+import { ChatPanelController } from './chat-panel.js';
+import { chatHtml } from './chat-html.js';
 import { formatConfigDiagnostics } from './diagnostics.js';
 import { explicitConfigValue } from './settings.js';
 import { formatWorkspaceDiffForReview } from './workspace-diff.js';
@@ -26,14 +28,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const { commands, window, workspace } = vscodeMod;
   const appServer = context.asAbsolutePath('dist/app-server.cjs');
   const runtime = new EditorProtocolRuntime(
-    new ProtocolClient(
+    new EditorAppServerClient(
       new SpawnedAppServerConnection({ command: process.execPath, args: [appServer] }),
     ),
     () => workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd(),
   );
   activeRuntime = runtime;
+  const chatView = new ChatViewProvider(vscodeMod, runtime);
 
   context.subscriptions.push(
+    chatView,
     commands.registerCommand('deepcode.openPanel', () => {
       void commands.executeCommand('workbench.view.extension.deepcode');
     }),
@@ -119,7 +123,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         out.appendLine(`✕ ${(error as Error).message ?? String(error)}`);
       }
     }),
-    window.registerWebviewViewProvider('deepcode.chat', new ChatViewProvider(vscodeMod, runtime)),
+    window.registerWebviewViewProvider('deepcode.chat', chatView),
   );
 }
 
@@ -303,129 +307,36 @@ function truncate(value: string, length: number): string {
 }
 
 class ChatViewProvider implements vscode.WebviewViewProvider {
-  constructor(
-    private readonly vscodeMod: V,
-    private readonly runtime: EditorProtocolRuntime,
-  ) {}
+  private view?: vscode.WebviewView;
+  private readonly panel: ChatPanelController;
+
+  constructor(vscodeMod: V, runtime: EditorProtocolRuntime) {
+    this.panel = new ChatPanelController(
+      runtime,
+      (message) => {
+        void this.view?.webview.postMessage(message);
+      },
+      (text) => modelInput(text, vscodeMod),
+      (event) => respondToInteraction(event, vscodeMod, runtime),
+    );
+  }
+
+  dispose(): void {
+    this.panel.dispose();
+  }
 
   resolveWebviewView(view: vscode.WebviewView): void {
-    view.webview.options = { enableScripts: true };
-    view.webview.html = chatHtml();
-    view.webview.onDidReceiveMessage((message: unknown) => {
-      void this.handleMessage(view, message as { kind: string; text?: string });
+    this.view = view;
+    view.webview.options = { enableScripts: true, localResourceRoots: [] };
+    const receiver = view.webview.onDidReceiveMessage((message: unknown) => {
+      void this.panel.receive(message);
     });
+    view.onDidDispose(() => {
+      receiver.dispose();
+      if (this.view === view) this.view = undefined;
+    });
+    view.webview.html = chatHtml();
   }
-
-  private async handleMessage(
-    view: vscode.WebviewView,
-    message: { kind: string; text?: string },
-  ): Promise<void> {
-    if (message.kind !== 'send' || !message.text) return;
-    try {
-      await this.runtime.start(modelInput(message.text, this.vscodeMod), (event) => {
-        projectWebviewEvent(event, view);
-        void respondToInteraction(event, this.vscodeMod, this.runtime);
-      });
-    } catch (error) {
-      void view.webview.postMessage({
-        kind: 'assistant',
-        text: `✕ ${(error as Error).message ?? String(error)}`,
-      });
-    }
-  }
-}
-
-function projectWebviewEvent(event: ProtocolEvent, view: vscode.WebviewView): void {
-  switch (event.type) {
-    case 'item.delta':
-      void view.webview.postMessage({ kind: 'assistant_stream', text: event.delta });
-      break;
-    case 'tool.started':
-      void view.webview.postMessage({
-        kind: 'tool',
-        text: `[${event.name}] ${formatInput(event.input)}`,
-      });
-      break;
-    case 'tool.completed':
-      void view.webview.postMessage({
-        kind: 'tool',
-        text: `${event.result.isError ? '✕' : '✓'} ${truncate(event.result.content, 200)}`,
-      });
-      break;
-    case 'approval.requested':
-      void view.webview.postMessage({
-        kind: 'tool',
-        text: `[approval] ${event.toolName}: ${event.reason}`,
-      });
-      break;
-    case 'user-input.requested':
-      void view.webview.postMessage({ kind: 'tool', text: `[input] ${event.question}` });
-      break;
-    case 'turn.completed':
-    case 'turn.interrupted':
-      void view.webview.postMessage({ kind: 'assistant_end' });
-      break;
-    case 'turn.failed':
-      void view.webview.postMessage({
-        kind: 'assistant',
-        text: `✕ ${turnError(event.turn) ?? 'turn failed'}`,
-      });
-      break;
-  }
-}
-
-function chatHtml(): string {
-  return `<!DOCTYPE html>
-<html><head><meta charset="utf-8"><style>
-  body { font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-editor-background); padding: 8px; margin: 0; }
-  #log { height: calc(100vh - 80px); overflow-y: auto; padding: 4px; }
-  #log .msg { margin: 4px 0; padding: 6px 8px; border-radius: 3px; white-space: pre-wrap; }
-  #log .user { background: var(--vscode-input-background); }
-  #log .assistant { background: var(--vscode-editor-inactiveSelectionBackground); }
-  #log .tool { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.85em; color: var(--vscode-descriptionForeground); }
-  #composer { position: fixed; bottom: 0; left: 0; right: 0; padding: 8px; background: var(--vscode-sideBar-background); border-top: 1px solid var(--vscode-panel-border); }
-  #composer input { width: 100%; box-sizing: border-box; padding: 6px; background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); }
-</style></head><body>
-<div id="log"></div>
-<div id="composer"><input id="msg" placeholder="Ask DeepCode…" autofocus></div>
-<script>
-  const vscode = acquireVsCodeApi();
-  const log = document.getElementById('log');
-  const input = document.getElementById('msg');
-  let streaming = null;
-  input.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && input.value.trim()) {
-      const text = input.value;
-      input.value = '';
-      append('user', text);
-      vscode.postMessage({ kind: 'send', text });
-    }
-  });
-  window.addEventListener('message', (event) => {
-    const m = event.data;
-    if (m.kind === 'assistant_stream') {
-      if (!streaming) streaming = append('assistant', '');
-      streaming.textContent += m.text;
-      log.scrollTop = log.scrollHeight;
-    } else if (m.kind === 'assistant_end') {
-      streaming = null;
-    } else if (m.kind === 'tool') {
-      append('tool', m.text);
-    } else if (m.kind === 'assistant') {
-      append('assistant', m.text);
-      streaming = null;
-    }
-  });
-  function append(role, text) {
-    const div = document.createElement('div');
-    div.className = 'msg ' + role;
-    div.textContent = text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
-    return div;
-  }
-</script>
-</body></html>`;
 }
 
 async function loadVscode(): Promise<V> {

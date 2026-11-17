@@ -2,7 +2,7 @@
 // Spec: docs/DEVELOPMENT_PLAN.md §3.5
 // Milestone: M1
 
-export { SessionManager } from './manager.js';
+export { SessionManager, recoverToolResults } from './manager.js';
 export type { SessionManagerOpts } from './manager.js';
 export {
   defaultSessionsDir,
@@ -33,3 +33,12 @@ export {
   type SessionSearchHit,
   type SessionSearchResult,
 } from './search.js';
+
+export {
+  SessionJournal,
+  projectJournal,
+  type JournalEvent,
+  type JournalInput,
+  type SessionProjection,
+} from './journal.js';
+export { importLegacySession } from './importer.js';

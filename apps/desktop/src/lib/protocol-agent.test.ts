@@ -101,6 +101,26 @@ const turn: TurnSnapshot = {
 };
 
 describe('DesktopProtocolAgent', () => {
+  it('retains the old send target when preparing a resumed transcript fails', async () => {
+    const transport = new FakeTransport();
+    const agent = new DesktopProtocolAgent(transport, () => {});
+    await agent.resume(thread.id);
+    const request = transport.request.bind(transport);
+    transport.request = async <T>(method: ProtocolMethod, params: Record<string, unknown> = {}) => {
+      if (method === 'thread/resume') return { ...thread, id: 'other-thread' } as T;
+      return request<T>(method, params);
+    };
+    await expect(
+      agent.resume('other-thread', async () => {
+        throw new Error('History unavailable');
+      }),
+    ).rejects.toThrow('History unavailable');
+    await agent.start({ userMessage: 'continue here' });
+    expect(transport.requests.at(-1)).toEqual({
+      method: 'turn/start',
+      params: { threadId: thread.id, input: { text: 'continue here' } },
+    });
+  });
   it('reads workspace diff only through an adopted canonical thread', async () => {
     const transport = new FakeTransport();
     const agent = new DesktopProtocolAgent(transport, () => undefined);
@@ -179,6 +199,7 @@ describe('DesktopProtocolAgent', () => {
     await vi.runAllTimersAsync();
 
     expect(events).toEqual([
+      expect.objectContaining({ type: 'turn_started', turnId: turn.id }),
       expect.objectContaining({ type: 'text_delta', text: 'done' }),
       expect.objectContaining({ kind: 'turn_done', stopReason: 'end_turn' }),
     ]);

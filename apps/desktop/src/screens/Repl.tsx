@@ -1,24 +1,11 @@
 import { MODEL_CATALOG, modelParameters } from '@deepcode/core/dist/providers/catalog.js';
-// REPL / Chat screen — design-aligned per docs/VISUAL_DESIGN.html #3.
-//
-// Layout:
-//   .chat-header  → breadcrumb + status pills (connected · model · approval)
-//   .chat-stream  → message rows. Each row is .msg.{user|assistant|system}
-//                   with a 28 px avatar and a .body that holds plain text
-//                   PLUS any tool-call cards the agent emitted during that
-//                   assistant turn.
-//   inline approval panel → sits directly under the relevant tool card
-//                   (per design note ③ — never at screen bottom)
-//   .composer     → .box with textarea + .toolbar (mode badge · model
-//                   picker · effort · send) + .ctx-bar (context usage)
-//
-// The streaming logic carries over from the previous version: we
-// subscribe to window.deepcode.agent.onEvent and incrementally update
-// state. The only structural change vs. the previous Repl.tsx is the
-// CSS class names (which now match the design tokens) and the addition
-// of richer tool-card rendering.
+// Chat presentation over the existing desktop protocol adapter.
+// The timeline stays mounted across settings navigation. Tool details are
+// disclosed on demand; pending interactions stay above the composer so they
+// remain reachable even when the user is reading older messages. A stop request
+// only enters Cancelling; the host's terminal event unlocks the conversation.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type JSX } from 'react';
+import { useCallback, useEffect, useRef, useState, type JSX } from 'react';
 import {
   DEFAULT_KEYBINDINGS,
   VimState,
@@ -42,10 +29,12 @@ import {
   type Effort,
   type SlashCommand,
 } from '../lib/slash-commands.js';
+import { MessageContent } from '../components/MessageContent.js';
 import { ToolCard } from '../components/ToolCard.js';
 import { ToolBody } from '../components/ToolBody.js';
 import { presentToolCall, readToolLocations } from '@deepcode/core/dist/tools/presentation.js';
 import { projectName } from '../lib/project.js';
+import { registerShortcut } from '../lib/keyboard.js';
 import { useVoice } from '../lib/use-voice.js';
 import { insertTranscript } from '../lib/voice.js';
 import {
@@ -58,13 +47,7 @@ import {
   pickTarget,
   type Msg,
 } from '../lib/repl-stream.js';
-import {
-  appendAllowMatcher,
-  loadKeybindings,
-  loadSettingsFile,
-  pickFile,
-  saveSettingsFile,
-} from '../lib/tauri-api.js';
+import { loadKeybindings, loadSettingsFile, pickFile, saveSettingsFile } from '../lib/tauri-api.js';
 import type { InspectorData, TodoItem } from '../types/inspector.js';
 import type { ScreenName } from '../types/screens.js';
 
@@ -76,6 +59,8 @@ interface ReplScreenProps {
   onTurnComplete?: () => void;
   /** Called once the backend creates/adopts the canonical thread id. */
   onSessionStarted?: (sessionId: string) => void;
+  /** Reset the host selection and all sibling projections together. */
+  onNewSession?: () => void;
   /**
    * Pre-seed the chat with a resumed session's reconstructed messages. The
    * parent remounts ReplScreen (via key) when this changes, so it's only read
@@ -90,6 +75,7 @@ interface ReplScreenProps {
   onInspector?: (patch: Partial<InspectorData>) => void;
   /** Open a file (from a tool card's "preview" affordance) in the file panel. */
   onOpenFile?: (path: string) => void;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 /** Tools whose file_path we surface in the inspector's Recent files section. */
@@ -149,13 +135,13 @@ const MODE_OPTIONS: DropdownOption<AgentMode>[] = [
     value: 'dontAsk',
     label: "Don't ask",
     meta: '↯',
-    description: 'Auto-approve everything safe (no destructive operations).',
+    description: 'Deny calls that require approval. Existing allow rules still apply.',
   },
   {
     value: 'bypassPermissions',
     label: 'Bypass',
     meta: '⚡',
-    description: 'YOLO. Run anything, no approvals. Use only in scratch dirs.',
+    description: 'Skip approval prompts. Sandbox, file contract and hook restrictions still apply.',
   },
 ];
 
@@ -206,9 +192,11 @@ export function ReplScreen({
   onNavigate,
   onTurnComplete,
   onSessionStarted,
+  onNewSession,
   initialMessages,
   onInspector,
   onOpenFile,
+  onBusyChange,
 }: ReplScreenProps): JSX.Element {
   const [messages, setMessages] = useState<Msg[]>(() =>
     initialMessages && initialMessages.length > 0
@@ -219,18 +207,19 @@ export function ReplScreen({
           },
           ...initialMessages,
         ]
-      : [
-          {
-            role: 'system',
-            text: `DeepCode is ready in ${projectPath}. Ask anything about your codebase — I can Read / Write / Edit / Bash / Grep / Glob your files.`,
-          },
-        ],
+      : [],
   );
   const [input, setInput] = useState('');
   // Slash palette: derived list + which row the arrow keys are on.
   const [slashIndex, setSlashIndex] = useState(0);
   const [slashDismissed, setSlashDismissed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [outcome, setOutcome] = useState('Ready');
+  const [interactionBusy, setInteractionBusy] = useState(false);
+  const [interactionError, setInteractionError] = useState<string | null>(null);
+  const [questionAnswer, setQuestionAnswer] = useState('');
+  const [questionChoices, setQuestionChoices] = useState<string[]>([]);
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
   const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null);
   const [pendingQuestion, setPendingQuestion] = useState<PendingQuestion | null>(null);
@@ -261,6 +250,23 @@ export function ReplScreen({
   const bindingsRef = useRef<KeyBinding[]>(DEFAULT_KEYBINDINGS);
   const listRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const followOutput = useRef(true);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const activeTurnRef = useRef<string | null>(null);
+  const busyRef = useRef(false);
+  const cancellingRef = useRef(false);
+  const interactionRef = useRef<string | null>(null);
+  const respondingToRef = useRef<string | null>(null);
+
+  // The host must lock navigation before the next render or an awaited RPC.
+  const changeBusy = useCallback(
+    (value: boolean) => {
+      busyRef.current = value;
+      setBusy(value);
+      onBusyChange?.(value);
+    },
+    [onBusyChange],
+  );
 
   // ── Voice input (🎙) — record + transcribe locally, splice into the composer ──
   const handleTranscript = useCallback((text: string) => {
@@ -326,15 +332,34 @@ export function ReplScreen({
     const off = window.deepcode.agent.onEvent((raw: unknown) => {
       const e = raw as AgentEvt;
       if (e.kind === 'turn_done') {
-        setBusy(false);
+        changeBusy(false);
+        activeTurnRef.current = null;
+        cancellingRef.current = false;
+        interactionRef.current = null;
+        respondingToRef.current = null;
+        setCancelling(false);
+        setOutcome(
+          e.stopReason === 'aborted'
+            ? 'Interrupted'
+            : e.stopReason === 'error'
+              ? 'Failed'
+              : 'Completed',
+        );
+        setInteractionError(null);
+        setInteractionBusy(false);
         setActiveTurnId(null);
         setPendingApproval(null);
         setPendingQuestion(null);
-        setMessages((m) => finalizeStreaming(m));
+        setMessages((m) => finalizeStreaming(m, e.stopReason === 'aborted'));
         onTurnComplete?.();
         return;
       }
       switch (e.type) {
+        case 'turn_started':
+          changeBusy(true);
+          activeTurnRef.current = e.turnId;
+          setActiveTurnId(e.turnId);
+          break;
         case 'text_delta':
           setMessages((m) => appendTextDelta(m, e.text ?? ''));
           break;
@@ -406,10 +431,14 @@ export function ReplScreen({
             ...m,
             { role: 'system', text: `✕ ${e.error ?? 'unknown error'}`, level: 'error' },
           ]);
-          setBusy(false);
           break;
         case 'permission_request':
           if (e.requestId && e.toolName) {
+            interactionRef.current = e.requestId;
+            respondingToRef.current = null;
+            setInteractionBusy(false);
+            setPendingQuestion(null);
+            setInteractionError(null);
             setPendingApproval({
               requestId: e.requestId,
               toolName: e.toolName,
@@ -419,6 +448,13 @@ export function ReplScreen({
           break;
         case 'ask_user':
           if (e.requestId && e.question) {
+            interactionRef.current = e.requestId;
+            respondingToRef.current = null;
+            setInteractionBusy(false);
+            setPendingApproval(null);
+            setInteractionError(null);
+            setQuestionAnswer('');
+            setQuestionChoices([]);
             setPendingQuestion({
               requestId: e.requestId,
               question: e.question,
@@ -433,11 +469,16 @@ export function ReplScreen({
   }, []);
 
   useEffect(() => {
-    listRef.current?.scrollTo({
-      top: listRef.current.scrollHeight,
-      behavior: 'smooth',
-    });
+    if (followOutput.current) listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages]);
+
+  useEffect(
+    () =>
+      registerShortcut('meta+.', () => {
+        void handleAbort();
+      }),
+    [],
+  );
 
   // ── Lift inspector state to App ──
   // Push a full snapshot whenever any inspector-relevant slice changes so the
@@ -508,6 +549,7 @@ export function ReplScreen({
     }
   }
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>): void {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     // The palette owns the arrow keys, Tab and Escape while it is open —
     // before vim bindings, which would otherwise swallow them.
     if (slashMatches.length > 0) {
@@ -566,42 +608,52 @@ export function ReplScreen({
     if (after !== before) setVimMode(after);
   }
 
-  // ── Approval ──
-  async function handleApproval(decision: 'allow' | 'deny' | 'always'): Promise<void> {
-    if (!pendingApproval) return;
+  // Approval decisions are one-shot. Persistent rules belong in Permissions.
+  async function handleApproval(decision: 'allow' | 'deny'): Promise<void> {
+    if (!pendingApproval || respondingToRef.current || cancellingRef.current) return;
     const req = pendingApproval;
-    setPendingApproval(null);
-    if (decision === 'always') {
-      try {
-        await appendAllowMatcher(req.toolName);
-        setMessages((m) => [
-          ...m,
-          {
-            role: 'system',
-            text: `✓ "${req.toolName}" added to settings.permissions.allow`,
-          },
-        ]);
-      } catch (err) {
-        setMessages((m) => [
-          ...m,
-          {
-            role: 'system',
-            text: `⚠ Could not persist always-allow: ${(err as Error).message}`,
-            level: 'error',
-          },
-        ]);
+    respondingToRef.current = req.requestId;
+    setInteractionBusy(true);
+    setInteractionError(null);
+    try {
+      await window.deepcode.agent.approve({ requestId: req.requestId, decision });
+      if (interactionRef.current !== req.requestId) return;
+      interactionRef.current = null;
+      setPendingApproval(null);
+      say(`${req.toolName} · ${decision === 'allow' ? 'Allowed once' : 'Rejected'}`);
+    } catch (err) {
+      if (interactionRef.current === req.requestId)
+        setInteractionError(`Could not send decision: ${String(err)}`);
+    } finally {
+      if (respondingToRef.current === req.requestId) {
+        respondingToRef.current = null;
+        setInteractionBusy(false);
       }
     }
-    await window.deepcode.agent.approve({ requestId: req.requestId, decision });
   }
 
-  // ── AskUserQuestion answer ──
   async function handleAnswer(answer: string): Promise<void> {
-    if (!pendingQuestion) return;
+    if (!pendingQuestion || respondingToRef.current || cancellingRef.current || !answer.trim())
+      return;
     const req = pendingQuestion;
-    setPendingQuestion(null);
-    setMessages((m) => [...m, { role: 'system', text: `❯ ${req.question} → ${answer}` }]);
-    await window.deepcode.agent.answer({ requestId: req.requestId, answer });
+    respondingToRef.current = req.requestId;
+    setInteractionBusy(true);
+    setInteractionError(null);
+    try {
+      await window.deepcode.agent.answer({ requestId: req.requestId, answer });
+      if (interactionRef.current !== req.requestId) return;
+      interactionRef.current = null;
+      setPendingQuestion(null);
+      say(`❯ ${req.question} → ${answer}`);
+    } catch (err) {
+      if (interactionRef.current === req.requestId)
+        setInteractionError(`Could not send answer: ${String(err)}`);
+    } finally {
+      if (respondingToRef.current === req.requestId) {
+        respondingToRef.current = null;
+        setInteractionBusy(false);
+      }
+    }
   }
 
   // ── Slash commands ──
@@ -620,6 +672,10 @@ export function ReplScreen({
         say(slashHelpText());
         return true;
       case 'clear':
+        if (onNewSession) {
+          onNewSession();
+          return true;
+        }
         clearProtocolThread();
         setMessages([{ role: 'system', text: 'New conversation.' }]);
         setUsage({ inputTokens: 0, outputTokens: 0 });
@@ -689,7 +745,7 @@ export function ReplScreen({
   async function handleSubmit(e: React.FormEvent): Promise<void> {
     e.preventDefault();
     const text = input.trim();
-    if (!text || busy || pendingApproval || pendingQuestion) return;
+    if (!text || busyRef.current || pendingApproval || pendingQuestion) return;
     setInput('');
     setSlashDismissed(false);
     setSlashIndex(0);
@@ -702,7 +758,10 @@ export function ReplScreen({
     } else {
       setMessages((m) => [...m, { role: 'user', text }]);
     }
-    setBusy(true);
+    changeBusy(true);
+    setOutcome('Starting');
+    followOutput.current = true;
+    setAwayFromBottom(false);
     try {
       const r = await window.deepcode.agent.start({
         sessionId: 'default',
@@ -713,9 +772,12 @@ export function ReplScreen({
         cwd: projectPath,
       });
       setActiveTurnId(r.turnId);
+      activeTurnRef.current = r.turnId;
       if (r.sessionId) onSessionStarted?.(r.sessionId);
     } catch (err) {
-      setBusy(false);
+      changeBusy(false);
+      setOutcome('Failed');
+      setInput(text);
       setMessages((m) => [
         ...m,
         {
@@ -728,8 +790,20 @@ export function ReplScreen({
   }
 
   async function handleAbort(): Promise<void> {
-    if (!activeTurnId) return;
-    await window.deepcode.agent.abort({ turnId: activeTurnId });
+    const id = activeTurnRef.current;
+    if (!id || cancellingRef.current) return;
+    cancellingRef.current = true;
+    setCancelling(true);
+    try {
+      const accepted = await window.deepcode.agent.abort({ turnId: id });
+      if (!accepted && activeTurnRef.current === id)
+        throw new Error('The runtime did not accept the stop request.');
+    } catch (err) {
+      if (activeTurnRef.current !== id) return;
+      cancellingRef.current = false;
+      setCancelling(false);
+      say(`Could not stop: ${String(err)}. Try Stop again.`, 'error');
+    }
   }
 
   // Lock all the toolbar controls (mode / model / effort) once a turn
@@ -751,23 +825,18 @@ export function ReplScreen({
   const usedTokens = usage.inputTokens + usage.outputTokens;
   const fillPct = Math.min(100, (usedTokens / contextWindow) * 100);
 
-  // Header status pills
-  const headerPills = useMemo(
-    () => (
-      <>
-        <Pill dot>connected</Pill>
-        <Pill>{model}</Pill>
-        <Pill>
-          {mode === 'bypassPermissions'
-            ? 'approval: skipped'
-            : mode === 'plan'
-              ? 'plan mode'
-              : 'approval: ask'}
-        </Pill>
-      </>
-    ),
-    [model, mode],
-  );
+  const activity = cancelling
+    ? 'Cancelling'
+    : pendingApproval
+      ? 'Awaiting approval'
+      : pendingQuestion
+        ? 'Awaiting input'
+        : busy
+          ? activeTurnId
+            ? 'Working'
+            : 'Starting'
+          : outcome;
+  const modeLabel = MODE_OPTIONS.find((option) => option.value === mode)?.label ?? mode;
 
   return (
     <>
@@ -779,60 +848,175 @@ export function ReplScreen({
             {abbreviatePath(projectPath)}
           </span>
         </span>
-        <div className="right">{headerPills}</div>
+        <div className="right">
+          <Pill>{modeLabel}</Pill>
+          <span className={`activity-status ${busy ? 'active' : ''}`} role="status">
+            {activity}
+          </span>
+        </div>
       </div>
 
-      <div className="chat-stream" ref={listRef}>
-        {messages.map((m, i) =>
-          renderMessage(
-            m,
-            i,
-            pendingApproval,
-            handleApproval,
-            i === activeAssistantIdx,
-            onOpenFile,
-          ),
-        )}
-
-        {busy && !pendingApproval && !pendingQuestion && (
-          <div className="msg assistant">
-            <div className="avatar">DC</div>
-            <div className="body">
-              <div className="author">DeepCode · thinking</div>
-              <div className="content">
-                <span className="spinner" /> <span className="muted">working…</span>
-              </div>
+      <div
+        className="chat-stream"
+        ref={listRef}
+        role="region"
+        aria-label="Conversation"
+        onScroll={() => {
+          const el = listRef.current;
+          if (!el) return;
+          followOutput.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+          setAwayFromBottom(!followOutput.current);
+        }}
+      >
+        {messages.length === 0 && (
+          <div className="chat-welcome">
+            <div className="welcome-eyebrow">DEEPCODE · {projectName(projectPath)}</div>
+            <h1>What are we building?</h1>
+            <p>
+              Explore your project, make a change, or trace a problem.
+              <br />
+              Review tool requests as the work progresses.
+            </p>
+            <div className="welcome-actions">
+              {['Explain this codebase', 'Find and fix a bug', 'Review my changes'].map(
+                (prompt) => (
+                  <button
+                    type="button"
+                    key={prompt}
+                    onClick={() => {
+                      setInput(prompt);
+                      composerRef.current?.focus();
+                    }}
+                  >
+                    {prompt}
+                    <span aria-hidden="true">↗</span>
+                  </button>
+                ),
+              )}
             </div>
           </div>
         )}
+        {messages.map((m, i) => renderMessage(m, i, i === activeAssistantIdx, onOpenFile))}
 
-        {pendingQuestion && (
-          <div className="msg assistant">
-            <div className="avatar">DC</div>
-            <div className="body">
-              <div className="author">DeepCode · needs your input</div>
-              <div className="content">
-                <div style={{ marginBottom: 8 }}>{pendingQuestion.question}</div>
-                <div className="approval-row" style={{ flexWrap: 'wrap' }}>
-                  {pendingQuestion.options.map((o) => (
-                    <button
-                      key={o.label}
-                      type="button"
-                      className="btn btn-secondary"
-                      title={o.description}
-                      onClick={() => void handleAnswer(o.label)}
-                    >
-                      {o.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+        {busy && !pendingApproval && !pendingQuestion && (
+          <div className="turn-progress">
+            <span className="spinner" />
+            {cancelling ? 'Stopping the current turn…' : 'Working on your request…'}
           </div>
         )}
       </div>
 
       <div className="composer">
+        {awayFromBottom && (
+          <button
+            type="button"
+            className="jump-latest"
+            onClick={() => {
+              followOutput.current = true;
+              setAwayFromBottom(false);
+              listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
+            }}
+          >
+            ↓ Latest activity
+          </button>
+        )}
+        {pendingApproval && (
+          <section className="interaction-panel" aria-label="Tool approval">
+            <div className="interaction-heading">
+              Permission needed · {pendingApproval.toolName}
+            </div>
+            <p>{pendingApproval.reason}</p>
+            <p className="interaction-scope">
+              Allow this request once. Manage persistent rules in Settings → Permissions.
+            </p>
+            {interactionError && <p role="alert">{interactionError}</p>}
+            <div className="approval-row">
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={interactionBusy || cancelling}
+                onClick={() => void handleApproval('allow')}
+              >
+                Allow once
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={interactionBusy || cancelling}
+                onClick={() => void handleApproval('deny')}
+              >
+                Reject
+              </button>
+              <span className="muted">
+                {cancelling
+                  ? 'Cancelling…'
+                  : interactionBusy
+                    ? 'Sending decision…'
+                    : 'Waiting for your decision'}
+              </span>
+            </div>
+          </section>
+        )}
+        {pendingQuestion && (
+          <form
+            className="interaction-panel"
+            aria-label="Agent question"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleAnswer(
+                [...questionChoices, questionAnswer.trim()].filter(Boolean).join(', '),
+              );
+            }}
+          >
+            <div className="interaction-heading">Your input is needed</div>
+            <p>{pendingQuestion.question}</p>
+            <div className="question-options">
+              {pendingQuestion.options.map((option) => (
+                <label key={option.label}>
+                  <input
+                    type={pendingQuestion.multiSelect ? 'checkbox' : 'radio'}
+                    name="agent-answer"
+                    checked={questionChoices.includes(option.label)}
+                    disabled={interactionBusy || cancelling}
+                    onChange={() =>
+                      setQuestionChoices((choices) =>
+                        pendingQuestion.multiSelect
+                          ? choices.includes(option.label)
+                            ? choices.filter((choice) => choice !== option.label)
+                            : [...choices, option.label]
+                          : [option.label],
+                      )
+                    }
+                  />
+                  <span>
+                    {option.label}
+                    <small>{option.description}</small>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <input
+              className="input"
+              aria-label="Your answer"
+              placeholder="Or write your own answer…"
+              value={questionAnswer}
+              disabled={interactionBusy || cancelling}
+              onChange={(event) => setQuestionAnswer(event.target.value)}
+            />
+            {interactionError && <p role="alert">{interactionError}</p>}
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={
+                interactionBusy ||
+                cancelling ||
+                (!questionAnswer.trim() && questionChoices.length === 0)
+              }
+            >
+              Send answer
+            </button>
+          </form>
+        )}
         <form onSubmit={handleSubmit}>
           <div className="box">
             <SlashPalette
@@ -843,6 +1027,7 @@ export function ReplScreen({
             />
             <textarea
               ref={composerRef}
+              aria-label="Message DeepCode"
               value={input}
               onChange={(e) => {
                 setInput(e.target.value);
@@ -858,7 +1043,7 @@ export function ReplScreen({
                     ? 'Approve or reject the tool call above to continue…'
                     : busy
                       ? 'Agent is responding…'
-                      : '问点什么…   @ 引用文件   ·   / 命令   ·   # 写入 DEEPCODE.md'
+                      : 'Ask about your code, or / for commands…'
               }
               disabled={busy || pendingApproval !== null || pendingQuestion !== null}
               rows={Math.min(6, Math.max(1, input.split('\n').length))}
@@ -889,22 +1074,11 @@ export function ReplScreen({
                   {
                     icon: '/',
                     label: 'Slash command',
-                    description: 'Type / in the box (palette lands in v0.2)',
+                    description: 'Browse available commands',
                     onClick: () => {
                       const ta = composerRef.current;
                       if (!ta) return;
                       if (!input.startsWith('/')) setInput('/' + input);
-                      ta.focus();
-                    },
-                  },
-                  {
-                    icon: '#',
-                    label: 'Memory note',
-                    description: 'Type # to remember (writes DEEPCODE.md in v0.2)',
-                    onClick: () => {
-                      const ta = composerRef.current;
-                      if (!ta) return;
-                      if (!input.startsWith('#')) setInput('# ' + input);
                       ta.focus();
                     },
                   },
@@ -1011,6 +1185,8 @@ export function ReplScreen({
                   onClick={handleAbort}
                   className="send-btn stop"
                   title="Stop (⌘.)"
+                  aria-label={cancelling ? 'Cancelling' : 'Stop'}
+                  disabled={cancelling || !activeTurnId}
                 >
                   ■
                 </button>
@@ -1019,7 +1195,8 @@ export function ReplScreen({
                   type="submit"
                   className="send-btn"
                   disabled={!input.trim() || pendingApproval !== null}
-                  title="Send (⌘↵)"
+                  title="Send (Enter)"
+                  aria-label="Send message"
                 >
                   ↵
                 </button>
@@ -1028,8 +1205,8 @@ export function ReplScreen({
           </div>
         </form>
         <div className="ctx-bar">
-          <span>
-            {usedTokens.toLocaleString()} / {contextWindow.toLocaleString()}
+          <span title="Latest reported input and output tokens; an estimate of context usage">
+            Context ≈ {usedTokens.toLocaleString()} / {contextWindow.toLocaleString()}
           </span>
           <div className="progress">
             <div className="fill" style={{ width: `${fillPct}%` }} />
@@ -1049,8 +1226,6 @@ export function ReplScreen({
 function renderMessage(
   m: Msg,
   i: number,
-  pendingApproval: PendingApproval | null,
-  onApproval: (decision: 'allow' | 'deny' | 'always') => void,
   isActive: boolean,
   onOpenFile?: (path: string) => void,
 ): JSX.Element | null {
@@ -1074,6 +1249,7 @@ function renderMessage(
     return (
       <div
         key={i}
+        role={m.level === 'error' ? 'alert' : undefined}
         style={{
           fontSize: block ? 12 : 11.5,
           color: m.level === 'error' ? 'var(--error)' : 'var(--text-3)',
@@ -1100,7 +1276,7 @@ function renderMessage(
         <div className="author">DeepCode</div>
         <div className="content">
           {m.turn.reasoning ? <ReasoningBlock text={m.turn.reasoning} /> : null}
-          {m.turn.text}
+          <MessageContent text={m.turn.text} />
           {m.turn.streaming && isActive && <span className="streaming-cursor" />}
           {m.turn.tools.map((t) => {
             const presentation = presentToolCall(t.name, t.input ?? {});
@@ -1110,15 +1286,19 @@ function renderMessage(
                   name={t.name}
                   // A terminal body opens with the command as its prompt line,
                   // in full, so repeating it in the header is noise.
-                  target={presentation.kind === 'terminal' ? undefined : t.target}
+                  target={t.target}
                   status={{
-                    kind: t.status === 'running' ? 'info' : t.status === 'ok' ? 'ok' : 'err',
+                    kind: t.status === 'ok' ? 'ok' : t.status === 'err' ? 'err' : 'info',
                     label:
                       t.status === 'running'
                         ? '… running'
                         : t.status === 'ok'
                           ? '✓ done'
-                          : '✕ error',
+                          : t.status === 'err'
+                            ? '✕ error'
+                            : t.status === 'interrupted'
+                              ? 'interrupted · result unknown'
+                              : 'result unavailable',
                   }}
                   layout={presentation.kind}
                   body={
@@ -1135,35 +1315,6 @@ function renderMessage(
                       : undefined
                   }
                 />
-                {/* Inline approval — appears right under the relevant tool card */}
-                {pendingApproval &&
-                  pendingApproval.toolName === t.name &&
-                  t.status === 'running' && (
-                    <div className="approval-row">
-                      <button
-                        type="button"
-                        className="btn btn-primary"
-                        onClick={() => onApproval('allow')}
-                      >
-                        Approve (↵)
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        onClick={() => onApproval('deny')}
-                      >
-                        Reject (esc)
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-ghost"
-                        onClick={() => onApproval('always')}
-                        title="Persist to ~/.deepcode/settings.json#permissions.allow"
-                      >
-                        Always allow {t.name} in this session
-                      </button>
-                    </div>
-                  )}
               </div>
             );
           })}

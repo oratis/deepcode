@@ -16,8 +16,10 @@ import {
   ToolRegistry,
   WriteTool,
   HookDispatcher,
+  type StoredMessage,
 } from '@deepcode/core';
 import { CredentialsStore } from '@deepcode/core/credentials';
+import { recoverToolResults } from '@deepcode/core/sessions';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ClaudeSdkEngine, configuredEngine } from './claude-sdk.js';
 
@@ -145,7 +147,7 @@ describe('Claude SDK engine boundary', () => {
       const manager = new SessionManager({ root: join(cwd, 'sessions') });
       const session = await manager.create(cwd);
       const first = await host().run({ ...turn, session: { manager, id: session.id } });
-      const bindingPath = join(manager.root, session.id, 'claude-sdk', 'binding.json');
+      const bindingPath = join(manager.resourceRoot, session.id, 'claude-sdk', 'binding.json');
       if (failure === 'missing') await rm(bindingPath);
       else {
         const binding = JSON.parse(await readFile(bindingPath, 'utf8'));
@@ -283,6 +285,49 @@ describe('Claude SDK engine boundary', () => {
     await expect(native.run({ ...turn, session: { manager, id: session.id } })).rejects.toThrow(
       'Start a new session',
     );
+  });
+  it('recovers SDK results committed before their deferred transcript messages', async () => {
+    const manager = new SessionManager({ root: join(cwd, 'sessions') });
+    const session = await manager.create(cwd);
+    body = async (client) => {
+      await client.callTool({
+        name: 'Write',
+        arguments: { file_path: 'recovery.txt', content: 'written once' },
+      });
+    };
+    const runtime = host('bypassPermissions');
+    try {
+      await runtime.run({
+        ...turn,
+        session: { manager, id: session.id },
+        persistSessionMessages: false,
+      });
+      const events = (await manager.journal(session.id).read())!;
+      const source = events.find(
+        (event) =>
+          event.type === 'message.observed' &&
+          (event.payload.message as unknown as StoredMessage).content.some(
+            (block) => block.type === 'tool_use',
+          ),
+      )!;
+      const result = events.find((event) => event.type === 'tool.result')!;
+      expect(source.seq).toBeGreaterThan(result.seq);
+      // Reconstruct the crash prefix after the tool-use message was committed,
+      // but before the following transcript tool-result message was published.
+      const recovery = recoverToolResults(
+        [source.payload.message as unknown as StoredMessage],
+        events.filter((event) => event.seq <= source.seq),
+      );
+      expect(recovery?.content[0]).toEqual({
+        type: 'tool_result',
+        tool_use_id: result.callId,
+        content: (result.payload.result as { content: string }).content,
+        is_error: false,
+      });
+      expect(await readFile(join(cwd, 'recovery.txt'), 'utf8')).toBe('written once');
+    } finally {
+      await runtime.close();
+    }
   });
   it('cancels pending approval and drains tool work before returning', async () => {
     const ac = new AbortController();

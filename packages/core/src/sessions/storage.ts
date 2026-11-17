@@ -121,6 +121,7 @@ export async function deleteSession(root: string, sessionId: string): Promise<vo
 }
 
 export function sessionFiles(root: string, sessionId: string): SessionFiles {
+  if (!validSessionId(sessionId)) throw new Error('Invalid session ID');
   return {
     metaPath: join(root, `${sessionId}.meta.json`),
     jsonlPath: join(root, `${sessionId}.v1.jsonl`),
@@ -392,6 +393,8 @@ async function readRecordsFromPath(path: string): Promise<SessionReadResult> {
 
     const record = value as Record<string, unknown>;
     if (record.type === 'session_meta') {
+      if (record.schema_version !== undefined && record.schema_version !== 1)
+        throw new Error('Unsupported legacy session schema version');
       format = record.schema_version === 1 ? 'canonical-v1' : 'desktop-v0';
       meta ??= desktopMeta(record, updatedAt);
       continue;
@@ -471,4 +474,13 @@ export function newSessionId(): string {
     .slice(0, 14);
   const rnd = Math.random().toString(36).slice(2, 8);
   return `${ts}-${rnd}`;
+}
+
+/** Shared read barrier with the legacy TypeScript and Rust writers. */
+export function withLegacySessionLock<T>(
+  root: string,
+  id: string,
+  run: () => Promise<T>,
+): Promise<T> {
+  return withWriterLock(sessionFiles(root, id), id, run);
 }

@@ -12,6 +12,7 @@ import type { ToolLocation } from '@deepcode/core/dist/tools/presentation.js';
 import { ToolBody } from './components/ToolBody.js';
 import { ToolCard } from './components/ToolCard.js';
 import './index.css';
+import './workspace.css';
 
 const CALLS: Array<{
   name: string;

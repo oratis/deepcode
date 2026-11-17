@@ -1,11 +1,57 @@
 # DeepCode Security Model
 
-> Last updated: 2026-08-01 (shared app-server trust, provenance, and thin-client capabilities)
+> Latest audit addendum: 2026-11-17; baseline `3421a3c`. Earlier sections retain their implementation-era context.
 
 This document is the **single source of truth** for what DeepCode protects
 against, what it doesn't, and how each layer composes. If you're reviewing a
 PR that touches credentials, sandbox, plugin runtime, or hooks — verify it
 against the threat model here.
+
+## 2026-11 unified execution and plugin boundary
+
+H01 implements the plugin gaps identified at baseline `3421a3c`. Native tools, SDK
+bridge tools, CLI/headless/server plugin capabilities, MCP serving and hook MCP calls
+now use [ToolExecutionService](../packages/core/src/runtime/tool-execution.ts). The
+service owns policy/approval, immutable call admission, cancellation/deadline drain,
+path rechecks and the available snapshot/spill/ledger/event settlement. A custom MCP
+gate can restrict the default policy, but cannot grant authority by itself.
+
+Plugin capabilities require one unambiguous active turn binding. Startup, between-turn,
+stale and concurrent ambiguous RPC requests fail closed. An active turn supplies the
+current mode/contract/sandbox/signal rather than a closure over startup configuration.
+A cancelled approval cannot authorize a later write. Uncooperative trusted handlers
+produce `cleanup_incomplete` and revoke the execution scope after bounded draining;
+arbitrary in-process JavaScript cannot be forcibly stopped by this adapter.
+
+External plugin processes now default to OS isolation on macOS/Linux, including when
+sandbox settings contain only `mode`. Their installation/runtime are read-only; HOME
+and temp are private, direct workspace access and network are not granted. Missing
+sandbox tooling or an unsupported platform refuses startup. Explicit
+`danger-full-access` (or legacy `enabled:false`, when no mode overrides it) still opts
+out of OS isolation. This opt-out runs trusted user code, not a hostile-code boundary.
+
+The child environment is an allowlist (fixed PATH/LANG, private HOME/TMP and a random
+RPC token); provider/cloud tokens, proxy variables and `NODE_OPTIONS` are not inherited.
+RPC admission is revoked before shutdown, host capability calls receive an abort
+signal, pending calls are drained, and POSIX process groups receive TERM/KILL even
+if their leader exits first. Cleanup failures propagate; logs use stderr only.
+
+Plugin-contributed command hooks now use the Bash capability broker. External HTTP
+POST hooks are explicitly rejected until the broker has a reviewed POST capability;
+plugin fetch accepts GET without a body only. User-reviewed settings command/http
+hooks retain their existing trusted-host semantics. Already-approved Bash still has
+its documented broader authority and host environment; the plugin child allowlist
+is not a promise that all shell commands are secret-free. File contracts do not
+constrain arbitrary shell or remote MCP server internals.
+
+The [implementation report](HARNESS_IMPLEMENTATION_PROGRESS.md) records the actual
+adversarial tests, Node 22 gates, compatibility changes and rollback. macOS isolation
+has been exercised locally; Linux runs the same tests in CI and is not represented
+as a locally verified kernel. Snapshots require a real session, ledger remains
+best-effort, and persistent job/subagent ownership is deferred to H04/H08. Protected
+Cordis composition admission is H03, not an H01 guarantee. Renderer/IDE credential
+isolation and the experimental SDK boundaries from [ADR 0002](adr/0002-multi-model-agent-engine.md)
+remain in effect.
 
 ## Threat model
 
@@ -14,9 +60,9 @@ decreasing order of operator severity:
 
 | #   | Threat                                                                         | Severity         | Where mitigated                                                                                                            |
 | --- | ------------------------------------------------------------------------------ | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call        | High             | M3.5 sandbox + M5.1 env strip                                                                                              |
+| 1   | Model exfiltrates DeepSeek API key (or other env secrets) via tool call        | High             | Sandbox policy; H01 plugin child env allowlist (approved Bash is broader)                                                  |
 | 2   | Model writes arbitrary files outside the project (`/usr/bin`, `/etc`)          | High             | M3.5 sandbox + permissions                                                                                                 |
-| 3   | Plugin (third-party code) does either #1 or #2                                 | High             | M5.1 subprocess + (M5.1-ext) OS sandbox                                                                                    |
+| 3   | Plugin (third-party code) does either #1 or #2                                 | High             | H01 default isolated subprocess + revocable tool broker                                                                    |
 | 4   | Hook script (third-party shell snippet) does either #1 or #2                   | Medium           | Exact-definition review + source trust; hook commands remain host code                                                     |
 | 5   | Hostile `settings.json` field (e.g. allowRead path) injects sandbox rule       | Medium           | escapeSbpl()                                                                                                               |
 | 6   | Untrusted project's AGENTS.md drives the agent into harmful action             | Low              | Trust store (`/trust`); a file-contract `deny` is independent of model judgement, so prompt injection cannot argue past it |
@@ -24,7 +70,7 @@ decreasing order of operator severity:
 | 8   | Model reads an in-project secret (`.env`, `*.pem`) through a read tool         | Partly mitigated | File contract `read: deny` — covers Read/Grep/Glob, **not Bash** (see below)                                               |
 | 9   | Unattended job runs with a permissive mode inherited from interactive settings | Mitigated        | Trigger profile clamp + `onApprovalRequired`                                                                               |
 | 10  | User cannot audit or undo what the agent wrote                                 | Mitigated        | Change ledger + `deepcode ledger rollback` through the apply ceremony                                                      |
-| 11  | An MCP peer calls DeepCode's own tools without any policy                      | Mitigated        | `mcp serve` routes every call through `dispatchToolCall`; `ask` is refused (see below)                                     |
+| 11  | An MCP peer calls DeepCode's own tools without any policy                      | Mitigated        | `mcp serve` routes every call through `ToolExecutionService`; `ask` is refused (see below)                                 |
 
 ### `deepcode mcp serve` runs with nobody attached
 
@@ -35,7 +81,7 @@ shape as the `runAgent` bypass fixed in #181, in a different entry point. The
 original plan listed the missing permission model as a known risk and deferred
 the design document; the feature shipped without either.
 
-Every call now goes through `dispatchToolCall`, and:
+Every call now goes through `ToolExecutionService` and its mandatory `dispatchToolCall`, and:
 
 - **`ask` is refused, not granted.** There is no user on that pipe. Granting
   would make "whoever connected" the authority on what may run.

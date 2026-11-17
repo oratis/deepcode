@@ -1,14 +1,12 @@
+import { ToolExecutionBinding } from '@deepcode/core/runtime';
+import { createPluginCapabilityBridge } from '@deepcode/core/plugins';
 import type { Effort, Mode, Provider } from '@deepcode/core';
 import { withAdditionalWritableDirs } from '@deepcode/core';
 import {
   loadFileContract,
   type DeepCodeSettings,
-  type FileContract,
   type McpServerConfig,
-  type PermissionRules,
-  type SandboxConfig,
 } from '@deepcode/core/config';
-import { dispatchToolCall } from '@deepcode/core/harness';
 import { HookDispatcher } from '@deepcode/core/hooks';
 import { loadMemory } from '@deepcode/core/memory';
 import {
@@ -18,24 +16,13 @@ import {
   type McpClientHandle,
 } from '@deepcode/core/mcp';
 import { applyStyle, findStyle, loadOutputStyles } from '@deepcode/core/output-styles';
-import {
-  collectPluginContributions,
-  wirePlugins,
-  type PluginCapabilityBridge,
-  type WireResult,
-} from '@deepcode/core/plugins';
+import { collectPluginContributions, wirePlugins, type WireResult } from '@deepcode/core/plugins';
 import { buildSkillsDescriptionBlock, loadSkills, makeSkillTool } from '@deepcode/core/skills';
 import {
-  BashTool,
   BUILTIN_TOOLS,
   installToolSearch,
-  ReadTool,
   RestoreReviewActionTool,
   ToolRegistry,
-  WebFetchTool,
-  WriteTool,
-  type ToolHandler,
-  type ToolResult,
 } from '@deepcode/core/tools';
 
 export const DEFAULT_APP_SERVER_SYSTEM_PROMPT =
@@ -85,6 +72,7 @@ export interface RuntimeCompositionOptions {
 }
 
 export interface RuntimeComposition {
+  toolExecutionBinding: ToolExecutionBinding;
   tools: ToolRegistry;
   hooks: HookDispatcher;
   systemPrompt: string;
@@ -214,6 +202,7 @@ export async function composeRuntime(
     }
   }
 
+  const toolExecutionBinding = new ToolExecutionBinding();
   let pluginsWire: WireResult | null = null;
   if (pluginsEnabled && pluginDiscoverySucceeded) {
     try {
@@ -221,22 +210,7 @@ export async function composeRuntime(
         directory,
         disabled: settings.disabledPlugins,
         hooks,
-        capabilities: buildPluginCapabilityBridge({
-          cwd,
-          mode: options.mode ?? 'default',
-          permissions: settings.permissions,
-          contract: fileContract.contract,
-          hooks,
-          provider: options.provider,
-          autoMode: settings.autoMode,
-          sandboxConfig: withAdditionalWritableDirs(
-            settings.sandbox,
-            settings.permissions?.additionalDirectories,
-            cwd,
-          ),
-          requestApproval: options.requestApproval,
-          signal: options.signal,
-        }),
+        capabilities: createPluginCapabilityBridge(toolExecutionBinding),
         sandbox: withAdditionalWritableDirs(
           settings.sandbox,
           settings.permissions?.additionalDirectories,
@@ -283,6 +257,7 @@ export async function composeRuntime(
 
   let closed = false;
   return {
+    toolExecutionBinding,
     tools,
     hooks,
     systemPrompt,
@@ -306,94 +281,18 @@ export async function composeRuntime(
     close: async () => {
       if (closed) return;
       closed = true;
-      await Promise.allSettled([
+      const settled = await Promise.allSettled([
         pluginsWire?.shutdown() ?? Promise.resolve(),
         services.closeAllMcpServers(mcpServers),
       ]);
+      const failures = settled.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (failures.length)
+        throw new AggregateError(
+          failures.map((r) => r.reason),
+          'cleanup_incomplete: runtime composition',
+        );
     },
   };
 }
 
-interface PluginBridgeOptions {
-  cwd: string;
-  mode: Mode;
-  permissions?: PermissionRules;
-  /** Path-axis rules — a plugin subprocess must not be a way around them. */
-  contract?: FileContract;
-  hooks: HookDispatcher;
-  provider?: Provider;
-  autoMode?: DeepCodeSettings['autoMode'];
-  sandboxConfig?: SandboxConfig;
-  requestApproval?: RuntimeCompositionOptions['requestApproval'];
-  signal?: AbortSignal;
-}
-
-/** Route plugin subprocess capabilities through the same policy and hook gates as agent tools. */
-export function buildPluginCapabilityBridge(options: PluginBridgeOptions): PluginCapabilityBridge {
-  const execute = async (
-    handler: ToolHandler,
-    input: Record<string, unknown>,
-  ): Promise<ToolResult> => {
-    const verdict = await dispatchToolCall({
-      tool: handler.name,
-      input,
-      mode: options.mode,
-      rules: options.permissions,
-      contract: options.contract,
-      hooks: options.hooks,
-      cwd: options.cwd,
-      autoMode: options.autoMode,
-      autoModeProvider: options.provider,
-    });
-    let allowed = verdict.decision === 'allow';
-    if (verdict.decision === 'ask' && options.requestApproval) {
-      const decision = await options.requestApproval(
-        handler.name,
-        `Plugin requested ${handler.name}: ${verdict.reason}`,
-      );
-      allowed = decision === 'allow' || decision === 'always';
-    }
-    if (!allowed) throw new Error(`Plugin capability blocked: ${verdict.reason}`);
-
-    const result = await handler.execute(input, {
-      cwd: options.cwd,
-      signal: options.signal,
-      sandboxConfig: options.sandboxConfig,
-      // Grep and Glob filter their own results against the contract, so the
-      // bridge has to hand it over — the pre-call verdict above only covers
-      // the search root.
-      contract: options.contract,
-    });
-    await options.hooks.dispatch({
-      event: 'PostToolUse',
-      cwd: options.cwd,
-      triggeredAt: new Date().toISOString(),
-      payload: {
-        tool: handler.name,
-        input,
-        result_content: result.content.slice(0, 1000),
-        is_error: result.isError ?? false,
-        source: 'plugin',
-      },
-    });
-    if (result.isError) throw new Error(result.content);
-    return result;
-  };
-
-  return {
-    fs_read: async (path) => (await execute(ReadTool, { file_path: path })).content,
-    fs_write: async (path, content) => {
-      await execute(WriteTool, { file_path: path, content });
-    },
-    bash: async (command) => {
-      const result = await execute(BashTool, { command });
-      const data = (result.data ?? {}) as { stderr?: string; exitCode?: number };
-      return {
-        stdout: result.content,
-        stderr: data.stderr ?? '',
-        exitCode: data.exitCode ?? 0,
-      };
-    },
-    fetch: async (url) => (await execute(WebFetchTool, { url })).content,
-  };
-}
+export { createPluginCapabilityBridge as buildPluginCapabilityBridge };

@@ -16,6 +16,7 @@ import {
 interface ChangesPanelProps {
   state: ChangesState;
   width: number;
+  actionsDisabled?: boolean;
   onRefresh: () => void;
   onToggleFile: (path: string) => void;
   onApply: (findings: ReviewFinding[]) => void;
@@ -29,6 +30,7 @@ const PRIORITY_LABEL = ['blocker', 'high', 'medium', 'low'] as const;
 export function ChangesPanel({
   state,
   width,
+  actionsDisabled = false,
   onRefresh,
   onToggleFile,
   onApply,
@@ -59,7 +61,12 @@ export function ChangesPanel({
               {pending.length > 0 ? ` · ${pending.length} to apply` : ' · all applied'}
             </h5>
             {pending.length > 1 && (
-              <button type="button" className="ch-btn" onClick={() => onApply(pending)}>
+              <button
+                type="button"
+                className="ch-btn"
+                disabled={actionsDisabled}
+                onClick={() => onApply(pending)}
+              >
                 Apply all
               </button>
             )}
@@ -92,6 +99,7 @@ export function ChangesPanel({
                       <button
                         type="button"
                         className="ch-btn"
+                        disabled={actionsDisabled}
                         onClick={() => onRevert(action.actionId)}
                       >
                         Revert
@@ -101,7 +109,7 @@ export function ChangesPanel({
                     <button
                       type="button"
                       className="ch-btn primary"
-                      disabled={busy || !f.replacement}
+                      disabled={actionsDisabled || busy || !f.replacement}
                       title={
                         f.replacement
                           ? 'Apply this finding as a normal, permission-gated turn'

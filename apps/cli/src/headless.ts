@@ -1,3 +1,6 @@
+import { homedir as runtimeHome } from 'node:os';
+import { loadProfileLayers, type RuntimeProfileId } from '@deepcode/core/runtime';
+import { ToolExecutionBinding, createPluginCapabilityBridge } from '@deepcode/core';
 import { configuredEngine } from '@deepcode/app-server';
 // Headless one-shot mode: `deepcode -p "do X"`
 // Spec: docs/DEVELOPMENT_PLAN.md §5a (M8) — implemented earlier than scheduled.
@@ -17,19 +20,15 @@ import { configuredEngine } from '@deepcode/app-server';
 //   6  unattended run stopped: a call needed approval and onApprovalRequired='abort'
 
 import {
-  BashTool,
   CredentialsStore,
   ConfiguredProvider,
   resolveProviderConnection,
   defaultModel,
   HookDispatcher,
   HookTrustStore,
-  ReadTool,
   RuntimeHost,
   SessionManager,
   ToolRegistry,
-  WebFetchTool,
-  WriteTool,
   applyStyle,
   buildSkillsDescriptionBlock,
   closeAllMcpServers,
@@ -66,6 +65,7 @@ export interface HeadlessOpts {
   errOutput: Writable;
   cwd: string;
   home?: string;
+  profileId?: RuntimeProfileId;
   /** The prompt to run. */
   prompt: string;
   /** text | json | stream-json (cli default 'text'). */
@@ -123,6 +123,13 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
   const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
   const trustStore = new TrustStore({ home: opts.home });
   const trustStatus = await trustStore.statusFor(cwd);
+  const profileId = opts.profileId ?? 'headless';
+  const profileLayers = await loadProfileLayers({
+    profileId,
+    cwd,
+    home: opts.home,
+    workspaceTrusted: trustStatus === 'trusted',
+  });
   const gate = gateUntrustedSettings(loaded, trustStatus);
   let settings = gate.settings;
   const gated = gate.gated;
@@ -261,13 +268,14 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
 
   // M5.2: wire installed plugins. We pipe their startup log to stderr to keep
   // stdout reserved for the headless output payload.
+  const toolExecutionBinding = new ToolExecutionBinding();
   let pluginsWire: WireResult | null = null;
   try {
     pluginsWire = await wirePlugins({
       home: opts.home,
       disabled: settings.disabledPlugins,
       hooks,
-      capabilities: buildPluginCapabilitiesHeadless(cwd),
+      capabilities: createPluginCapabilityBridge(toolExecutionBinding),
       sandbox: withAdditionalWritableDirs(
         withSandboxMode(settings.sandbox, opts.sandbox),
         settings.permissions?.additionalDirectories,
@@ -279,7 +287,9 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     errOutput.write(`Plugin wire-up failed: ${(err as Error).message}\n`);
   }
 
-  const sessions = new SessionManager();
+  const sessions = new SessionManager({
+    root: opts.home ? `${opts.home}/.deepcode/sessions` : undefined,
+  });
   const session = await sessions.create(cwd, { model });
 
   // ─── set up output ──────────────────────────────────────────────────
@@ -323,8 +333,13 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     /* ignore */
   }
   let exitCode = 0;
+  let runtime: RuntimeHost | undefined;
   try {
-    const runtime = new RuntimeHost({
+    runtime = new RuntimeHost({
+      profileId,
+      profileLayers,
+      profileStateDirectory: `${opts.home ?? runtimeHome()}/.deepcode/runtime-generations`,
+      toolExecutionBinding,
       engine: configuredEngine(settings, credsStore),
       provider,
       tools,
@@ -340,6 +355,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
         cwd,
       ),
     });
+    await runtime.bootstrap.start();
     // Say up front how far the contract actually reaches. A read `deny` with
     // the sandbox off looks like protection and is not.
     for (const warning of await runtime.contractWarnings(cwd)) {
@@ -431,6 +447,7 @@ export async function runHeadless(opts: HeadlessOpts): Promise<number> {
     }
     process.off('SIGINT', sigintHandler);
     process.off('SIGTERM', sigintHandler);
+    await runtime?.close();
     if (mcpServers.length > 0) await closeAllMcpServers(mcpServers);
     if (pluginsWire) await pluginsWire.shutdown();
   }
@@ -463,35 +480,6 @@ async function validateAgainstSchema(schemaPath: string, output: string): Promis
   // type: string / number / etc — just check the literal type
   if (schema.type === 'string') return null; // any string is valid
   return null;
-}
-
-function buildPluginCapabilitiesHeadless(cwd: string) {
-  const ctx = { cwd };
-  return {
-    fs_read: async (path: string) => {
-      const r = await ReadTool.execute({ file_path: path }, ctx);
-      if (r.isError) throw new Error(r.content);
-      return r.content;
-    },
-    fs_write: async (path: string, content: string) => {
-      const r = await WriteTool.execute({ file_path: path, content }, ctx);
-      if (r.isError) throw new Error(r.content);
-    },
-    bash: async (cmd: string) => {
-      const r = await BashTool.execute({ command: cmd }, ctx);
-      const d = (r.data ?? {}) as { stderr?: string; exitCode?: number };
-      return {
-        stdout: r.content ?? '',
-        stderr: d.stderr ?? '',
-        exitCode: d.exitCode ?? (r.isError ? 1 : 0),
-      };
-    },
-    fetch: async (url: string) => {
-      const r = await WebFetchTool.execute({ url }, ctx);
-      if (r.isError) throw new Error(r.content);
-      return r.content;
-    },
-  };
 }
 
 function formatEventText(out: Writable, e: AgentEvent): void {

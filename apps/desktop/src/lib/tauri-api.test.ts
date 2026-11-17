@@ -10,6 +10,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { invoke } from '@tauri-apps/api/core';
 import {
+  sessionSetTitle,
+  sessionSnapshots,
   appServerSend,
   appServerStart,
   appServerStatus,
@@ -23,6 +25,12 @@ import {
   saveCredentials,
   saveSettingsFile,
 } from './tauri-api.js';
+
+import { renameProtocolThread, protocolSessionSnapshots } from './protocol-agent.js';
+vi.mock('./protocol-agent.js', () => ({
+  renameProtocolThread: vi.fn(),
+  protocolSessionSnapshots: vi.fn(),
+}));
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
 const invokeMock = vi.mocked(invoke);
@@ -124,5 +132,34 @@ describe('listSkills', () => {
     const result = await listSkills('/proj');
     expect(invokeMock).toHaveBeenCalledWith('list_skills', { cwd: '/proj' });
     expect(result).toEqual(rows);
+  });
+});
+
+describe('v2 journal data adapters', () => {
+  it('uses host rename and snapshot projections without legacy IPC', async () => {
+    vi.mocked(renameProtocolThread).mockResolvedValueOnce(true);
+    vi.mocked(protocolSessionSnapshots).mockResolvedValueOnce([]);
+    await sessionSetTitle('v2', 'title');
+    expect(await sessionSnapshots('v2', '/file')).toEqual([]);
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+  it('does not bypass an owning sidecar when rename or snapshot verification fails', async () => {
+    vi.mocked(renameProtocolThread).mockRejectedValueOnce(new Error('writer conflict'));
+    await expect(sessionSetTitle('v2', 'title')).rejects.toThrow('writer conflict');
+    vi.mocked(protocolSessionSnapshots).mockRejectedValueOnce(new Error('checksum mismatch'));
+    await expect(sessionSnapshots('v2', '/file')).rejects.toThrow('checksum');
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+  it('retains the legacy IPC mapping for an older sidecar', async () => {
+    vi.mocked(renameProtocolThread).mockResolvedValueOnce(false);
+    vi.mocked(protocolSessionSnapshots).mockResolvedValueOnce(null);
+    invokeMock.mockResolvedValue([]);
+    await sessionSetTitle('old', 'title');
+    await sessionSnapshots('old', '/file');
+    expect(invokeMock).toHaveBeenCalledWith('session_set_title', { id: 'old', title: 'title' });
+    expect(invokeMock).toHaveBeenCalledWith('session_snapshots', {
+      sessionId: 'old',
+      filePath: '/file',
+    });
   });
 });

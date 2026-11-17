@@ -1,3 +1,4 @@
+import type { RuntimeProfileId } from '@deepcode/core/runtime';
 import { join } from 'node:path';
 import type { Readable, Writable } from 'node:stream';
 
@@ -17,6 +18,7 @@ export interface RunAppServerOptions {
   input: Readable;
   output: Writable;
   home: string;
+  profileId?: RuntimeProfileId;
   executor?: TurnExecutor;
   forceFileCredentials?: boolean;
 }
@@ -36,6 +38,7 @@ export async function runAppServer(options: RunAppServerOptions): Promise<void> 
       options.executor ??
       createDefaultTurnExecutor(options.home, {
         forceFileCredentials: options.forceFileCredentials,
+        profileId: options.profileId,
       }),
     store: new CanonicalThreadStore(
       join(options.home, 'threads-v1'),

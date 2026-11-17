@@ -72,7 +72,7 @@ export class ClaudeSdkEngine implements AgentEngine {
     }
     const persistent = !!options.session;
     const directory = options.session
-      ? join(options.session.manager.root, options.session.id, 'claude-sdk')
+      ? join(options.session.manager.resourceRoot, options.session.id, 'claude-sdk')
       : await mkdtemp(join(tmpdir(), 'deepcode-sdk-'));
     await mkdir(directory, { recursive: true, mode: 0o700 });
     const bindingPath = join(directory, 'binding.json');
@@ -147,6 +147,7 @@ export class ClaudeSdkEngine implements AgentEngine {
     let mcp: ReturnType<Sdk['createSdkMcpServer']> | undefined;
     let stopReason: RunAgentResult['stopReason'] = 'error';
     let turnsUsed = 0;
+    let cleanupError: unknown;
     try {
       const definitions = options.tools
         .definitions()
@@ -304,7 +305,11 @@ export class ClaudeSdkEngine implements AgentEngine {
         stopReason = 'error';
         options.onEvent?.({ type: 'error', error: 'Claude SDK failed to close its query' });
       }
-      await runner.drain();
+      try {
+        await runner.drain();
+      } catch (error) {
+        cleanupError = error;
+      }
       try {
         await mcp?.instance.close();
       } catch {
@@ -316,13 +321,21 @@ export class ClaudeSdkEngine implements AgentEngine {
       if (runner.blocked && !options.signal?.aborted) stopReason = 'blocked';
       if (!persistent) await rm(directory, { recursive: true, force: true });
     }
-    if (options.session && options.persistSessionMessages !== false && stopReason !== 'aborted') {
+    if (cleanupError) throw cleanupError;
+    if (options.session && stopReason !== 'aborted') {
       for (const message of history.slice(options.history?.length ?? 0)) {
         if (options.signal?.aborted) {
           stopReason = 'aborted';
           break;
         }
-        await options.session.manager.append(options.session.id, message);
+        await options.session.manager.record(options.session.id, [
+          {
+            type:
+              options.persistSessionMessages === false ? 'message.observed' : 'message.appended',
+            turnId: options.session.turnId,
+            payload: { message },
+          },
+        ]);
       }
     }
     await options.hooks?.dispatch({

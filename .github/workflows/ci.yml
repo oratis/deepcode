@@ -97,12 +97,17 @@ jobs:
       - name: Build + app-server release gate
         run: pnpm release:check
 
+      - name: Kernel Node 22 / browser / sidecar / VSIX smoke
+        run: pnpm spike:harness-kernel apps/vscode/dist/harness-kernel-report.json
+
       - name: Upload release-gate diagnostics
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: release-gate-${{ matrix.os }}
-          path: apps/vscode/dist/release-gate-report.json
+          path: |
+            apps/vscode/dist/release-gate-report.json
+            apps/vscode/dist/harness-kernel-report.json
           if-no-files-found: ignore
           retention-days: 7
 

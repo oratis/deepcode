@@ -3,6 +3,7 @@ scripts/**
 node_modules/**
 dist/*.map
 dist/release-gate-report.json
+dist/harness-kernel-report.json
 dist/*.vsix
 dist/.tsbuildinfo
 **/*.test.*

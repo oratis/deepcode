@@ -19,3 +19,20 @@ export {
 
 export { createEngineToolRunner } from './tool-runner.js';
 export type { AgentEngine } from './engine.js';
+
+export {
+  ToolExecutionService,
+  ToolExecutionBinding,
+  type ToolExecutionOptions,
+  type PreparedToolCall,
+} from './tool-execution.js';
+
+export { AppBootstrap } from './bootstrap.js';
+export {
+  resolveProfile,
+  RUNTIME_PROFILES,
+  type RuntimeProfileId,
+  type ProfileLayer,
+  type RuntimeProfile,
+} from './profile.js';
+export { loadProfileLayers } from './profile-loader.js';

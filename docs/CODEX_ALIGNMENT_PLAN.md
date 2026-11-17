@@ -1,5 +1,7 @@
 # DeepCode × Codex 整体改造计划
 
+> **2026-11-17 路线更新**：下一阶段完整设计见 [Harness 化改造方案](HARNESS_TRANSFORMATION_PLAN.md) 与 [ADR 0003](adr/0003-plugin-composed-harness.md)，H01/H02 已开始实施并完成本机验收，具体见 [实施进度](HARNESS_IMPLEMENTATION_PROGRESS.md)。本文保留上一轮设计和审议历史；下文 §3 的 `38fcc3a` 缺陷表不能作为最新主分支现状。最新代码已经具有 app-server、桌面 sidecar、IDE 协议客户端等基础，仍待解决的差距见新方案 §3。新方案保留 Thread/Turn/Item、可信 host、凭证隔离和向后兼容原则，拟替换内部手工组装方式。
+
 > 2026-10-24 多模型方向补充：最新 main 的复审、实施进度与 Claude Code 引擎决策见
 > [ADR 0002](adr/0002-multi-model-agent-engine.md)。该 ADR 区分现有自研运行时、模型协议适配与
 > Claude Agent SDK 引擎，记录实施顺序、验收及回滚条件。原生多模型接入已实现；SDK 为显式启用的实验引擎，native 仍为默认。

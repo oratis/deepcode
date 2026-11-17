@@ -171,6 +171,8 @@ export async function listSkills(cwd?: string): Promise<SkillInfo[]> {
 
 /** Set (or clear, with '') a session's manual title. */
 export async function sessionSetTitle(id: string, title: string): Promise<void> {
+  const { renameProtocolThread } = await import('./protocol-agent.js');
+  if (await renameProtocolThread(id, title)) return;
   await invoke('session_set_title', { id, title });
 }
 
@@ -238,5 +240,9 @@ export async function sessionSnapshots(
   sessionId: string,
   filePath: string,
 ): Promise<SessionSnapshot[]> {
-  return (await invoke('session_snapshots', { sessionId, filePath })) as SessionSnapshot[];
+  const { protocolSessionSnapshots } = await import('./protocol-agent.js');
+  const snapshots = await protocolSessionSnapshots(sessionId, filePath);
+  return (
+    snapshots ?? ((await invoke('session_snapshots', { sessionId, filePath })) as SessionSnapshot[])
+  );
 }

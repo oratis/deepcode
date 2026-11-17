@@ -8,6 +8,7 @@ runAppServer({
   input: process.stdin,
   output: process.stdout,
   home,
+  profileId: 'desktop',
   forceFileCredentials: true,
 }).catch((error) => {
   process.stderr.write(`DeepCode app-server fatal: ${(error as Error).message ?? String(error)}\n`);

@@ -7,6 +7,10 @@ import { build } from 'esbuild';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(packageRoot, 'dist-sidecar', 'app-server.cjs');
+const notices = await readFile(
+  resolve(packageRoot, '..', '..', 'packages', 'kernel', 'THIRD_PARTY_NOTICES.md'),
+  'utf8',
+);
 const settingsSchema = await readFile(
   resolve(packageRoot, '..', '..', 'packages', 'core', 'schemas', 'settings.schema.json'),
   'utf8',
@@ -27,7 +31,7 @@ await build({
     __DEEPCODE_SETTINGS_SCHEMA__: JSON.stringify(settingsSchema),
     'import.meta.url': 'undefined',
   },
-  banner: { js: '#!/usr/bin/env node' },
+  banner: { js: `#!/usr/bin/env node\n/* ${notices.replaceAll('*/', '* /')} */` },
 });
 
 const bytes = (await stat(output)).size;

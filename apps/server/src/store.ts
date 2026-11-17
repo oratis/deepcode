@@ -1,9 +1,15 @@
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import process from 'node:process';
+import { isDeepStrictEqual } from 'node:util';
 
 import { type StoredMessage } from '@deepcode/core';
-import { SessionManager, type SessionMeta } from '@deepcode/core/sessions';
+import {
+  SessionManager,
+  recoverToolResults,
+  type JournalEvent,
+  type SessionMeta,
+} from '@deepcode/core/sessions';
 import type { ThreadSnapshot, ThreadStore } from '@deepcode/protocol';
 
 import { historyFromThread } from './runtime-executor.js';
@@ -85,7 +91,7 @@ export class FileThreadStore implements ThreadStore {
 const ARCHIVED_DIR = 'archived';
 
 /**
- * Rich protocol snapshots plus a canonical session-v1 message projection.
+ * Journal-owned protocol projections with read-only legacy fallbacks.
  *
  * The protocol snapshot preserves lifecycle/items. The canonical projection
  * keeps the existing CLI/desktop session index and legacy readers continuous
@@ -106,19 +112,38 @@ export class CanonicalThreadStore implements ThreadStore {
   }
 
   async load(threadId: string): Promise<ThreadSnapshot | null> {
-    const snapshot = await this.snapshots.load(threadId);
-    if (snapshot) return snapshot;
+    const projection = await this.sessions.journal(threadId).projection();
+    if (projection?.deleted || projection?.archived) return null;
+    if (projection?.thread)
+      return { ...projection.thread, title: projection.meta?.title } as unknown as ThreadSnapshot;
     const session = await this.sessions.load(threadId);
-    if (!session) return null;
+    // Legacy JSONL has a shared TS/Rust read barrier; historical thread JSON does not.
+    // Snapshot-only sessions remain viewable, but are not silently migrated as writable.
+    if (!session) return projection ? null : this.snapshots.load(threadId);
     const imported = threadFromSession(session.meta, session.messages);
-    await this.snapshots.save(imported);
     return imported;
   }
 
   async save(thread: ThreadSnapshot): Promise<void> {
-    const messages = historyFromThread(thread);
-    await this.sessions.materialize(metaFromThread(thread), messages);
-    await this.snapshots.save(thread);
+    await this.sessions.journal(thread.id).withWriter(async () => {
+      const events = await this.sessions.journal(thread.id).read();
+      if (
+        !events &&
+        !(await this.sessions.load(thread.id)) &&
+        (await this.snapshots.load(thread.id))
+      )
+        throw new Error(
+          'Snapshot-only legacy sessions are read-only. Resume with the previous release or start a new session.',
+        );
+      // A terminal snapshot must include all committed messages even when the
+      // executor was cancelled, threw, or only published part of its item list.
+      reconcileTerminalMessages(thread, events ?? []);
+      await this.sessions.materialize(
+        metaFromThread(thread),
+        historyFromThread(thread),
+        thread as unknown as Record<string, unknown>,
+      );
+    });
   }
 
   /**
@@ -127,30 +152,118 @@ export class CanonicalThreadStore implements ThreadStore {
    * touched since 0.2.0. Legacy rows are projected lazily and not written.
    */
   async list(): Promise<ThreadSnapshot[]> {
-    const threads = await this.snapshots.list();
-    const seen = new Set(threads.map((thread) => thread.id));
-    for (const meta of await this.sessions.list()) {
-      if (seen.has(meta.id)) continue;
-      const session = await this.sessions.load(meta.id);
-      if (session) threads.push(threadFromSession(session.meta, session.messages));
+    const ids = new Set([
+      ...(await this.snapshots.list()).map((thread) => thread.id),
+      ...(await this.sessions.list()).map((meta) => meta.id),
+    ]);
+    const threads: ThreadSnapshot[] = [];
+    for (const id of ids) {
+      const thread = await this.load(id);
+      if (thread) threads.push(thread);
     }
     return threads;
   }
 
-  async archive(threadId: string): Promise<void> {
-    await this.snapshots.archive(threadId);
+  async rename(threadId: string, title: string): Promise<void> {
+    await this.withWriter(threadId, async () => {
+      const thread = await this.load(threadId);
+      if (!thread) throw new Error('Session not found');
+      if (thread.turns.some((turn) => turn.status === 'in_progress'))
+        throw new Error('Cannot rename an active session');
+      await this.save(thread);
+      const session = await this.sessions.load(threadId);
+      await this.sessions.updateMeta({ ...session!.meta, title: title || undefined });
+    });
   }
-
-  /**
-   * Drop both representations of a thread.
-   *
-   * The snapshot and the canonical session projection share an id and are two
-   * views of one thing, so removing one and leaving the other is how a deleted
-   * thread comes back in the next listing — the composite `list` reads both.
-   */
+  fileSnapshots(threadId: string, path: string) {
+    return this.sessions.fileSnapshots(threadId, path);
+  }
+  async withWriter<T>(threadId: string, run: () => Promise<T>): Promise<T> {
+    return this.sessions.journal(threadId).withWriter(async () => {
+      const projection = await this.sessions.journal(threadId).projection();
+      if (projection?.timeline.some((event) => event.type === 'session.quarantined'))
+        throw new Error('cleanup_incomplete: session is quarantined; start a new session');
+      const thread = projection?.thread as unknown as ThreadSnapshot | undefined;
+      if (thread?.turns.some((turn) => turn.status === 'in_progress')) {
+        for (const turn of thread.turns) {
+          if (turn.status !== 'in_progress') continue;
+          turn.status = 'interrupted';
+          turn.completedAt = new Date().toISOString();
+          turn.items.push({
+            id: `recovery-${turn.id}`,
+            type: 'error',
+            payload: {
+              code: 'writer_interrupted',
+              message:
+                'Previous writer stopped before terminal commit. Tool effects may be partial; no tools were replayed.',
+            },
+            completedAt: turn.completedAt,
+          });
+        }
+        await this.save(thread);
+      }
+      // Also finish an old host turn if the process died after the protocol's
+      // terminal snapshot but before the host's terminal journal event.
+      if (projection && !projection.deleted) await this.sessions.recoverInterrupted(threadId);
+      return run();
+    });
+  }
+  async archive(threadId: string): Promise<void> {
+    await this.withWriter(threadId, async () => {
+      const thread = await this.load(threadId);
+      if (thread) await this.save(thread);
+      await this.sessions.record(threadId, [{ type: 'session.archived', payload: {} }]);
+    });
+  }
   async delete(threadId: string): Promise<void> {
-    await this.snapshots.delete(threadId);
-    await this.sessions.delete(threadId);
+    await this.withWriter(threadId, async () => {
+      await this.sessions.delete(threadId);
+      await this.snapshots.delete(threadId);
+    });
+  }
+}
+
+function reconcileTerminalMessages(thread: ThreadSnapshot, events: readonly JournalEvent[]): void {
+  for (const turn of thread.turns) {
+    if (turn.status === 'in_progress') continue;
+    const turnEvents = events.filter((event) => event.turnId === turn.id);
+    const observed = turnEvents.filter((event) => event.type === 'message.observed');
+    const input =
+      turnEvents.find((event) => event.type === 'input.accepted')?.payload.text ??
+      turn.items.find((item) => item.type === 'user_message')?.payload.text;
+    // Consume matches one-for-one: two identical model messages are two facts.
+    // Restrict matches to this turn, including on an idempotent recovery retry.
+    const unmatched = turn.items.filter((item) => item.payload.message);
+    for (const [index, event] of observed.entries()) {
+      const message = event.payload.message as unknown as StoredMessage;
+      if (
+        index === 0 &&
+        message.role === 'user' &&
+        message.content.length === 1 &&
+        message.content[0]?.type === 'text' &&
+        message.content[0].text === input
+      )
+        continue;
+      const match = unmatched.findIndex((item) => isDeepStrictEqual(item.payload.message, message));
+      if (match !== -1) {
+        unmatched.splice(match, 1);
+        continue;
+      }
+      turn.items.push({
+        id: `recovered-${event.eventId}`,
+        type: message.role === 'assistant' ? 'assistant_message' : 'tool_result',
+        payload: { message },
+        completedAt: event.timestamp,
+      });
+    }
+    const result = recoverToolResults(historyFromThread({ ...thread, turns: [turn] }), turnEvents);
+    if (result)
+      turn.items.push({
+        id: `recovery-result-${turn.id}`,
+        type: 'tool_result',
+        payload: { message: result },
+        completedAt: turn.completedAt ?? new Date().toISOString(),
+      });
   }
 }
 
@@ -166,7 +279,7 @@ function metaFromThread(thread: ThreadSnapshot): SessionMeta {
     cwd: thread.cwd,
     createdAt: thread.createdAt,
     updatedAt: thread.updatedAt,
-    title: titleFrom(text),
+    title: thread.title ?? titleFrom(text),
     model,
   };
 }
@@ -191,6 +304,7 @@ function threadFromSession(meta: SessionMeta, messages: StoredMessage[]): Thread
   }
   return {
     id: meta.id,
+    title: meta.title,
     cwd: meta.cwd,
     createdAt: meta.createdAt,
     updatedAt: meta.updatedAt,

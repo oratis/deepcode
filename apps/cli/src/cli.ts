@@ -16,6 +16,9 @@ import {
   fileContractWarnings,
   loadFileContract,
   redact,
+  AppBootstrap,
+  ConfiguredProvider,
+  loadProfileLayers,
 } from '@deepcode/core';
 import { capabilitiesFor, runAppServer } from '@deepcode/app-server';
 import { homedir } from 'node:os';
@@ -112,10 +115,32 @@ async function main(): Promise<number> {
       sandbox: args.sandbox,
     });
   }
+  if (args.positional[0] === 'profile' && args.positional[1] === 'inspect') {
+    const profileId = args.profile ?? 'interactive';
+    const cwd = process.cwd();
+    const trust = await new DirectoryTrustStore().statusFor(cwd);
+    const layers = await loadProfileLayers({
+      profileId,
+      cwd,
+      workspaceTrusted: trust === 'trusted',
+    });
+    const bootstrap = new AppBootstrap({
+      profileId,
+      layers,
+      provider: new ConfiguredProvider({ settings: {}, store: new CredentialsStore() }),
+    });
+    try {
+      process.stdout.write(JSON.stringify(await bootstrap.inspect(), null, 2) + '\n');
+    } finally {
+      await bootstrap.close();
+    }
+    return 0;
+  }
   if (args.positional[0] === 'app-server') {
     await runAppServer({
       input: process.stdin,
       output: process.stdout,
+      profileId: args.profile,
       home: process.env.DEEPCODE_HOME ?? resolve(homedir(), '.deepcode'),
     });
     return 0;
@@ -186,6 +211,7 @@ async function main(): Promise<number> {
   // Headless one-shot (-p / --print)
   if (args.prompt !== undefined) {
     return runHeadless({
+      profileId: args.profile,
       output: process.stdout,
       errOutput: process.stderr,
       cwd: process.cwd(),
@@ -236,6 +262,7 @@ async function main(): Promise<number> {
 
   // Otherwise: REPL
   return startRepl({
+    profileId: args.profile,
     input: process.stdin,
     output: process.stdout,
     cwd: process.cwd(),

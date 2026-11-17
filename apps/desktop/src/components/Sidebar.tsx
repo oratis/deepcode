@@ -1,56 +1,30 @@
-// Left-column sessions sidebar — design spec screen #3.
-//
-// Above the session list: a "project" chip showing the currently active
-// folder + a small switch-folder button. Below: sessions bucketed by
-// Today/Yesterday/Earlier per the spec note ①.
-
-import { useCallback, useEffect, useState, type JSX } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import { projectName } from '../lib/project.js';
+import {
+  SESSION_BUCKETS,
+  sameProject,
+  selectSessions,
+  sessionBucket,
+  sessionRelativeTime,
+  sessionTitle,
+} from '../lib/session-navigation.js';
 import { sessionSetTitle } from '../lib/tauri-api.js';
+import { useSessionList } from '../lib/use-session-list.js';
 import { BrandMark } from './BrandMark.js';
+import './navigation.css';
 
 interface SidebarProps {
-  /** Absolute path of the active project folder. */
   projectPath: string;
-  /** Currently active session id; null when on transient/global screens. */
   activeSessionId: string | null;
-  onPickSession: (id: string) => void;
+  onPickSession: (id: string) => void | Promise<void>;
   onNewSession: () => void;
-  /** Triggers a re-show of the folder picker so the user can switch projects. */
   onSwitchProject: () => void;
-  /** Called after the active session is archived/deleted so the parent resets. */
   onSessionRemoved?: (id: string) => void;
-}
-
-/**
- * One row, as the app-server describes it.
- *
- * The sidebar used to read the session directory through Tauri while
- * `window.deepcode.sessions.list()` read the same directory through the
- * protocol — two readers of one directory, each with its own row shape and its
- * own sort. This is the one the owner of that storage returns.
- */
-interface SessionRow {
-  id: string;
-  title?: string;
-  updatedAtSecs: number;
-}
-
-type Bucket = 'Today' | 'Yesterday' | 'Earlier';
-
-function bucketFor(updatedAtSecs: number, nowSecs: number): Bucket {
-  const diffSec = nowSecs - updatedAtSecs;
-  if (diffSec < 60 * 60 * 24) return 'Today';
-  if (diffSec < 60 * 60 * 48) return 'Yesterday';
-  return 'Earlier';
-}
-
-function relTime(updatedAtSecs: number, nowSecs: number): string {
-  const diffSec = nowSecs - updatedAtSecs;
-  if (diffSec < 60) return 'now';
-  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m`;
-  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h`;
-  return '·';
+  onBrowseSessions?: () => void;
+  /** Prevents the composer starting a turn while session metadata is changing. */
+  onMutationBusyChange?: (busy: boolean) => void;
+  /** A running turn retains ownership until the host settles or interrupts it. */
+  navigationLocked?: boolean;
 }
 
 export function Sidebar({
@@ -60,243 +34,329 @@ export function Sidebar({
   onNewSession,
   onSwitchProject,
   onSessionRemoved,
+  onBrowseSessions,
+  onMutationBusyChange,
+  navigationLocked = false,
 }: SidebarProps): JSX.Element {
-  const [sessions, setSessions] = useState<SessionRow[]>([]);
-  const [now, setNow] = useState<number>(Math.floor(Date.now() / 1000));
-  // Inline rename: which session is being edited + its draft title.
+  const { sessions, loading, error, reload } = useSessionList(activeSessionId, 8_000);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const [query, setQuery] = useState('');
+  const [currentProjectOnly, setCurrentProjectOnly] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const actionPending = useRef(false);
+  const activeSessionRef = useRef(activeSessionId);
+  activeSessionRef.current = activeSessionId;
+  const locked = navigationLocked || pendingId !== null;
+  const visible = selectSessions(sessions, query, currentProjectOnly ? projectPath : undefined);
+  const now = new Date();
 
-  const reload = useCallback(() => {
-    void window.deepcode.sessions
-      .list()
-      .then((rows) =>
-        setSessions(
-          rows.map((row) => ({
-            id: row.id,
-            title: row.title,
-            updatedAtSecs: Math.floor(new Date(row.updatedAt).getTime() / 1000),
-          })),
-        ),
-      )
-      .catch(() => setSessions([]));
-  }, []);
-
-  // Reload on mount + whenever the active session changes, then poll so a
-  // session's auto-derived title (set on its first message) and freshly-created
-  // sessions surface without needing a remount.
-  useEffect(() => {
-    reload();
-  }, [reload, activeSessionId]);
-  useEffect(() => {
-    const t = setInterval(() => {
-      setNow(Math.floor(Date.now() / 1000));
-      reload();
-    }, 8_000);
-    return () => clearInterval(t);
-  }, [reload]);
+  async function runAction(
+    id: string,
+    action: () => void | Promise<void>,
+    mutation = false,
+  ): Promise<void> {
+    if (locked || actionPending.current) return;
+    actionPending.current = true;
+    setPendingId(id);
+    setActionError(null);
+    if (mutation) onMutationBusyChange?.(true);
+    try {
+      await action();
+    } catch (cause) {
+      setActionError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      actionPending.current = false;
+      setPendingId(null);
+      if (mutation) onMutationBusyChange?.(false);
+    }
+  }
 
   async function commitRename(id: string): Promise<void> {
+    await sessionSetTitle(id, editValue.trim());
     setEditingId(null);
-    try {
-      await sessionSetTitle(id, editValue.trim());
-      reload();
-    } catch {
-      /* keep the old title on failure */
-    }
+    await reload();
   }
 
-  async function handleArchive(id: string): Promise<void> {
-    try {
-      await window.deepcode.sessions.archive({ id });
-      if (id === activeSessionId) onSessionRemoved?.(id);
-      reload();
-    } catch {
-      /* ignore — session stays listed */
-    }
-  }
-
-  async function handleDelete(id: string, label: string): Promise<void> {
-    if (!window.confirm(`Delete session "${label}"? This permanently removes its history.`)) {
-      return;
-    }
-    try {
-      await window.deepcode.sessions.delete({ id });
-      if (id === activeSessionId) onSessionRemoved?.(id);
-      reload();
-    } catch {
-      /* ignore — session stays listed */
-    }
-  }
-
-  const q = query.trim().toLowerCase();
-  const visible = q
-    ? sessions.filter(
-        (s) => (s.title || '').toLowerCase().includes(q) || s.id.toLowerCase().includes(q),
-      )
-    : sessions;
-  const grouped: Record<Bucket, SessionRow[]> = {
-    Today: [],
-    Yesterday: [],
-    Earlier: [],
-  };
-  for (const s of visible) {
-    grouped[bucketFor(s.updatedAtSecs, now)].push(s);
+  async function removeSession(id: string, action: 'archive' | 'delete'): Promise<void> {
+    await window.deepcode.sessions[action]({ id });
+    if (id === activeSessionRef.current) onSessionRemoved?.(id);
+    await reload();
   }
 
   return (
-    <aside className="sidebar">
+    <aside className="sidebar session-navigation" aria-label="Session navigation">
       <div className="brand-row">
         <BrandMark />
         <span className="name">DeepCode</span>
       </div>
 
-      {/* Active project — compact row (the breadcrumb in the header carries the path). */}
       <div className="sb-project" title={projectPath}>
-        <span className="sb-project-icon">📁</span>
-        <span className="sb-project-name">{projectName(projectPath)}</span>
+        <svg
+          className="sb-project-icon"
+          width="16"
+          height="16"
+          viewBox="0 0 20 20"
+          fill="none"
+          aria-hidden="true"
+        >
+          <path
+            d="M2.5 5.5h6l2 2h7v8.5h-15z"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+          />
+        </svg>
+        <span className="sb-project-name">
+          <small>Project</small>
+          {projectName(projectPath)}
+        </span>
         <button
           type="button"
           className="sb-project-switch"
           onClick={onSwitchProject}
+          disabled={locked}
+          aria-label="Switch project folder"
           title="Switch to another folder"
         >
           ⇄
         </button>
       </div>
 
-      <button type="button" className="new-btn" onClick={onNewSession}>
+      <button type="button" className="new-btn" onClick={onNewSession} disabled={locked}>
         <span>+ New session</span>
         <kbd>⌘N</kbd>
       </button>
 
-      {sessions.length > 0 && (
-        <div className="sb-search">
-          <span className="sb-search-icon">⌕</span>
-          <input
-            type="text"
-            placeholder="Search sessions"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            spellCheck={false}
-          />
-          {query && (
-            <button
-              type="button"
-              className="sb-search-clear"
-              onClick={() => setQuery('')}
-              title="Clear"
-            >
-              ×
+      <div className="sb-list-heading">
+        <span>
+          Sessions <span className="sb-count">{sessions.length}</span>
+        </span>
+        {onBrowseSessions && (
+          <button type="button" onClick={onBrowseSessions}>
+            All sessions ↗
+          </button>
+        )}
+      </div>
+
+      <div className="sb-search">
+        <span className="sb-search-icon" aria-hidden="true">
+          ⌕
+        </span>
+        <input
+          type="search"
+          aria-label="Search sessions"
+          placeholder="Search sessions"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setQuery('');
+          }}
+          spellCheck={false}
+        />
+        {query && (
+          <button
+            type="button"
+            className="sb-search-clear"
+            onClick={() => setQuery('')}
+            aria-label="Clear session search"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      <label className="sb-project-filter">
+        <input
+          type="checkbox"
+          checked={currentProjectOnly}
+          onChange={(e) => setCurrentProjectOnly(e.target.checked)}
+        />
+        This project only
+      </label>
+
+      {navigationLocked && (
+        <p className="sb-notice" role="status">
+          Finish or stop the running turn to switch sessions.
+        </p>
+      )}
+      {(error || actionError) && (
+        <div className="navigation-error" role="alert">
+          <strong>{actionError ? 'Session action failed' : 'Could not refresh sessions'}</strong>
+          <span>{actionError || error}</span>
+          {error && (
+            <button type="button" onClick={() => void reload()}>
+              Retry loading
+            </button>
+          )}
+          {actionError && (
+            <button type="button" onClick={() => setActionError(null)}>
+              Dismiss
             </button>
           )}
         </div>
       )}
 
-      {q && visible.length === 0 && (
-        <div className="sb-search-empty">No sessions match “{query}”.</div>
-      )}
-
-      {(['Today', 'Yesterday', 'Earlier'] as const).map((bucket) => {
-        const items = grouped[bucket];
-        if (items.length === 0) return null;
-        return (
-          <div key={bucket}>
-            <div className="section-title">{bucket}</div>
-            {items.slice(0, 20).map((s) => (
-              <div
-                key={s.id}
-                className={'item' + (s.id === activeSessionId ? ' active' : '')}
-                onClick={() => editingId !== s.id && onPickSession(s.id)}
-                onDoubleClick={(e) => {
-                  e.stopPropagation();
-                  setEditingId(s.id);
-                  setEditValue(s.title?.trim() ? s.title : '');
-                }}
-                title={`${s.title} · ${s.id}  (double-click to rename)`}
-              >
-                <span className="dot" />
-                {editingId === s.id ? (
-                  <input
-                    className="label"
-                    autoFocus
-                    value={editValue}
-                    placeholder="Session name…"
-                    onChange={(e) => setEditValue(e.target.value)}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') void commitRename(s.id);
-                      else if (e.key === 'Escape') setEditingId(null);
-                    }}
-                    onBlur={() => void commitRename(s.id)}
-                    style={{
-                      flex: 1,
-                      minWidth: 0,
-                      background: 'transparent',
-                      border: '1px solid var(--line)',
-                      borderRadius: 4,
-                      color: 'var(--text-0)',
-                      font: 'inherit',
-                      padding: '0 4px',
-                    }}
-                  />
-                ) : (
-                  <span className="label">{s.title?.trim() ? s.title : shortTitle(s.id)}</span>
-                )}
-                <span className="meta">{relTime(s.updatedAtSecs, now)}</span>
-                {editingId !== s.id && (
-                  <span className="row-actions">
-                    <button
-                      type="button"
-                      className="row-act"
-                      title="Archive session"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleArchive(s.id);
-                      }}
-                    >
-                      🗄
-                    </button>
-                    <button
-                      type="button"
-                      className="row-act danger"
-                      title="Delete session"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handleDelete(s.id, s.title?.trim() ? s.title : shortTitle(s.id));
-                      }}
-                    >
-                      🗑
-                    </button>
-                  </span>
-                )}
-              </div>
-            ))}
+      <nav className="sb-session-list" aria-label="Sessions" aria-busy={loading}>
+        {loading && (
+          <p className="sb-empty" role="status">
+            Loading sessions…
+          </p>
+        )}
+        {!loading && visible.length === 0 && !error && (
+          <div className="sb-empty" role="status">
+            <strong>
+              {query.trim()
+                ? 'No matching sessions'
+                : currentProjectOnly
+                  ? 'No sessions for this project'
+                  : 'Start your first session'}
+            </strong>
+            <span>
+              {query.trim()
+                ? 'Try a title, session ID or project path.'
+                : currentProjectOnly
+                  ? 'Clear the project filter to include older sessions without a project.'
+                  : 'Ask DeepCode to explore, plan or make a change.'}
+            </span>
           </div>
-        );
-      })}
-
-      {sessions.length === 0 && (
-        <div
-          style={{
-            marginTop: 12,
-            padding: '8px 8px',
-            color: 'var(--text-3)',
-            fontSize: 11,
-            textAlign: 'center',
-            lineHeight: 1.5,
-          }}
-        >
-          No sessions yet — your conversations will appear here once you start one.
-        </div>
-      )}
+        )}
+        {SESSION_BUCKETS.map((bucket) => {
+          const rows = visible.filter(
+            (session) => sessionBucket(session.updatedAt, now) === bucket,
+          );
+          if (!rows.length) return null;
+          return (
+            <section key={bucket} aria-label={bucket}>
+              <h2 className="section-title">
+                {bucket}
+                <span>{rows.length}</span>
+              </h2>
+              {rows.map((session) => {
+                const label = sessionTitle(session);
+                return (
+                  <div
+                    key={session.id}
+                    className={'item' + (session.id === activeSessionId ? ' active' : '')}
+                  >
+                    {editingId === session.id ? (
+                      <form
+                        className="sb-rename"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void runAction(session.id, () => commitRename(session.id), true);
+                        }}
+                      >
+                        <input
+                          autoFocus
+                          aria-label="Session title"
+                          value={editValue}
+                          placeholder="Session name…"
+                          disabled={locked}
+                          onChange={(e) => setEditValue(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setEditingId(null);
+                          }}
+                        />
+                        <div>
+                          <button type="submit" disabled={locked}>
+                            Save
+                          </button>
+                          <button
+                            type="button"
+                            disabled={locked}
+                            onClick={() => setEditingId(null)}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      </form>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          className="sb-session-main"
+                          aria-current={session.id === activeSessionId ? 'page' : undefined}
+                          disabled={locked}
+                          onClick={() =>
+                            void runAction(session.id, () => onPickSession(session.id))
+                          }
+                          title={`${label} · ${session.id}${session.cwd ? ` · ${session.cwd}` : ''}`}
+                        >
+                          <span className="dot" aria-hidden="true" />
+                          <span className="sb-session-copy">
+                            <span className="label">{label}</span>
+                            {session.cwd && !sameProject(session.cwd, projectPath) && (
+                              <small>{projectName(session.cwd)}</small>
+                            )}
+                          </span>
+                          <span className="meta">
+                            {pendingId === session.id
+                              ? '…'
+                              : sessionRelativeTime(session.updatedAt, now)}
+                          </span>
+                        </button>
+                        <span className="row-actions">
+                          <button
+                            type="button"
+                            className="row-act"
+                            disabled={locked}
+                            aria-label={`Rename session ${label}`}
+                            title="Rename session"
+                            onClick={() => {
+                              setEditingId(session.id);
+                              setEditValue(session.title?.trim() || '');
+                            }}
+                          >
+                            ✎
+                          </button>
+                          <button
+                            type="button"
+                            className="row-act"
+                            disabled={locked}
+                            aria-label={`Archive session ${label}`}
+                            title="Archive session"
+                            onClick={() =>
+                              void runAction(
+                                session.id,
+                                () => removeSession(session.id, 'archive'),
+                                true,
+                              )
+                            }
+                          >
+                            ↓
+                          </button>
+                          <button
+                            type="button"
+                            className="row-act danger"
+                            disabled={locked}
+                            aria-label={`Delete session ${label}`}
+                            title="Delete session"
+                            onClick={() => {
+                              if (
+                                window.confirm(
+                                  `Delete session "${label}"? This permanently removes its history.`,
+                                )
+                              )
+                                void runAction(
+                                  session.id,
+                                  () => removeSession(session.id, 'delete'),
+                                  true,
+                                );
+                            }}
+                          >
+                            ×
+                          </button>
+                        </span>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </section>
+          );
+        })}
+      </nav>
     </aside>
   );
-}
-
-/** Session ids look like `2026-05-28-abc123` — strip the date for display. */
-function shortTitle(id: string): string {
-  const m = id.match(/^\d{4}-\d{2}-\d{2}-(.+)$/);
-  return m ? m[1]! : id;
 }

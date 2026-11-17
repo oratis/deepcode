@@ -31,6 +31,10 @@ describe('shipped version numbers', () => {
     );
   });
 
+  it('the installable VS Code extension agrees with the CLI', () => {
+    expect(pkgVersion('apps/vscode/package.json')).toBe(pkgVersion('apps/cli/package.json'));
+  });
+
   it('the Rust crate agrees with the Tauri config it builds', () => {
     const match = /^version = "([^"]+)"/m.exec(read('apps/desktop/src-tauri/Cargo.toml'));
     expect(match?.[1]).toBe(pkgVersion('apps/desktop/src-tauri/tauri.conf.json'));

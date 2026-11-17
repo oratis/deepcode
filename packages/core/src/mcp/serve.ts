@@ -8,6 +8,9 @@
 // EnterPlanMode/ExitPlanMode → modeSignal; Task → runSubAgent; worktree tools
 // mutate the live ctx; Cron* manage a local scheduler) so they're excluded.
 
+import { randomUUID } from 'node:crypto';
+import { ToolExecutionService, type ToolExecutionOptions } from '../runtime/tool-execution.js';
+import { ToolRegistry } from '../tools/registry.js';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
@@ -29,6 +32,8 @@ export type McpToolGate = (req: {
   input: Record<string, unknown>;
 }) => Promise<McpGateVerdict>;
 
+const gatePolicies = new WeakMap<McpToolGate, McpGateOptions>();
+
 export interface McpGateOptions {
   cwd: string;
   mode: Mode;
@@ -36,6 +41,7 @@ export interface McpGateOptions {
   contract?: FileContract;
   hooks?: HookDispatcher;
   autoMode?: AutoModeConfig;
+  sandboxConfig?: ToolContext['sandboxConfig'];
 }
 
 /**
@@ -48,7 +54,7 @@ export interface McpGateOptions {
  * down and reviewable, rather than by being the one who connected.
  */
 export function buildMcpGate(options: McpGateOptions): McpToolGate {
-  return async ({ tool, input }) => {
+  const gate: McpToolGate = async ({ tool, input }) => {
     const verdict = await dispatchToolCall({
       tool,
       input,
@@ -58,6 +64,8 @@ export function buildMcpGate(options: McpGateOptions): McpToolGate {
       hooks: options.hooks,
       cwd: options.cwd,
       autoMode: options.autoMode,
+      sandboxConfig: options.sandboxConfig,
+      sandboxDefaultMode: 'workspace-write',
     });
     if (verdict.decision === 'allow') return { allowed: true, reason: verdict.reason };
     if (verdict.decision === 'ask') {
@@ -71,6 +79,8 @@ export function buildMcpGate(options: McpGateOptions): McpToolGate {
     }
     return { allowed: false, reason: verdict.reason };
   };
+  gatePolicies.set(gate, { ...options });
+  return gate;
 }
 
 /** Tools that can't run statelessly over MCP (need host-interactive context). */
@@ -119,6 +129,11 @@ export interface BuildMcpServerOpts {
   sandboxConfig?: ToolContext['sandboxConfig'];
   /** Path-axis rules, so Grep/Glob filter their results here too. */
   contract?: FileContract;
+  /** Shared settlement options; policy comes from buildMcpGate, never the peer. */
+  execution?: Pick<
+    ToolExecutionOptions,
+    'session' | 'ledger' | 'spillStore' | 'spillThresholdChars' | 'toolDeadlines' | 'onEvent'
+  >;
 }
 
 /**
@@ -129,56 +144,65 @@ export interface BuildMcpServerOpts {
 export function buildMcpServer(opts: BuildMcpServerOpts): Server {
   const tools = opts.tools ?? mcpServableTools();
   const byName = new Map(tools.map((t) => [t.name, t]));
+  const policy = gatePolicies.get(opts.gate);
+  const execution = new ToolExecutionService({
+    ...opts.execution,
+    ...policy,
+    cwd: opts.cwd,
+    tools: new ToolRegistry(tools),
+    mode: policy?.mode ?? 'default',
+    unattended: true,
+    signal: opts.signal,
+    contract: opts.contract ?? policy?.contract,
+    sandboxConfig: opts.sandboxConfig ?? policy?.sandboxConfig,
+    restrict: policy
+      ? undefined
+      : async (name, input) => {
+          const verdict = await opts.gate({ tool: name, input });
+          return verdict.allowed ? undefined : verdict.reason;
+        },
+  });
   const server = new Server(
     { name: opts.name ?? 'deepcode', version: opts.version ?? '0.0.0' },
     { capabilities: { tools: {} } },
   );
-
+  const closeTransport = server.close.bind(server);
+  server.close = async () => {
+    await Promise.all([execution.close(), closeTransport()]);
+  };
+  server.onclose = () => {
+    void execution.close().catch((error: unknown) => {
+      process.stderr.write(`MCP cleanup failed: ${(error as Error).message}\n`);
+    });
+  };
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: tools.map((t) => ({
-      name: t.definition.name,
-      description: t.definition.description,
-      inputSchema: t.definition.inputSchema as { type: 'object' },
+    tools: tools.map((tool) => ({
+      name: tool.name,
+      description: tool.definition.description,
+      inputSchema: tool.definition.inputSchema as { type: 'object' },
     })),
   }));
-
-  server.setRequestHandler(CallToolRequestSchema, async (req) => {
-    const tool = byName.get(req.params.name);
-    if (!tool) {
+  server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
+    if (!byName.has(req.params.name))
       return {
-        content: [{ type: 'text' as const, text: `Unknown tool: ${req.params.name}` }],
+        content: [{ type: 'text', text: `Unknown tool: ${req.params.name}` }],
         isError: true,
       };
-    }
-    const input = (req.params.arguments ?? {}) as Record<string, unknown>;
-    const verdict = await opts.gate({ tool: tool.name, input });
-    if (!verdict.allowed) {
-      return {
-        content: [{ type: 'text' as const, text: `Refused: ${verdict.reason}` }],
-        isError: true,
-      };
-    }
-
-    const ctx: ToolContext = {
-      cwd: opts.cwd,
-      signal: opts.signal,
-      sandboxConfig: opts.sandboxConfig,
-      contract: opts.contract,
-    };
     try {
-      const result = await tool.execute(input, ctx);
+      const result = await execution.run(
+        req.params.name,
+        req.params.arguments ?? {},
+        randomUUID(),
+        extra.signal,
+      );
       return {
-        content: [{ type: 'text' as const, text: result.content }],
+        content: [{ type: 'text', text: result.content }],
         isError: result.isError ?? false,
       };
-    } catch (err) {
-      return {
-        content: [{ type: 'text' as const, text: (err as Error).message }],
-        isError: true,
-      };
+    } catch (error) {
+      return { content: [{ type: 'text', text: (error as Error).message }], isError: true };
     }
   });
-
   return server;
 }
 
@@ -198,21 +222,20 @@ export async function serveMcpOverStdio(opts: ServeMcpStdioOpts): Promise<void> 
   const transport = new StdioServerTransport();
   await server.connect(transport);
   opts.onReady?.(tools.map((t) => t.name));
-  await new Promise<void>((resolve) => {
+  await new Promise<void>((resolve, reject) => {
     let settled = false;
     const finish = () => {
       if (settled) return;
       settled = true;
-      resolve();
+      opts.signal?.removeEventListener('abort', stop);
+      void server.close().then(resolve, reject);
     };
-    // Peer disconnect / stdin EOF.
-    transport.onclose = finish;
-    // SIGINT (or test abort): close the transport so stdin listeners detach.
-    const stop = () =>
-      void server
-        .close()
-        .catch(() => undefined)
-        .finally(finish);
+    const previousClose = server.onclose;
+    server.onclose = () => {
+      previousClose?.();
+      finish();
+    };
+    const stop = () => finish();
     if (opts.signal?.aborted) stop();
     else opts.signal?.addEventListener('abort', stop, { once: true });
   });

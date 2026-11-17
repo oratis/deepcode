@@ -8,6 +8,7 @@ import { ErrorBoundary } from './components/ErrorBoundary.js';
 import { installTauriShim } from './lib/window-shim.js';
 import { App } from './App.js';
 import './index.css';
+import './workspace.css';
 
 // Install the window.deepcode adapter so the existing screens that call
 // window.deepcode.* keep working — the adapter forwards to Tauri commands.

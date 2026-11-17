@@ -107,7 +107,7 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
     input: req.input,
     permissionVerdict: permVerdict,
   };
-  const modeVerdict = evaluateMode(req.mode, modeReq);
+  let modeVerdict = evaluateMode(req.mode, modeReq);
 
   // Plan-block short-circuits — hook doesn't even fire
   if (modeVerdict === 'plan-blocked') {
@@ -149,15 +149,7 @@ export async function dispatchToolCall(req: DispatchRequest): Promise<DispatchVe
         permissionVerdict: permVerdict,
       };
     }
-    if (autoVerdict === 'allow') {
-      return {
-        decision: 'allow',
-        source: 'mode',
-        reason: `auto-mode classifier approved ${req.tool}.`,
-        modeVerdict: 'allow',
-        permissionVerdict: permVerdict,
-      };
-    }
+    if (autoVerdict === 'allow') modeVerdict = 'allow';
     // 'ask' falls through to the normal hook + return path below
   }
 

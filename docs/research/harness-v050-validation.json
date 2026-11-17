@@ -1,0 +1,95 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "version": "0.5.0",
+  "platform": "darwin-arm64",
+  "runtime": "Node 22.23.4 / pnpm 9.12.0",
+  "scope": "Integrated H01-H04 + desktop/VS Code UI after independent review",
+  "tests": {
+    "passed": 2006,
+    "skipped": 23,
+    "filesPassed": 167,
+    "sdkSmokePassed": 2,
+    "rustPassed": 30,
+    "desktopBrowserPassed": 22
+  },
+  "checks": {
+    "build": "passed",
+    "release": "passed",
+    "kernelSmoke": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "docs": "passed"
+  },
+  "release": {
+    "status": "ok",
+    "budgets": {
+      "extensionBytes": 65536,
+      "appServerBytes": 786432,
+      "vsixBytes": 262144,
+      "initializeMs": 5000,
+      "metadataRequestMs": 2000,
+      "workspaceDiffMs": 10000
+    },
+    "bundles": {
+      "extensionBytes": 54943,
+      "appServerBytes": 771551,
+      "vsixBytes": 247198
+    },
+    "journeys": [
+      {
+        "name": "create-and-read",
+        "threadId": "thread-mwkgz5qf-wh404r",
+        "timings": {
+          "initializeMs": 50.84,
+          "threadStartMs": 31.59,
+          "threadReadMs": 0.84,
+          "configDiagnosticsMs": 0.55,
+          "workspaceDiffMs": 37.31
+        }
+      },
+      {
+        "name": "restart-and-resume",
+        "threadId": "thread-mwkgz5qf-wh404r",
+        "timings": {
+          "initializeMs": 50.4,
+          "threadReadMs": 1.25,
+          "threadResumeMs": 0.55
+        }
+      }
+    ]
+  },
+  "kernelSmoke": {
+    "status": "ok",
+    "comparison": {
+      "baseline": "current app-server (already includes Cordis)",
+      "candidate": "current app-server plus an independent kernel fixture",
+      "scope": "incremental fixture only; not the cost of introducing Cordis"
+    },
+    "bytes": {
+      "extension": 54943,
+      "baselineServer": 767990,
+      "candidateServer": 772982,
+      "desktopServer": 772982,
+      "baselineVsix": 246209,
+      "candidateVsix": 248648
+    },
+    "incrementalFixtureOverhead": {
+      "server": 0.006500084636518633,
+      "vsix": 0.009906217888054458,
+      "initialize": 0.026911679222314522,
+      "rss": 0.003978779840848823
+    },
+    "browserBytes": 30809
+  },
+  "limitations": [
+    "Linux validation pending PR CI",
+    "No external provider calls",
+    "Rust fmt reports pre-existing HEAD formatting; Rust sources unchanged",
+    "No npm, signed DMG or updater publication credentials",
+    "Complete H05-H14 harness-v2 backend switch remains future work"
+  ],
+  "pullRequest": "https://github.com/oratis/deepcode/pull/297",
+  "linuxFollowup": "Seal the synthetic bwrap root after binding writable HOME/TMP; retain adversarial denial assertions. Final Linux validation is enforced by PR CI."
+}

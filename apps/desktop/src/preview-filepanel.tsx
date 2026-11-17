@@ -16,6 +16,7 @@ import {
   type FileView,
 } from './types/file-panel.js';
 import './index.css';
+import './workspace.css';
 
 const SAMPLE = `export function greet(name: string): string {
   // build the greeting

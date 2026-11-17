@@ -6,7 +6,7 @@ import { Readable } from 'node:stream';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { NetworkSandboxUnavailable } from '../sandbox/index.js';
 import type { NetworkSandboxHandle } from '../sandbox/index.js';
-import { BashTool } from './bash.js';
+import { BashTool, bashProcessOutput } from './bash.js';
 
 // A fake network-sandbox handle: stdout emits `text` then ends; `exited`
 // resolves with `code` once stdout drains (so output is captured first).
@@ -40,6 +40,23 @@ describe('BashTool', () => {
     expect(r.isError).toBe(true);
     expect(r.content).toContain('nope');
     expect(r.content).toMatch(/exit: 3/);
+  });
+
+  it('keeps raw process channels available to the host but out of serialized tool results', async () => {
+    const result = await BashTool.execute(
+      { command: `printf '%s' '{"decision":"deny"}'; printf diagnostic >&2` },
+      { cwd: tmp },
+    );
+    expect(bashProcessOutput(result)).toEqual({
+      stdout: '{"decision":"deny"}',
+      stderr: 'diagnostic',
+      truncated: false,
+    });
+    const serialized = JSON.parse(JSON.stringify(result));
+    expect(serialized.content).toBe(result.content);
+    expect(bashProcessOutput(serialized)).toBeUndefined();
+    expect(serialized.data.stdout).toBeUndefined();
+    expect(serialized.data.stderr).toBeUndefined();
   });
 
   it('respects timeout', async () => {

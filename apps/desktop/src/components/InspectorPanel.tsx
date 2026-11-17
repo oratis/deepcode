@@ -62,13 +62,14 @@ export function InspectorPanel({
   }, [focusSection]);
 
   return (
-    <aside className="inspector" ref={rootRef}>
+    <aside className="inspector" ref={rootRef} aria-label="Session inspector">
       <div className="inspector-head">
         <span className="inspector-title">Inspector</span>
         <button
           type="button"
           className="rail-btn"
           title="Collapse inspector (⌘\\)"
+          aria-label="Collapse inspector"
           onClick={onCollapse}
         >
           ›
@@ -80,16 +81,18 @@ export function InspectorPanel({
       {todos.length === 0 ? (
         <p className="insp-empty">No plan yet — the agent hasn’t written a todo list.</p>
       ) : (
-        <div className="todo-list">
+        <div className="todo-list" role="list" aria-label="Plan items">
           {todos.map((t, i) => (
             <div
               key={i}
+              role="listitem"
               className={
                 'todo-item' +
                 (t.status === 'completed' ? ' done' : t.status === 'in_progress' ? ' active' : '')
               }
+              aria-label={`${t.status.replace('_', ' ')}: ${t.content}`}
             >
-              <span className="check" />
+              <span className="check" aria-hidden="true" />
               <span className="label">{t.status === 'in_progress' ? t.activeForm : t.content}</span>
             </div>
           ))}
@@ -102,7 +105,15 @@ export function InspectorPanel({
         <span>
           {usedTokens.toLocaleString()} / {contextWindow.toLocaleString()}
         </span>
-        <div className="progress">
+        <div
+          className="progress"
+          role="progressbar"
+          aria-label="Context usage"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Number(fillPct.toFixed(1))}
+          aria-valuetext={`${usedTokens.toLocaleString()} of ${contextWindow.toLocaleString()} tokens`}
+        >
           <div className="fill" style={{ width: `${fillPct}%` }} />
         </div>
         <span>{fillPct.toFixed(1)}%</span>
@@ -114,20 +125,27 @@ export function InspectorPanel({
         <p className="insp-empty">No files written or edited yet.</p>
       ) : (
         <div className="recent-files">
-          {recentFiles.map((f) => (
-            <div
-              className="recent-file"
-              key={f}
-              title={onOpenFile ? `Open ${f}` : f}
-              role={onOpenFile ? 'button' : undefined}
-              tabIndex={onOpenFile ? 0 : undefined}
-              onClick={onOpenFile ? () => onOpenFile(f) : undefined}
-              style={onOpenFile ? { cursor: 'pointer' } : undefined}
-            >
-              <span className="name">{basename(f)}</span>
-              <span className="dir">{dirname(f)}</span>
-            </div>
-          ))}
+          {recentFiles.map((f) =>
+            onOpenFile ? (
+              <button
+                type="button"
+                className="recent-file"
+                key={f}
+                title={`Open ${f}`}
+                aria-label={`Open ${f}`}
+                onClick={() => onOpenFile(f)}
+                style={{ textAlign: 'left' }}
+              >
+                <span className="name">{basename(f)}</span>
+                <span className="dir">{dirname(f)}</span>
+              </button>
+            ) : (
+              <div className="recent-file" key={f} title={f}>
+                <span className="name">{basename(f)}</span>
+                <span className="dir">{dirname(f)}</span>
+              </div>
+            ),
+          )}
         </div>
       )}
 

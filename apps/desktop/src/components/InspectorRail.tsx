@@ -56,10 +56,11 @@ export function InspectorRail({
   const ctxTitle = contextFill === undefined ? '' : ` · context ${Math.round(contextFill * 100)}%`;
 
   return (
-    <aside className="inspector-rail">
+    <aside className="inspector-rail" aria-label="Workspace panels">
       <button
         type="button"
         className={'rail-btn' + (inspectorActive ? ' active' : '')}
+        aria-pressed={inspectorActive}
         title={`Inspector${planCount ? ` · ${planCount} pending` : ''}${ctxTitle}`}
         style={ctxColor && !inspectorActive ? { color: ctxColor } : undefined}
         onClick={onToggleInspector}
@@ -72,6 +73,7 @@ export function InspectorRail({
       <button
         type="button"
         className={'rail-btn' + (filesActive ? ' active' : '')}
+        aria-pressed={filesActive}
         title="Files — preview, diff & history"
         onClick={onToggleFiles}
       >
@@ -82,6 +84,7 @@ export function InspectorRail({
       <button
         type="button"
         className={'rail-btn' + (changesActive ? ' active' : '')}
+        aria-pressed={changesActive}
         title="Changes — review findings & the working-tree diff"
         onClick={onToggleChanges}
       >
@@ -96,6 +99,7 @@ export function InspectorRail({
       <button
         type="button"
         className={'rail-btn' + (settingsActive ? ' active' : '')}
+        aria-pressed={settingsActive}
         title="Settings"
         onClick={onSettings}
       >

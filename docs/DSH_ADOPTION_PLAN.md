@@ -1,5 +1,7 @@
 # DeepSeek Harness 采纳方案与决策记录
 
+> **历史决策范围更新（2026-11-17）**：本文是第一轮局部能力采纳记录。用户现已明确要求完整 Harness 化，新的 [完整方案](HARNESS_TRANSFORMATION_PLAN.md) 与 [ADR 0003](adr/0003-plugin-composed-harness.md) 重新评估并取代本文 §2.1 的“拒绝 Cordis 化”结论；新方案已获实施授权，H01/H02 证据见 [实施进度](HARNESS_IMPLEMENTATION_PROGRESS.md)。已落地的 spill/guard/shell/session-search/presentation 继续复用，结果剪枝尚未实现。本文的旧缺陷和规模数字仅对应下列历史基线。
+
 > 基线：DeepCode `main@4d56f44`（0.3.0）· 调研对象 `dsh@47f94385`（0.1.0-rc.5, MIT）
 > 前置阅读：[调研报告](research/deepseek-harness.md)
 > 体例沿用 [`FLOATBOAT_ADOPTION_PLAN.md`](FLOATBOAT_ADOPTION_PLAN.md)：每个候选项走**正方 / 反方 / 裁决**，

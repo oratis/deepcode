@@ -13,6 +13,7 @@ export interface EditorProtocolClient {
   connect(): Promise<InitializeResult>;
   request<T>(method: ProtocolMethod, params?: Record<string, unknown>): Promise<T>;
   subscribe(handler: (event: ProtocolEvent) => void): () => void;
+  subscribeDisconnect(handler: (error: Error) => void): () => void;
   close(): Promise<void>;
 }
 
@@ -33,12 +34,29 @@ export class EditorProtocolRuntime {
   private readonly handlers = new Map<string, EventHandler>();
   private readonly queued = new Map<string, ProtocolEvent[]>();
   private readonly unsubscribe: () => void;
+  private readonly unsubscribeDisconnect: () => void;
+  private readonly disconnectHandlers = new Set<(error: Error) => void>();
+  private connectionEpoch = 0;
+  private needsResume = false;
 
   constructor(
     private readonly client: EditorProtocolClient,
     private readonly cwd: () => string,
   ) {
     this.unsubscribe = client.subscribe((event) => this.route(event));
+    this.unsubscribeDisconnect = client.subscribeDisconnect((error) => {
+      this.connectionEpoch++;
+      this.needsResume = Boolean(this.threadId);
+      this.handlers.clear();
+      this.turnThreads.clear();
+      this.queued.clear();
+      for (const handler of this.disconnectHandlers) handler(error);
+    });
+  }
+
+  subscribeDisconnect(handler: (error: Error) => void): () => void {
+    this.disconnectHandlers.add(handler);
+    return () => this.disconnectHandlers.delete(handler);
   }
 
   async start(
@@ -47,7 +65,9 @@ export class EditorProtocolRuntime {
   ): Promise<{ threadId: string; turnId: string }> {
     if (!input.text.trim()) throw new Error('prompt is required');
     await this.client.connect();
+    const epoch = this.connectionEpoch;
     const thread = await this.ensureThread(input.threadId);
+    this.assertConnectedEpoch(epoch);
     const turn = await this.client.request<TurnSnapshot>('turn/start', {
       threadId: thread.id,
       input: {
@@ -57,6 +77,7 @@ export class EditorProtocolRuntime {
         ...(input.mode ? { mode: input.mode } : {}),
       },
     });
+    this.assertConnectedEpoch(epoch);
     this.turnThreads.set(turn.id, thread.id);
     this.handlers.set(turn.id, onEvent);
     this.flush(turn.id);
@@ -65,8 +86,11 @@ export class EditorProtocolRuntime {
 
   async resume(threadId: string): Promise<ThreadSnapshot> {
     await this.client.connect();
+    const epoch = this.connectionEpoch;
     const thread = await this.client.request<ThreadSnapshot>('thread/resume', { threadId });
+    this.assertConnectedEpoch(epoch);
     this.threadId = thread.id;
+    this.needsResume = false;
     return thread;
   }
 
@@ -107,11 +131,14 @@ export class EditorProtocolRuntime {
     if (!initialized.capabilities.reviewActions) {
       throw new Error('The app-server does not support review actions');
     }
+    const epoch = this.connectionEpoch;
     const thread = await this.ensureThread();
+    this.assertConnectedEpoch(epoch);
     const turn = await this.client.request<TurnSnapshot>('review/apply', {
       threadId: thread.id,
       findingIds: findings.map((finding) => finding.findingId),
     });
+    this.assertConnectedEpoch(epoch);
     this.trackTurn(turn, thread.id, onEvent);
     return { threadId: thread.id, turnId: turn.id };
   }
@@ -124,11 +151,14 @@ export class EditorProtocolRuntime {
     if (!initialized.capabilities.reviewActions) {
       throw new Error('The app-server does not support review actions');
     }
+    const epoch = this.connectionEpoch;
     const thread = await this.ensureThread();
+    this.assertConnectedEpoch(epoch);
     const turn = await this.client.request<TurnSnapshot>('review/revert', {
       threadId: thread.id,
       actionId,
     });
+    this.assertConnectedEpoch(epoch);
     this.trackTurn(turn, thread.id, onEvent);
     return { threadId: thread.id, turnId: turn.id };
   }
@@ -157,6 +187,8 @@ export class EditorProtocolRuntime {
 
   async close(): Promise<void> {
     this.unsubscribe();
+    this.unsubscribeDisconnect();
+    this.disconnectHandlers.clear();
     this.handlers.clear();
     this.turnThreads.clear();
     this.queued.clear();
@@ -164,19 +196,27 @@ export class EditorProtocolRuntime {
   }
 
   private async ensureThread(requested?: string): Promise<ThreadSnapshot> {
-    if (requested && requested !== this.threadId) {
+    const epoch = this.connectionEpoch;
+    if ((requested && requested !== this.threadId) || (this.needsResume && this.threadId)) {
       const thread = await this.client.request<ThreadSnapshot>('thread/resume', {
-        threadId: requested,
+        threadId: requested ?? this.threadId,
       });
+      this.assertConnectedEpoch(epoch);
       this.threadId = thread.id;
+      this.needsResume = false;
       return thread;
     }
     if (this.threadId) {
       return this.client.request<ThreadSnapshot>('thread/read', { threadId: this.threadId });
     }
     const thread = await this.client.request<ThreadSnapshot>('thread/start', { cwd: this.cwd() });
+    this.assertConnectedEpoch(epoch);
     this.threadId = thread.id;
     return thread;
+  }
+
+  private assertConnectedEpoch(epoch: number): void {
+    if (epoch !== this.connectionEpoch) throw new Error('The app-server connection was lost.');
   }
 
   private async interactionRequest(

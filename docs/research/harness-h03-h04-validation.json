@@ -1,0 +1,85 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "platform": "darwin-arm64",
+  "runtime": "Node 22.23.4 / pnpm 9.12.0",
+  "scope": "H03/H04 integrated workspace; includes separate UI chat changes",
+  "tests": {
+    "passed": 1969,
+    "skipped": 23,
+    "filesPassed": 166,
+    "sdkSmokePassed": 2
+  },
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "docs": "passed",
+    "build": "passed",
+    "desktopBuild": "passed",
+    "release": "passed",
+    "kernelSpike": "passed"
+  },
+  "release": {
+    "status": "ok",
+    "bundles": {
+      "extensionBytes": 49100,
+      "appServerBytes": 769856,
+      "vsixBytes": 245277
+    },
+    "budgets": {
+      "extensionBytes": 65536,
+      "appServerBytes": 786432,
+      "vsixBytes": 262144,
+      "initializeMs": 5000,
+      "metadataRequestMs": 2000,
+      "workspaceDiffMs": 10000
+    },
+    "journeys": [
+      {
+        "name": "create-and-read",
+        "threadId": "thread-mwkfm85n-696ry6",
+        "timings": {
+          "initializeMs": 45.27,
+          "threadStartMs": 29.35,
+          "threadReadMs": 0.89,
+          "configDiagnosticsMs": 0.55,
+          "workspaceDiffMs": 225.8
+        }
+      },
+      {
+        "name": "restart-and-resume",
+        "threadId": "thread-mwkfm85n-696ry6",
+        "timings": {
+          "initializeMs": 43.76,
+          "threadReadMs": 1.19,
+          "threadResumeMs": 0.54
+        }
+      }
+    ]
+  },
+  "notRun": [
+    "Linux kernel validation (CI required)",
+    "Rust (unchanged)",
+    "External model providers",
+    "Final harness-v2 backend switch"
+  ],
+  "kernelSpikeRecheck": {
+    "note": "Current H03/H04 baseline with H02 fixture; not a replacement for the historical H02 comparison",
+    "bytes": {
+      "extension": 49100,
+      "baselineServer": 766295,
+      "candidateServer": 771287,
+      "desktopServer": 771287,
+      "baselineVsix": 244293,
+      "candidateVsix": 246744
+    },
+    "overhead": {
+      "server": 0.006514462445924796,
+      "vsix": 0.010033034102491678,
+      "initialize": 0.05576813100198663,
+      "rss": 0.004861878453038759
+    },
+    "browserBytes": 30809
+  }
+}

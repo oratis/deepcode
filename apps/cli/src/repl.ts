@@ -1,9 +1,11 @@
+import { homedir as runtimeHome } from 'node:os';
+import { loadProfileLayers, type RuntimeProfileId } from '@deepcode/core/runtime';
+import { ToolExecutionBinding, createPluginCapabilityBridge } from '@deepcode/core';
 import { configuredEngine } from '@deepcode/app-server';
 // CLI REPL — readline-based interactive loop.
 // Spec: docs/DEVELOPMENT_PLAN.md §5
 
 import {
-  BashTool,
   CredentialsStore,
   ConfiguredProvider,
   resolveProviderConnection,
@@ -11,14 +13,11 @@ import {
   type Provider,
   HookDispatcher,
   HookTrustStore,
-  ReadTool,
   RuntimeHost,
   SessionManager,
   ShellRegistry,
   TaskManager,
   ToolRegistry,
-  WebFetchTool,
-  WriteTool,
   appendAllowMatcher,
   applyStyle,
   buildSkillsDescriptionBlock,
@@ -78,6 +77,7 @@ export interface ReplOpts {
   cwd: string;
   /** Override $HOME for tests. */
   home?: string;
+  profileId?: RuntimeProfileId;
   /** Initial mode (overrides settings). */
   mode?: string;
   /** Initial model (overrides settings). */
@@ -256,6 +256,13 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
   const loaded = await loadSettings({ cwd, home: opts.home, settingsPath: opts.settingsPath });
   const trustStore = new TrustStore({ home: opts.home });
   const trustStatus = await trustStore.statusFor(cwd);
+  const profileId = opts.profileId ?? 'interactive';
+  const profileLayers = await loadProfileLayers({
+    profileId,
+    cwd,
+    home: opts.home,
+    workspaceTrusted: trustStatus === 'trusted',
+  });
   const gate = gateUntrustedSettings(loaded, trustStatus);
   let settings = gate.settings;
   const gated = gate.gated;
@@ -298,7 +305,9 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     settingsLevel: settings.effortLevel,
   });
 
-  const sessions = new SessionManager();
+  const sessions = new SessionManager({
+    root: opts.home ? `${opts.home}/.deepcode/sessions` : undefined,
+  });
   // Resolve which session to use: resume an explicit id, continue the most
   // recent in this cwd, fork either into a new session, or start fresh.
   let resumeId = opts.resumeId;
@@ -462,6 +471,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
 
   // M5.2: wire installed plugins (discover + spawn + merge contributed hooks).
   // `--no-plugins` skips this entirely.
+  const toolExecutionBinding = new ToolExecutionBinding();
   let pluginsWire: WireResult | null = null;
   if (!opts.noPlugins) {
     try {
@@ -469,7 +479,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
         home: opts.home,
         disabled: settings.disabledPlugins,
         hooks,
-        capabilities: buildPluginCapabilities(cwd),
+        capabilities: createPluginCapabilityBridge(toolExecutionBinding),
         sandbox: withAdditionalWritableDirs(
           withSandboxMode(settings.sandbox, opts.sandbox),
           settings.permissions?.additionalDirectories,
@@ -484,6 +494,10 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
 
   let history: StoredMessage[] = resolved.seededHistory;
   const runtime = new RuntimeHost({
+    profileId,
+    profileLayers,
+    profileStateDirectory: `${opts.home ?? runtimeHome()}/.deepcode/runtime-generations`,
+    toolExecutionBinding,
     engine: configuredEngine(settings, credsStore),
     provider,
     tools,
@@ -500,6 +514,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     ),
     home: opts.home,
   });
+  await runtime.bootstrap.start();
   // Surfaced at startup rather than on first refusal: a read `deny` running with
   // the sandbox off looks like protection and is not, and the user should learn
   // that before they rely on it.
@@ -891,6 +906,7 @@ async function runReplSession(opts: ReplOpts, shells: ShellRegistry): Promise<nu
     await closeAllMcpServers(mcpServers);
   }
   // Shut down plugin subprocesses
+  await runtime.close();
   if (pluginsWire) await pluginsWire.shutdown();
   return 0;
 }
@@ -1085,40 +1101,6 @@ Keep it under 80 lines.`;
  * sandboxConfig in ctx here. Callers wanting hardening should set
  * settings.sandbox.enabled and pass sandboxConfig in a later iteration.
  */
-function buildPluginCapabilities(cwd: string): {
-  fs_read: (path: string) => Promise<string>;
-  fs_write: (path: string, content: string) => Promise<void>;
-  bash: (cmd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
-  fetch: (url: string, opts?: { method?: string; body?: string }) => Promise<string>;
-} {
-  const ctx = { cwd };
-  return {
-    fs_read: async (path: string) => {
-      const r = await ReadTool.execute({ file_path: path }, ctx);
-      if (r.isError) throw new Error(r.content);
-      return r.content;
-    },
-    fs_write: async (path: string, content: string) => {
-      const r = await WriteTool.execute({ file_path: path, content }, ctx);
-      if (r.isError) throw new Error(r.content);
-    },
-    bash: async (cmd: string) => {
-      const r = await BashTool.execute({ command: cmd }, ctx);
-      const d = (r.data ?? {}) as { stderr?: string; exitCode?: number };
-      return {
-        stdout: r.content ?? '',
-        stderr: d.stderr ?? '',
-        exitCode: d.exitCode ?? (r.isError ? 1 : 0),
-      };
-    },
-    fetch: async (url: string, fopts?: { method?: string; body?: string }) => {
-      void fopts; // method/body deferred — WebFetch is GET-only
-      const r = await WebFetchTool.execute({ url }, ctx);
-      if (r.isError) throw new Error(r.content);
-      return r.content;
-    },
-  };
-}
 
 /**
  * Find the bundled built-in skills directory.

@@ -1,141 +1,176 @@
-// Sessions list — design-aligned. Browse + filter + resume past
-// conversations. Per spec screen #5.
-
-import { useEffect, useState, type JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { Card, Screen } from '../components/Screen.js';
-import { listSessions, type SessionMeta } from '../lib/tauri-api.js';
+import { projectName } from '../lib/project.js';
+import { selectSessions, sessionRelativeTime, sessionTitle } from '../lib/session-navigation.js';
+import { useSessionList } from '../lib/use-session-list.js';
+import '../components/navigation.css';
 
 interface SessionsProps {
-  onPick: (sessionId: string) => void;
+  onPick: (sessionId: string) => void | Promise<void>;
   onNew: () => void;
+  projectPath?: string;
+  activeSessionId?: string | null;
+  navigationLocked?: boolean;
 }
 
-export function SessionsScreen({ onPick, onNew }: SessionsProps): JSX.Element {
-  const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
+export function SessionsScreen({
+  onPick,
+  onNew,
+  projectPath,
+  activeSessionId,
+  navigationLocked = false,
+}: SessionsProps): JSX.Element {
+  const { sessions, loading, error, reload } = useSessionList(activeSessionId);
   const [filter, setFilter] = useState('');
+  const [currentProjectOnly, setCurrentProjectOnly] = useState(false);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
+  const filtered = selectSessions(sessions, filter, currentProjectOnly ? projectPath : undefined);
+  const locked = navigationLocked || openingId !== null;
 
-  useEffect(() => {
-    void listSessions()
-      .then(setSessions)
-      .catch(() => setSessions([]));
-  }, []);
-
-  if (sessions === null) {
-    return (
-      <Screen title="Sessions">
-        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
-      </Screen>
-    );
+  async function open(id: string): Promise<void> {
+    if (locked) return;
+    setOpeningId(id);
+    setOpenError(null);
+    try {
+      await onPick(id);
+    } catch (cause) {
+      setOpenError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setOpeningId(null);
+    }
   }
-
-  const filtered = sessions.filter((s) => {
-    if (!filter) return true;
-    const q = filter.toLowerCase();
-    return s.id.toLowerCase().includes(q) || (s.title ?? '').toLowerCase().includes(q);
-  });
 
   return (
     <Screen
       title="Sessions"
-      subtitle={`${sessions.length} total`}
+      subtitle="Continue where you left off"
       actions={
-        <button type="button" className="btn btn-primary" onClick={onNew}>
-          + New
+        <button type="button" className="btn btn-primary" onClick={onNew} disabled={locked}>
+          + New session
         </button>
       }
     >
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <input
-          type="search"
-          className="input"
-          placeholder="Filter by id…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          style={{ marginBottom: 14, fontFamily: 'inherit' }}
-        />
+      <div className="session-browser">
+        <div className="session-browser-toolbar">
+          <input
+            type="search"
+            className="input"
+            aria-label="Find a session"
+            placeholder="Search title, ID or project…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') setFilter('');
+            }}
+          />
+          <button type="button" className="btn" onClick={() => void reload()}>
+            Refresh
+          </button>
+        </div>
+        <div className="session-browser-summary">
+          <span role="status">
+            {loading ? 'Loading sessions…' : `${filtered.length} of ${sessions.length} sessions`}
+          </span>
+          {projectPath && (
+            <label>
+              <input
+                type="checkbox"
+                checked={currentProjectOnly}
+                onChange={(e) => setCurrentProjectOnly(e.target.checked)}
+              />
+              This project only
+            </label>
+          )}
+        </div>
+        {navigationLocked && (
+          <p className="sb-notice" role="status">
+            Finish or stop the running turn before opening another session.
+          </p>
+        )}
+        {(error || openError) && (
+          <div className="navigation-error" role="alert">
+            <strong>{openError ? 'Could not open session' : 'Could not load sessions'}</strong>
+            <span>{openError || error}</span>
+            {error && (
+              <button type="button" onClick={() => void reload()}>
+                Retry loading
+              </button>
+            )}
+          </div>
+        )}
 
         <Card flush padding={0}>
-          {filtered.length === 0 ? (
-            <div
-              style={{
-                padding: 32,
-                textAlign: 'center',
-                color: 'var(--text-3)',
-                fontSize: 13,
-              }}
-            >
-              {sessions.length === 0
-                ? 'No sessions yet — your conversations are saved automatically.'
-                : 'No matches for that filter.'}
+          {!loading && filtered.length === 0 && !error ? (
+            <div className="session-browser-empty">
+              <strong>
+                {filter.trim()
+                  ? 'No matching sessions'
+                  : currentProjectOnly
+                    ? 'No sessions for this project'
+                    : 'Your next idea starts here'}
+              </strong>
+              <p>
+                {filter.trim()
+                  ? 'Search by a title, session ID or project path.'
+                  : currentProjectOnly
+                    ? 'Clear the project filter to find older sessions without project information.'
+                    : 'Start a session to explore your project or make a change. Saved conversations appear here.'}
+              </p>
+              {filter || currentProjectOnly ? (
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setFilter('');
+                    setCurrentProjectOnly(false);
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : (
+                <button type="button" className="btn btn-primary" onClick={onNew} disabled={locked}>
+                  New session
+                </button>
+              )}
             </div>
           ) : (
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {filtered.map((s, i) => (
-                <li
-                  key={s.id}
-                  onClick={() => onPick(s.id)}
-                  style={{
-                    padding: '12px 16px',
-                    borderBottom: i === filtered.length - 1 ? 'none' : '1px solid var(--line-soft)',
-                    cursor: 'pointer',
-                    display: 'grid',
-                    gridTemplateColumns: '1fr auto',
-                    gap: 12,
-                    alignItems: 'baseline',
-                  }}
-                  onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-3)')}
-                  onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
-                >
-                  <div>
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: 'var(--text-0)',
-                        fontWeight: 500,
-                      }}
-                    >
-                      {s.title?.trim() ? s.title : s.id}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: 'var(--text-3)',
-                        marginTop: 2,
-                        fontFamily: 'JetBrains Mono, monospace',
-                      }}
-                    >
-                      {s.id} · {(s.size_bytes / 1024).toFixed(1)} KB
-                    </div>
-                  </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
-                    {relativeTime(s.updated_at_secs)}
-                  </div>
+            <ul className="session-browser-list" aria-label="Saved sessions" aria-busy={loading}>
+              {filtered.map((session) => (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    className="session-browser-row"
+                    aria-current={session.id === activeSessionId ? 'page' : undefined}
+                    disabled={locked}
+                    onClick={() => void open(session.id)}
+                  >
+                    <span className="session-browser-copy">
+                      <strong>{sessionTitle(session)}</strong>
+                      <span title={session.cwd || undefined}>
+                        {session.cwd ? projectName(session.cwd) : 'Project not recorded'}
+                        <span aria-hidden="true"> · </span>
+                        <span className="session-browser-id">{session.id}</span>
+                      </span>
+                    </span>
+                    <span className="session-browser-age">
+                      {openingId === session.id
+                        ? 'Opening…'
+                        : session.id === activeSessionId
+                          ? 'Current session'
+                          : sessionRelativeTime(session.updatedAt)}
+                      <span aria-hidden="true"> ↗</span>
+                    </span>
+                  </button>
                 </li>
               ))}
             </ul>
           )}
         </Card>
-
-        <p
-          style={{
-            fontSize: 11,
-            color: 'var(--text-3)',
-            textAlign: 'center',
-            marginTop: 16,
-          }}
-        >
-          Sessions are stored as JSONL under ~/.deepcode/sessions/. Resume to continue any previous
-          conversation.
+        <p className="session-browser-hint">
+          Open a saved session to read its history and continue the conversation.
         </p>
       </div>
     </Screen>
   );
-}
-
-function relativeTime(secs: number): string {
-  const diff = Math.floor(Date.now() / 1000) - secs;
-  if (diff < 60) return `${diff}s ago`;
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
 }
