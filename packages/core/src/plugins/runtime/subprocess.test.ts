@@ -250,7 +250,11 @@ describe('plugin isolation and revocation regressions', () => {
         socket.on('error', e=>resolve(e.code));
         socket.setTimeout(500,()=>{socket.destroy();resolve('blocked');});
       });
-      fs.writeFileSync(require('node:path').join(process.env.HOME,'private'),'ok');
+      for (const base of [process.env.HOME, process.env.TMPDIR]) {
+        const path=require('node:path').join(base,'private');
+        fs.writeFileSync(path,'ok');
+        if (fs.readFileSync(path,'utf8')!=='ok') throw new Error('Private scratch round-trip failed');
+      }
       return errors;
     `),
         sandbox,

@@ -72,7 +72,22 @@ export async function pluginSpawnPlan(plugin: string, scratch: string, sandbox?:
       }
     }
     for (const path of [directory, dirname(node)]) args.push('--ro-bind', path, path);
-    args.push('--bind', home, home, '--bind', temp, temp, '--chdir', directory, '--', node);
+    // Bind targets need writable parents during setup. Seal that synthetic root
+    // afterwards; --remount-ro is non-recursive, so private HOME/TMP stay writable.
+    args.push(
+      '--bind',
+      home,
+      home,
+      '--bind',
+      temp,
+      temp,
+      '--remount-ro',
+      '/',
+      '--chdir',
+      directory,
+      '--',
+      node,
+    );
     return { command: 'bwrap', args, env, cwd: directory };
   }
   throw new Error(

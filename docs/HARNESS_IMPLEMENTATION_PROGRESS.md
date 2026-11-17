@@ -203,4 +203,6 @@ H03/H04 已接入当前入口；完整插件化 backend 默认切换仍未发生
 
 独立会话审查修复了取消时遗漏已提交消息、分批保存终态后崩溃导致消息漏恢复、重复 call ID 错借其他 turn 结果的问题。terminal save 在同一 writer 内合并完整事实并提交 checkpoint/snapshot；重复内容按出现次数保留、恢复重试不重复添加，悬空调用在新输入前补本轮 durable/unknown 结果。新增 core/server 回归覆盖取消发生在执行中或结果提交后、部分 item flush、重复消息和跨 turn ID 复用。
 
-审查修复后的全仓验证：`pnpm test` **2006 passed / 23 skipped，167 files passed**，真实 SDK loopback smoke **2 passed**；`release:check` 和 kernel smoke 均通过，extension **54,943 B**、app-server **771,532 B**、VSIX **247,189 B**，均在既有预算内。独立 UI chat 完成 desktop **155 tests + 22 Chrome E2E** 与 VS Code **38 tests**。本次结构化结果见 [v0.5.0 验证记录](research/harness-v050-validation.json)，历史 H02/H03/H04 报告保留原始数值。
+审查修复后的全仓验证：`pnpm test` **2006 passed / 23 skipped，167 files passed**，真实 SDK loopback smoke **2 passed**；`release:check` 和 kernel smoke 均通过，extension **54,943 B**、app-server **771,551 B**、VSIX **247,198 B**，均在既有预算内。独立 UI chat 完成 desktop **155 tests + 22 Chrome E2E** 与 VS Code **38 tests**。本次结构化结果见 [v0.5.0 验证记录](research/harness-v050-validation.json)，历史 H02/H03/H04 报告保留原始数值。
+
+[PR #297](https://github.com/oratis/deepcode/pull/297) 首轮 Linux CI 发现 bwrap 的私有 tmpfs 根允许在 HOME/TMP 之外创建临时文件；该结果不代表已证明宿主文件逃逸。后续修复在所有 bind 完成后将根 mount 非递归设为只读，保留私有 HOME/TMP 子挂载可写。原三种隔离模式的拒绝断言和宿主文件未创建检查保持不变，另验证 HOME/TMP 均可正常读写；macOS 原生隔离 12/12 复验通过，最终 Linux 内核结果以 PR CI 为准。

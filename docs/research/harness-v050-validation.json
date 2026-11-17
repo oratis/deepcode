@@ -34,28 +34,28 @@
     },
     "bundles": {
       "extensionBytes": 54943,
-      "appServerBytes": 771532,
-      "vsixBytes": 247189
+      "appServerBytes": 771551,
+      "vsixBytes": 247198
     },
     "journeys": [
       {
         "name": "create-and-read",
-        "threadId": "thread-mwkgs36r-4r8onm",
+        "threadId": "thread-mwkgz5qf-wh404r",
         "timings": {
-          "initializeMs": 47.24,
-          "threadStartMs": 35.89,
-          "threadReadMs": 0.83,
-          "configDiagnosticsMs": 0.58,
-          "workspaceDiffMs": 322.56
+          "initializeMs": 50.84,
+          "threadStartMs": 31.59,
+          "threadReadMs": 0.84,
+          "configDiagnosticsMs": 0.55,
+          "workspaceDiffMs": 37.31
         }
       },
       {
         "name": "restart-and-resume",
-        "threadId": "thread-mwkgs36r-4r8onm",
+        "threadId": "thread-mwkgz5qf-wh404r",
         "timings": {
-          "initializeMs": 44.83,
-          "threadReadMs": 1.3,
-          "threadResumeMs": 0.57
+          "initializeMs": 50.4,
+          "threadReadMs": 1.25,
+          "threadResumeMs": 0.55
         }
       }
     ]
@@ -69,17 +69,17 @@
     },
     "bytes": {
       "extension": 54943,
-      "baselineServer": 767971,
-      "candidateServer": 772963,
-      "desktopServer": 772963,
-      "baselineVsix": 246199,
-      "candidateVsix": 248639
+      "baselineServer": 767990,
+      "candidateServer": 772982,
+      "desktopServer": 772982,
+      "baselineVsix": 246209,
+      "candidateVsix": 248648
     },
     "incrementalFixtureOverhead": {
-      "server": 0.006500245451976694,
-      "vsix": 0.009910682009268923,
-      "initialize": 0.03266208524987202,
-      "rss": 0.004860804242156513
+      "server": 0.006500084636518633,
+      "vsix": 0.009906217888054458,
+      "initialize": 0.026911679222314522,
+      "rss": 0.003978779840848823
     },
     "browserBytes": 30809
   },
@@ -89,5 +89,7 @@
     "Rust fmt reports pre-existing HEAD formatting; Rust sources unchanged",
     "No npm, signed DMG or updater publication credentials",
     "Complete H05-H14 harness-v2 backend switch remains future work"
-  ]
+  ],
+  "pullRequest": "https://github.com/oratis/deepcode/pull/297",
+  "linuxFollowup": "Seal the synthetic bwrap root after binding writable HOME/TMP; retain adversarial denial assertions. Final Linux validation is enforced by PR CI."
 }
