@@ -50,6 +50,44 @@ try {
     const threadId = requiredString(thread.result, 'id');
     const read = await server.request('thread/read', { threadId }, budgets.metadataRequestMs);
     assert(read.result?.id === threadId, 'thread/read did not return the created thread');
+    await server.request('runtime/capabilities', { cwd: root }, budgets.metadataRequestMs);
+    const renamed = await server.request(
+      'thread/rename',
+      { threadId, title: 'Release gate durable title' },
+      budgets.metadataRequestMs,
+    );
+    assert(renamed.result?.renamed === true, 'thread/rename failed through stdio');
+    const snapshots = await server.request(
+      'session/snapshots',
+      { threadId, path: join(root, 'README.md') },
+      budgets.metadataRequestMs,
+    );
+    assert(Array.isArray(snapshots.result), 'session/snapshots shape is invalid');
+    const deletedFork = await server.request(
+      'thread/fork',
+      { threadId },
+      budgets.metadataRequestMs,
+    );
+    await server.request(
+      'thread/delete',
+      { threadId: requiredString(deletedFork.result, 'id') },
+      budgets.metadataRequestMs,
+    );
+    const archivedFork = await server.request(
+      'thread/fork',
+      { threadId },
+      budgets.metadataRequestMs,
+    );
+    await server.request(
+      'thread/archive',
+      { threadId: requiredString(archivedFork.result, 'id') },
+      budgets.metadataRequestMs,
+    );
+    const listed = await server.request('thread/list', {}, budgets.metadataRequestMs);
+    assert(
+      listed.result?.threads?.length === 1 && listed.result.threads[0].id === threadId,
+      'thread/list did not reflect fork/delete/archive',
+    );
     const diagnostics = await server.request(
       'config/diagnostics',
       { cwd: root },
@@ -83,6 +121,10 @@ try {
       budgets.metadataRequestMs,
     );
     assert(read.result?.id === first.threadId, 'thread was not durable across app-server restart');
+    assert(
+      read.result?.title === 'Release gate durable title',
+      'renamed title was not durable across restart',
+    );
     const resumed = await server.request(
       'thread/resume',
       { threadId: first.threadId },

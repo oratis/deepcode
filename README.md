@@ -24,13 +24,13 @@ H01–H04 统一执行、Cordis、bootstrap/profile 与 session journal 的实�
 
 ## 快速上手
 
-v0.5.0 提供 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.0) 的 VSIX 与源码。下载 `deepcode-0.5.0.vsix`，在 VS Code 中运行 **Extensions: Install from VSIX…**，再打开 DeepCode 面板。
+v0.5.1 提供 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.1) 的 VSIX 与源码。下载 `deepcode-0.5.1.vsix`，在 VS Code 中运行 **Extensions: Install from VSIX…**，再打开 DeepCode 面板。
 
 CLI 从源码运行：
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.0 https://github.com/oratis/deepcode.git
+git clone --branch v0.5.1 https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build
@@ -43,7 +43,7 @@ deepcode -p "fix the bug in src/auth.ts"
 deepcode --mode plan
 ```
 
-`deepcode` 函数在当前 shell 中有效，也可以直接用 Node 执行构建后的 CLI 绝对路径。本次没有 npm 包、签名 DMG 或自动更新包；不要用 npm 安装命令获取 v0.5.0。桌面开发启动与未来发布配置见 [发布说明](docs/RELEASING.md)。升级旧会话前请读 [兼容与回滚说明](docs/HARNESS_RUNTIME_GUIDE.md)。
+`deepcode` 函数在当前 shell 中有效，也可以直接用 Node 执行构建后的 CLI 绝对路径。本次没有 npm 包、签名 DMG 或自动更新包；不要用 npm 安装命令获取 v0.5.1。桌面开发启动与未来发布配置见 [发布说明](docs/RELEASING.md)。升级旧会话前请读 [兼容与回滚说明](docs/HARNESS_RUNTIME_GUIDE.md)。
 
 ## 当前工程基线
 

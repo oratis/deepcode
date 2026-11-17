@@ -41,7 +41,14 @@ describe('protocol codec', () => {
     'workspace/diff',
     'review/apply',
     'review/revert',
-  ] as const)('accepts the interactive response method %s', (method) => {
+    'runtime/capabilities',
+    'thread/list',
+    'thread/fork',
+    'thread/archive',
+    'thread/delete',
+    'thread/rename',
+    'session/snapshots',
+  ] as const)('accepts the declared method %s', (method) => {
     expect(decodeProtocolRequest(JSON.stringify({ id: 2, method, params: {} }))).toEqual({
       id: 2,
       method,
@@ -49,10 +56,14 @@ describe('protocol codec', () => {
     });
   });
 
-  it.each(['{}', '{"id":1,"method":"unknown"}', '{"id":1,"method":"initialize","params":[]}'])(
-    'rejects an invalid request: %s',
-    (raw) => {
-      expect(() => decodeProtocolRequest(raw)).toThrow('invalid protocol request');
-    },
-  );
+  it.each([
+    '{}',
+    '{"id":1,"method":"unknown"}',
+    '{"id":1,"method":"constructor"}',
+    '{"id":1,"method":"toString"}',
+    '{"id":1,"method":"__proto__"}',
+    '{"id":1,"method":"initialize","params":[]}',
+  ])('rejects an invalid request: %s', (raw) => {
+    expect(() => decodeProtocolRequest(raw)).toThrow('invalid protocol request');
+  });
 });

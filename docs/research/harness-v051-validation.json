@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "version": "0.5.1",
+  "scope": "Protocol decoder repair after v0.5.0 published-asset smoke",
+  "runtime": "Node 22.23.4 / pnpm 9.12.0 / darwin-arm64",
+  "independentReview": "passed; no P1/P2 findings in patch scope",
+  "tests": {
+    "passed": 2017,
+    "skipped": 23,
+    "sdkSmokePassed": 2,
+    "wireIntegrationPassed": 2,
+    "protocolPackagePassed": 44
+  },
+  "checks": {
+    "build": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "docs": "passed",
+    "release": "passed",
+    "candidateBundleSmoke": "passed"
+  },
+  "release": {
+    "status": "ok",
+    "bundles": {
+      "extensionBytes": 54943,
+      "appServerBytes": 771730,
+      "vsixBytes": 247261
+    },
+    "budgets": {
+      "extensionBytes": 65536,
+      "appServerBytes": 786432,
+      "vsixBytes": 262144,
+      "initializeMs": 5000,
+      "metadataRequestMs": 2000,
+      "workspaceDiffMs": 10000
+    },
+    "journeys": [
+      {
+        "name": "create-and-read",
+        "threadId": "thread-mwkhljc5-oka0q1",
+        "timings": {
+          "initializeMs": 52.04,
+          "threadStartMs": 40.46,
+          "threadReadMs": 0.85,
+          "configDiagnosticsMs": 0.55,
+          "workspaceDiffMs": 132.56
+        }
+      },
+      {
+        "name": "restart-and-resume",
+        "threadId": "thread-mwkhljc5-oka0q1",
+        "timings": {
+          "initializeMs": 48.09,
+          "threadReadMs": 1.27,
+          "threadResumeMs": 0.54
+        }
+      }
+    ]
+  },
+  "notes": [
+    "The original published v0.5.0 asset reproduced parse_error for thread/rename; the underlying issue was the decoder, not storage or bundling.",
+    "All seven omitted methods are now covered through stdio and the bundled release gate.",
+    "Session format unchanged; use 0.5.1 or later for desktop/editor session management.",
+    "Final cross-platform results are attached to the repair PR and tag workflow."
+  ]
+}

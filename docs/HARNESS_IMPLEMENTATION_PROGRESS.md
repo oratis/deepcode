@@ -206,3 +206,11 @@ H03/H04 已接入当前入口；完整插件化 backend 默认切换仍未发生
 审查修复后的全仓验证：`pnpm test` **2006 passed / 23 skipped，167 files passed**，真实 SDK loopback smoke **2 passed**；`release:check` 和 kernel smoke 均通过，extension **54,943 B**、app-server **771,551 B**、VSIX **247,198 B**，均在既有预算内。独立 UI chat 完成 desktop **155 tests + 22 Chrome E2E** 与 VS Code **38 tests**。本次结构化结果见 [v0.5.0 验证记录](research/harness-v050-validation.json)，历史 H02/H03/H04 报告保留原始数值。
 
 [PR #297](https://github.com/oratis/deepcode/pull/297) 首轮 Linux CI 发现 bwrap 的私有 tmpfs 根允许在 HOME/TMP 之外创建临时文件；该结果不代表已证明宿主文件逃逸。后续修复在所有 bind 完成后将根 mount 非递归设为只读，保留私有 HOME/TMP 子挂载可写。原三种隔离模式的拒绝断言和宿主文件未创建检查保持不变，另验证 HOME/TMP 均可正常读写；macOS 原生隔离 12/12 复验通过，最终 Linux 内核结果以 PR CI 为准。
+
+## v0.5.1 发布后修复
+
+v0.5.0 的 PR #297、main CI 和发布验证通过并发布后，下载正式 VSIX 的扩展 smoke 发现 `thread/rename` 被 stdio decoder 拒绝；此前直接调用 handler 的测试覆盖不到这一层。独立 agent 确认遗漏共七项：`runtime/capabilities`、`thread/list`、`thread/fork`、`thread/archive`、`thread/delete`、`thread/rename`、`session/snapshots`。这不是 journal 锁死或打包差异，源码 stdio 同样返回 parse_error。
+
+v0.5.1 将 decoder 方法表改为 `Record<ProtocolMethod, true>` 的穷尽检查并使用 own-property 判断，新增方法若遗漏 wire 支持会在编译期失败；未知方法和原型属性名仍拒绝。回归覆盖真实 stdio 的七个接口、snapshot 内容、fork/archive/delete 后列表以及重命名。发布 gate 直接调用打包后的接口并检查重启后的标题，避免用 handler 单测代替真实传输验收。会话格式与迁移策略保持兼容，请使用 v0.5.1 或更新版本。原 v0.5.0 tag 和测量记录保留，修复通过独立 PR 审查及 CI 后发布。
+
+v0.5.1 独立复核无 P1/P2；Node 22 本机全仓 **2017 passed / 23 skipped**、SDK smoke **2 passed**，lint/format/docs/build/release gate 均通过。扩展后的空 PATH 独立 bundle smoke 覆盖全部七项管理操作及重启恢复；最终 bundle 为 extension **54,943 B**、app-server **771,730 B**、VSIX **247,261 B**。记录见 [v0.5.1 验证结果](research/harness-v051-validation.json)。

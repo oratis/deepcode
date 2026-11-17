@@ -1,6 +1,6 @@
 # DeepCode Quickstart
 
-DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). The repository includes a **CLI**, a **macOS desktop app**, and VS Code/LSP integrations. Version 0.5.0 publishes a VSIX and source; npm, signed DMG and updater artifacts are unavailable in this release. See the [Harness implementation progress](HARNESS_IMPLEMENTATION_PROGRESS.md) for implemented and remaining work.
+DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). The repository includes a **CLI**, a **macOS desktop app**, and VS Code/LSP integrations. Version 0.5.1 publishes a VSIX and source; npm, signed DMG and updater artifacts are unavailable in this release. See the [Harness implementation progress](HARNESS_IMPLEMENTATION_PROGRESS.md) for implemented and remaining work.
 
 > Requirements: **Node 22 and pnpm 9** to build the CLI from source. A **DeepSeek API key** (get one at
 > <https://platform.deepseek.com/>). macOS 12+ for the desktop app.
@@ -13,7 +13,7 @@ Build the tagged source and define a command for the current shell:
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.0 https://github.com/oratis/deepcode.git
+git clone --branch v0.5.1 https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build
@@ -103,9 +103,9 @@ can never widen it.
 
 ## VS Code and macOS desktop
 
-Download `deepcode-0.5.0.vsix` from the [v0.5.0 release](https://github.com/oratis/deepcode/releases/tag/v0.5.0), run **Extensions: Install from VSIX…**, then open the DeepCode panel.
+Download `deepcode-0.5.1.vsix` from the [v0.5.1 release](https://github.com/oratis/deepcode/releases/tag/v0.5.1), run **Extensions: Install from VSIX…**, then open the DeepCode panel.
 
-No signed DMG or updater feed is published for v0.5.0. Desktop development builds require the local Tauri/Rust toolchain; see [Releasing DeepCode](RELEASING.md) for build and signing requirements. A future release must explicitly include those artifacts before DMG installation or in-app updates can be used.
+No signed DMG or updater feed is published for v0.5.1. Desktop development builds require the local Tauri/Rust toolchain; see [Releasing DeepCode](RELEASING.md) for build and signing requirements. A future release must explicitly include those artifacts before DMG installation or in-app updates can be used.
 
 ---
 

@@ -2,7 +2,7 @@
   "name": "deepcode",
   "displayName": "DeepCode",
   "description": "DeepSeek-powered coding agent inside VS Code — chat, review, and apply.",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "publisher": "deepcode",
   "private": true,
   "license": "MIT",

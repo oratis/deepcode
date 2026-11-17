@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] — 2026-11-17
+
+### Fixed
+
+- Restore seven declared app-server methods over the actual stdio transport:
+  runtime capabilities and session list, fork, archive, delete, rename and file
+  snapshots. Version 0.5.0 advertised these capabilities but its wire decoder
+  rejected the requests before they reached their handlers.
+- Make the wire method table exhaustive against the public protocol type. Add
+  real stdio coverage for all seven operations and run the bundled lifecycle,
+  rename and snapshot requests in the release gate, including title persistence
+  across restart. Unknown and inherited object-property methods remain rejected.
+- Upgrade to 0.5.1 for desktop/editor session management. Session files and the
+  v2 journal format are unchanged. This release publishes a VSIX and source;
+  npm, signed DMG and updater artifacts still require unavailable credentials.
+
 ## [0.5.0] — 2026-11-17
 
 ### Harness foundations (H01–H04)
