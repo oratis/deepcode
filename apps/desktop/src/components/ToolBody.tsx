@@ -5,15 +5,30 @@
 // shape is the tool's own declaration, so adding a tool does not mean editing
 // this file, the CLI, and the extension.
 
-import type { JSX } from 'react';
+import { useState, type JSX } from 'react';
 import { computeLineDiff } from '../lib/diff.js';
 import type { ToolLocation, ToolPresentation } from '@deepcode/core/dist/tools/presentation.js';
 
 /** How much of a tool's text output a card shows before cutting it off. */
 const MAX_BODY_CHARS = 1500;
 
-function clip(text: string): string {
-  return text.length > MAX_BODY_CHARS ? `${text.slice(0, MAX_BODY_CHARS)}\n…` : text;
+function OutputText({ text }: { text: string }): JSX.Element {
+  const [full, setFull] = useState(false);
+  const clipped = text.length > MAX_BODY_CHARS;
+  return (
+    <>
+      <div className="tc-output">
+        {full || !clipped
+          ? text
+          : `${text.slice(0, 1000)}\n… ${text.length - MAX_BODY_CHARS} characters omitted …\n${text.slice(-500)}`}
+      </div>
+      {clipped && (
+        <button type="button" className="tc-output-toggle" onClick={() => setFull(!full)}>
+          {full ? 'Show less' : `Show full output (${text.length.toLocaleString()} characters)`}
+        </button>
+      )}
+    </>
+  );
 }
 
 /**
@@ -87,7 +102,11 @@ function TerminalBody({ command, output }: { command: string; output?: string })
       <div className="tc-prompt">
         <span className="tc-sigil">$</span> {command}
       </div>
-      {output ? <div className="tc-stream">{clip(output)}</div> : null}
+      {output ? (
+        <div className="tc-stream">
+          <OutputText text={output} />
+        </div>
+      ) : null}
     </>
   );
 }
@@ -115,7 +134,18 @@ export function ToolBody({
   onOpenFile?: (path: string) => void;
 }): JSX.Element | null {
   if (presentation.kind === 'diff' && presentation.diff) {
-    return <DiffBody before={presentation.diff.before} after={presentation.diff.after} />;
+    return (
+      <>
+        <div className="tc-section-label">Requested change</div>
+        <DiffBody before={presentation.diff.before} after={presentation.diff.after} />
+        {resultText && (
+          <>
+            <div className="tc-section-label">Result</div>
+            <OutputText text={resultText} />
+          </>
+        )}
+      </>
+    );
   }
   if (presentation.kind === 'terminal' && presentation.command !== undefined) {
     return <TerminalBody command={presentation.command} output={resultText} />;
@@ -123,5 +153,5 @@ export function ToolBody({
   if (presentation.kind === 'locations' && locations && locations.length > 0) {
     return <LocationsBody locations={locations} onOpenFile={onOpenFile} />;
   }
-  return resultText ? <>{clip(resultText)}</> : null;
+  return resultText ? <OutputText text={resultText} /> : null;
 }

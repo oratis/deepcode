@@ -79,14 +79,14 @@ export async function captureSnapshot(args: {
   }
   const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
   const dir = snapshotsDirFor(args.sessionsRoot, args.sessionId);
-  await fs.mkdir(dir, { recursive: true });
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
 
   const capturedAtMs = Date.now();
   const capturedAt = new Date(capturedAtMs).toISOString();
   const ts = capturedAt.replace(/[-:.]/g, '').slice(0, 15);
   const blobName = `${String(args.seq).padStart(5, '0')}-${ts}-${hash}.blob`;
   const blobPath = join(dir, blobName);
-  await fs.writeFile(blobPath, content);
+  await fs.writeFile(blobPath, content, { mode: 0o600 });
 
   const snap: Snapshot = {
     filePath: absPath,
@@ -102,7 +102,7 @@ export async function captureSnapshot(args: {
   };
   // also append to a per-session manifest for fast listing
   const manifestPath = join(dir, 'manifest.jsonl');
-  await fs.appendFile(manifestPath, JSON.stringify(snap) + '\n', 'utf8');
+  await fs.appendFile(manifestPath, JSON.stringify(snap) + '\n', { encoding: 'utf8', mode: 0o600 });
   return snap;
 }
 
@@ -151,8 +151,11 @@ export async function captureGitCheckpoint(args: {
     gitRef: ref,
   };
   const dir = snapshotsDirFor(args.sessionsRoot, args.sessionId);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.appendFile(join(dir, 'manifest.jsonl'), JSON.stringify(snap) + '\n', 'utf8');
+  await fs.mkdir(dir, { recursive: true, mode: 0o700 });
+  await fs.appendFile(join(dir, 'manifest.jsonl'), JSON.stringify(snap) + '\n', {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
   return snap;
 }
 

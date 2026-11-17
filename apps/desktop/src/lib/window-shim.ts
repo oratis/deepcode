@@ -74,18 +74,14 @@ export function installTauriShim(): void {
         // The app-server owns the thread index. The Tauri reader stays as a
         // fallback for a sidecar too old to serve thread/list — two readers of
         // the same directory is what this is working away from, not toward.
-        try {
-          const listed = await listProtocolThreads();
-          if (listed) {
-            return listed.threads.map((t) => ({
-              id: t.id,
-              title: t.title,
-              cwd: t.cwd,
-              updatedAt: t.updatedAt,
-            }));
-          }
-        } catch {
-          /* fall through to the local reader */
+        const listed = await listProtocolThreads();
+        if (listed) {
+          return listed.threads.map((t) => ({
+            id: t.id,
+            title: t.title,
+            cwd: t.cwd,
+            updatedAt: t.updatedAt,
+          }));
         }
         const rows = await listSessions();
         return rows.map((r) => ({
@@ -101,19 +97,11 @@ export function installTauriShim(): void {
       // from under an open writer. The Tauri command stays as the fallback for a
       // sidecar too old to serve the method, same as list.
       async archive({ id }) {
-        try {
-          if (await archiveProtocolThread(id)) return;
-        } catch {
-          /* fall through to the local writer */
-        }
+        if (await archiveProtocolThread(id)) return;
         await sessionArchive(id);
       },
       async delete({ id }) {
-        try {
-          if (await deleteProtocolThread(id)) return;
-        } catch {
-          /* fall through to the local writer */
-        }
+        if (await deleteProtocolThread(id)) return;
         await sessionDelete(id);
       },
       async resume({ id }) {
@@ -121,13 +109,16 @@ export function installTauriShim(): void {
         // exchanges, errors, review findings. The session projection keeps only
         // the message-bearing ones, so resuming from it silently dropped the
         // rest even though they were on disk.
-        const thread = await resumeProtocolThread(id);
-        const lines = await sessionRead(id);
-        const history = lines.map((l) => ({
-          role: l.role,
-          content: l.content,
-          timestamp: l.timestamp ?? '',
-        })) as unknown as import('@deepcode/core/dist/types.js').StoredMessage[];
+        let history: unknown[] = [];
+        const thread = await resumeProtocolThread(id, async (snapshot) => {
+          if (snapshot.turns.some((turn) => turn.items.length > 0)) return;
+          const lines = await sessionRead(id);
+          history = lines.map((line) => ({
+            role: line.role,
+            content: line.content,
+            timestamp: line.timestamp ?? '',
+          }));
+        });
         return { history, sessionId: id, thread };
       },
     },
@@ -135,11 +126,7 @@ export function installTauriShim(): void {
       async list() {
         // Reads ~/.deepcode/plugins via the list_plugins Rust command (the
         // renderer can't run core's node:fs discoverPlugins).
-        try {
-          return await listPlugins();
-        } catch {
-          return [];
-        }
+        return listPlugins();
       },
       async install() {
         return { name: '', version: '' };

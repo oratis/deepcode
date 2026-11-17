@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { SessionManager, writeMeta } from '@deepcode/core/sessions';
+import { SessionManager } from '@deepcode/core/sessions';
 import { ProtocolRuntime, type ThreadSnapshot } from '@deepcode/protocol';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -32,7 +32,7 @@ describe('CanonicalThreadStore', () => {
       const { store, sessions } = await fixture();
       const runtime = new ProtocolRuntime({ store });
       const source = await runtime.startThread('/workspace');
-      const directory = join(sessions.root, source.id);
+      const directory = join(sessions.resourceRoot, source.id);
       await mkdir(directory, { recursive: true });
       if (kind === 'orphaned-sdk') await mkdir(join(directory, 'claude-sdk'));
       else
@@ -109,7 +109,7 @@ describe('CanonicalThreadStore', () => {
     });
 
     const current = await sessions.load(thread.id);
-    await writeMeta(sessions.root, { ...current!.meta, title: 'Renamed by user' });
+    await sessions.updateMeta({ ...current!.meta, title: 'Renamed by user' });
     await store.save({ ...thread, updatedAt: '2026-08-01T00:00:03.000Z' });
     await expect(sessions.load(thread.id)).resolves.toEqual({
       meta: expect.objectContaining({ title: 'Renamed by user' }),

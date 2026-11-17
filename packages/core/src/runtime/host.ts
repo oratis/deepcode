@@ -1,3 +1,7 @@
+import { randomUUID } from 'node:crypto';
+import { AppBootstrap } from './bootstrap.js';
+import type { RuntimeProfileId, ProfileLayer } from './profile.js';
+import { ToolExecutionService, type ToolExecutionBinding } from './tool-execution.js';
 import { bindSessionEngine, type AgentEngine } from './engine.js';
 import {
   runAgent,
@@ -23,6 +27,10 @@ import type { Mode } from '../types.js';
 import { resolveRuntimePolicy } from './policy.js';
 
 export interface RuntimeHostOptions {
+  profileId?: RuntimeProfileId;
+  profileLayers?: readonly ProfileLayer[];
+  profileStateDirectory?: string;
+  toolExecutionBinding?: ToolExecutionBinding;
   engine?: AgentEngine;
   provider: Provider;
   tools: ToolRegistry;
@@ -58,6 +66,7 @@ export interface RuntimeHostOptions {
 }
 
 type HostBoundOption =
+  | 'toolExecution'
   | 'provider'
   | 'tools'
   | 'mode'
@@ -84,6 +93,7 @@ export type RuntimeTurnOptions = Omit<RunAgentOptions, HostBoundOption | 'cwd'> 
  * input, while provider/tool/policy/hook/sandbox services stay consistent.
  */
 export class RuntimeHost {
+  readonly bootstrap: AppBootstrap;
   readonly mode: Mode;
   readonly permissions: PermissionRules;
   /** Populated on first run; per-cwd because a turn may name its own. */
@@ -91,7 +101,19 @@ export class RuntimeHost {
   private readonly ledgers = new Map<string, LedgerSink>();
 
   constructor(private readonly options: RuntimeHostOptions) {
-    const policy = resolveRuntimePolicy(options);
+    this.bootstrap = new AppBootstrap({
+      provider: options.provider,
+      profileId: options.profileId,
+      layers: options.profileLayers,
+      stateDirectory: options.profileStateDirectory,
+    });
+    // Snapshot policy inputs so a caller cannot mutate an active generation.
+    this.options = {
+      ...options,
+      permissions: options.permissions ? structuredClone(options.permissions) : undefined,
+      sandboxConfig: options.sandboxConfig ? structuredClone(options.sandboxConfig) : undefined,
+    };
+    const policy = resolveRuntimePolicy(this.options);
     this.mode = policy.mode;
     this.permissions = policy.permissions;
   }
@@ -184,7 +206,73 @@ export class RuntimeHost {
   run(turn: RuntimeTurnOptions): Promise<RunAgentResult> {
     const cwd = turn.cwd ?? this.options.cwd;
     if (!cwd) throw new Error('RuntimeHost requires cwd in the host or turn options');
-    return this.runWithContract(turn, cwd);
+    return this.bootstrap.run(turn.signal, ({ signal, profile }) => {
+      const allow = profile.tools.allow;
+      const ceiling = allow
+        ? turn.allowedTools
+          ? turn.allowedTools.filter((name) => allow.includes(name))
+          : allow
+        : turn.allowedTools;
+      const allowedTools = profile.tools.deny.length
+        ? (ceiling ?? this.options.tools.list().map((tool) => tool.name)).filter(
+            (name) => !profile.tools.deny.includes(name),
+          )
+        : ceiling;
+      const effective = {
+        ...turn,
+        signal,
+        allowedTools,
+        session: turn.session
+          ? { ...turn.session, turnId: turn.session.turnId ?? randomUUID() }
+          : undefined,
+      };
+      return effective.session
+        ? effective.session.manager.withWriter(effective.session.id, async () => {
+            if (await effective.session!.manager.recoverInterrupted(effective.session!.id))
+              effective.history = (await effective.session!.manager.load(effective.session!.id))
+                ?.messages;
+            return this.runJournaled(effective, cwd);
+          })
+        : this.runWithContract(effective, cwd);
+    });
+  }
+
+  close(): Promise<void> {
+    return this.bootstrap.close();
+  }
+
+  private async runJournaled(turn: RuntimeTurnOptions, cwd: string): Promise<RunAgentResult> {
+    const session = turn.session!;
+    const record = (type: string, payload: Record<string, unknown>) =>
+      session.manager.record(session.id, [{ type, payload, turnId: session.turnId }]);
+    turn.signal?.throwIfAborted();
+    await session.manager.record(session.id, [
+      {
+        type: 'turn.started',
+        turnId: session.turnId,
+        payload: { generation: (await this.bootstrap.inspect()).generation },
+      },
+      { type: 'input.accepted', turnId: session.turnId, payload: { text: turn.userMessage } },
+      {
+        type: 'model.selected',
+        turnId: session.turnId,
+        payload: { model: turn.model, engine: this.options.engine?.name ?? 'native' },
+      },
+    ]);
+    try {
+      const result = await this.runWithContract(turn, cwd);
+      await record('turn.finished', { stopReason: result.stopReason });
+      return result;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await record('turn.finished', {
+        stopReason: turn.signal?.aborted ? 'aborted' : 'error',
+        error: message,
+      });
+      if (message.includes('cleanup_incomplete'))
+        await record('session.quarantined', { reason: 'cleanup_incomplete' });
+      throw error;
+    }
   }
 
   private async runWithContract(turn: RuntimeTurnOptions, cwd: string): Promise<RunAgentResult> {
@@ -207,7 +295,22 @@ export class RuntimeHost {
       pluginDirs: this.options.pluginDirs,
     };
     await bindSessionEngine(options, this.options.engine?.name ?? 'native');
-    return this.options.engine ? this.options.engine.run(options) : runAgent(options);
+    const execution = new ToolExecutionService(options);
+    const unbind = this.options.toolExecutionBinding?.bind(execution);
+    try {
+      return await execution.withScope(() =>
+        this.options.engine
+          ? this.options.engine.run({
+              ...options,
+              signal: execution.signal,
+              toolExecution: execution,
+            })
+          : runAgent({ ...options, signal: execution.signal, toolExecution: execution }),
+      );
+    } finally {
+      unbind?.();
+      await execution.close();
+    }
   }
 }
 

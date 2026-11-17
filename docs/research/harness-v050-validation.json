@@ -1,0 +1,93 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "version": "0.5.0",
+  "platform": "darwin-arm64",
+  "runtime": "Node 22.23.4 / pnpm 9.12.0",
+  "scope": "Integrated H01-H04 + desktop/VS Code UI after independent review",
+  "tests": {
+    "passed": 2006,
+    "skipped": 23,
+    "filesPassed": 167,
+    "sdkSmokePassed": 2,
+    "rustPassed": 30,
+    "desktopBrowserPassed": 22
+  },
+  "checks": {
+    "build": "passed",
+    "release": "passed",
+    "kernelSmoke": "passed",
+    "typecheck": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "docs": "passed"
+  },
+  "release": {
+    "status": "ok",
+    "budgets": {
+      "extensionBytes": 65536,
+      "appServerBytes": 786432,
+      "vsixBytes": 262144,
+      "initializeMs": 5000,
+      "metadataRequestMs": 2000,
+      "workspaceDiffMs": 10000
+    },
+    "bundles": {
+      "extensionBytes": 54943,
+      "appServerBytes": 771532,
+      "vsixBytes": 247189
+    },
+    "journeys": [
+      {
+        "name": "create-and-read",
+        "threadId": "thread-mwkgs36r-4r8onm",
+        "timings": {
+          "initializeMs": 47.24,
+          "threadStartMs": 35.89,
+          "threadReadMs": 0.83,
+          "configDiagnosticsMs": 0.58,
+          "workspaceDiffMs": 322.56
+        }
+      },
+      {
+        "name": "restart-and-resume",
+        "threadId": "thread-mwkgs36r-4r8onm",
+        "timings": {
+          "initializeMs": 44.83,
+          "threadReadMs": 1.3,
+          "threadResumeMs": 0.57
+        }
+      }
+    ]
+  },
+  "kernelSmoke": {
+    "status": "ok",
+    "comparison": {
+      "baseline": "current app-server (already includes Cordis)",
+      "candidate": "current app-server plus an independent kernel fixture",
+      "scope": "incremental fixture only; not the cost of introducing Cordis"
+    },
+    "bytes": {
+      "extension": 54943,
+      "baselineServer": 767971,
+      "candidateServer": 772963,
+      "desktopServer": 772963,
+      "baselineVsix": 246199,
+      "candidateVsix": 248639
+    },
+    "incrementalFixtureOverhead": {
+      "server": 0.006500245451976694,
+      "vsix": 0.009910682009268923,
+      "initialize": 0.03266208524987202,
+      "rss": 0.004860804242156513
+    },
+    "browserBytes": 30809
+  },
+  "limitations": [
+    "Linux validation pending PR CI",
+    "No external provider calls",
+    "Rust fmt reports pre-existing HEAD formatting; Rust sources unchanged",
+    "No npm, signed DMG or updater publication credentials",
+    "Complete H05-H14 harness-v2 backend switch remains future work"
+  ]
+}

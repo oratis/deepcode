@@ -2,6 +2,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+import { ToolExecutionService, ToolExecutionBinding } from '@deepcode/core/runtime';
+import { BUILTIN_TOOLS, ToolRegistry } from '@deepcode/core/tools';
 import { HookDispatcher } from '@deepcode/core/hooks';
 import type { McpClientHandle } from '@deepcode/core/mcp';
 import type { ToolHandler } from '@deepcode/core/tools';
@@ -177,18 +179,36 @@ describe('composeRuntime', () => {
     roots.push(cwd);
     const target = join(cwd, 'plugin.txt');
     const hooks = new HookDispatcher({});
-    const denied = buildPluginCapabilityBridge({ cwd, mode: 'plan', hooks });
-    await expect(denied.fs_write(target, 'blocked')).rejects.toThrow(/mode=plan/);
-
-    const requestApproval = vi.fn(async () => 'allow' as const);
-    const allowed = buildPluginCapabilityBridge({
+    const binding = new ToolExecutionBinding();
+    const bridge = buildPluginCapabilityBridge(binding);
+    await expect(bridge.fs_write(target, 'startup')).rejects.toThrow(/outside an active turn/);
+    const denied = new ToolExecutionService({
+      cwd,
+      mode: 'plan',
+      hooks,
+      tools: new ToolRegistry(BUILTIN_TOOLS),
+    });
+    const unbind = binding.bind(denied);
+    await expect(bridge.fs_write(target, 'blocked')).rejects.toThrow(/mode=plan/);
+    unbind();
+    await denied.close();
+    const approval = vi.fn(async () => true);
+    const allowed = new ToolExecutionService({
       cwd,
       mode: 'default',
       hooks,
-      requestApproval,
+      approval,
+      tools: new ToolRegistry(BUILTIN_TOOLS),
     });
-    await allowed.fs_write(target, 'allowed');
-    expect(await readFile(target, 'utf8')).toBe('allowed');
-    expect(requestApproval).toHaveBeenCalledWith('Write', expect.any(String));
+    const release = binding.bind(allowed);
+    try {
+      await bridge.fs_write(target, 'allowed');
+      expect(await readFile(target, 'utf8')).toBe('allowed');
+      expect(approval).toHaveBeenCalledWith('Write', expect.any(Object), expect.any(Object));
+    } finally {
+      release();
+      await allowed.close();
+    }
+    await expect(bridge.fs_read(target)).rejects.toThrow(/outside an active turn/);
   });
 });

@@ -191,7 +191,7 @@ export class AppServer {
       active.map(async ([turnId, turn]) => {
         turn.controller.abort();
         this.cancelInteractions(turnId);
-        await this.finishOnce(turnId, () => this.lifecycle.interruptTurn(turn.threadId, turnId));
+        await turn.task;
       }),
     );
     await Promise.allSettled(active.map(([, { task }]) => task));
@@ -199,6 +199,23 @@ export class AppServer {
 
   private async dispatch(request: ProtocolRequest, traceId: string): Promise<unknown> {
     switch (request.method) {
+      case 'thread/rename': {
+        if (!this.options.store?.rename)
+          throw new RequestValidationError('Journal management is unavailable');
+        const title = request.params?.title;
+        if (typeof title !== 'string' || title.length > 240)
+          throw new RequestValidationError('Invalid session title');
+        await this.options.store.rename(requiredId(request.params, 'threadId'), title);
+        return { renamed: true };
+      }
+      case 'session/snapshots': {
+        if (!this.options.store?.fileSnapshots)
+          throw new RequestValidationError('Journal snapshots are unavailable');
+        return this.options.store.fileSnapshots(
+          requiredId(request.params, 'threadId'),
+          requiredString(request.params, 'path'),
+        );
+      }
       case 'initialize':
         return this.lifecycle.initialize();
       case 'runtime/capabilities':
@@ -341,18 +358,52 @@ export class AppServer {
     if (!reviewAction && Object.hasOwn(input, 'reviewAction')) {
       throw new RequestValidationError('reviewAction is reserved for app-server review methods');
     }
-    const thread = await this.lifecycle.resumeThread(threadId);
-    const turn = await this.lifecycle.startTurn(threadId, input, traceId);
-    if (reviewAction) {
-      await this.lifecycle.appendCompletedItem(threadId, turn.id, 'review_action', {
-        actionId: turn.id,
-        ...reviewAction,
-      });
-    }
-    const controller = new AbortController();
-    const task = this.executeTurn(thread, turn, input, controller);
-    this.activeTurns.set(turn.id, { threadId, controller, task });
-    return turn;
+    // Admission and all subsequent turn writes share one cross-process lease.
+    // Resolve the public acknowledgement only after startTurn has flushed.
+    return new Promise<TurnSnapshot>((resolve, reject) => {
+      let ownedTurnId: string | undefined;
+      let finish!: () => void;
+      let fail!: (error: unknown) => void;
+      const done = {
+        promise: new Promise<void>((resolve, reject) => {
+          finish = resolve;
+          fail = reject;
+        }),
+        resolve: () => finish(),
+        reject: (error: unknown) => fail(error),
+      };
+      void done.promise.catch(() => undefined);
+      const run = async () => {
+        const thread = await this.lifecycle.resumeThread(threadId);
+        const turn = await this.lifecycle.startTurn(threadId, input, traceId);
+        if (reviewAction)
+          await this.lifecycle.appendCompletedItem(threadId, turn.id, 'review_action', {
+            actionId: turn.id,
+            ...reviewAction,
+          });
+        const controller = new AbortController();
+        const task = Promise.resolve().then(() =>
+          this.executeTurn(thread, turn, input, controller),
+        );
+        ownedTurnId = turn.id;
+        this.activeTurns.set(turn.id, { threadId, controller, task: done.promise });
+        resolve(turn);
+        await task;
+      };
+      void (this.options.store?.withWriter ? this.options.store.withWriter(threadId, run) : run())
+        .then(
+          () => {
+            done.resolve();
+          },
+          (error) => {
+            done.reject(error);
+            reject(error);
+          },
+        )
+        .finally(() => {
+          if (ownedTurnId) this.activeTurns.delete(ownedTurnId);
+        });
+    });
   }
 
   private async interruptTurn(params: Record<string, unknown>): Promise<{ interrupted: boolean }> {
@@ -364,10 +415,11 @@ export class AppServer {
       throw new RequestValidationError(`Turn ${turnId} does not belong to ${threadId}`);
     active.controller.abort();
     this.cancelInteractions(turnId);
-    const terminal = await this.finishOnce(turnId, () =>
-      this.lifecycle.interruptTurn(threadId, turnId),
-    );
-    return { interrupted: terminal.status === 'interrupted' };
+    await active.task;
+    const thread = await this.lifecycle.resumeThread(threadId);
+    return {
+      interrupted: thread.turns.find((turn) => turn.id === turnId)?.status === 'interrupted',
+    };
   }
 
   private async executeTurn(
@@ -500,7 +552,6 @@ export class AppServer {
       });
     } finally {
       this.cancelInteractions(turn.id);
-      this.activeTurns.delete(turn.id);
     }
   }
 

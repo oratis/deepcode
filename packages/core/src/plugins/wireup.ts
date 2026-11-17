@@ -20,15 +20,23 @@ import { promises as fs } from 'node:fs';
 import { homedir } from 'node:os';
 import type { Hooks } from '../config/types.js';
 import type { HookDispatcher } from '../hooks/dispatcher.js';
+import type { HookContext } from '../hooks/types.js';
 import type { ToolHandler } from '../types.js';
 import { discoverPlugins, type DiscoverOptions, type InstalledPlugin } from './manifest.js';
 import { PluginSubprocess, shutdownAllPlugins, spawnAllPlugins } from './runtime/subprocess.js';
 
 export interface PluginCapabilityBridge {
-  fs_read: (path: string) => Promise<string>;
-  fs_write: (path: string, content: string) => Promise<void>;
-  bash: (cmd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>;
-  fetch: (url: string, opts?: { method?: string; body?: string }) => Promise<string>;
+  fs_read: (path: string, signal?: AbortSignal) => Promise<string>;
+  fs_write: (path: string, content: string, signal?: AbortSignal) => Promise<void>;
+  bash: (
+    cmd: string,
+    signal?: AbortSignal,
+  ) => Promise<{ stdout: string; stderr: string; exitCode: number; truncated?: boolean }>;
+  fetch: (
+    url: string,
+    opts?: { method?: string; body?: string },
+    signal?: AbortSignal,
+  ) => Promise<string>;
 }
 
 export interface WirePluginsOpts {
@@ -43,7 +51,7 @@ export interface WirePluginsOpts {
   capabilities: PluginCapabilityBridge;
   /**
    * Optional OS sandbox config — applied to each plugin's node subprocess.
-   * When unset (or .enabled === false), plugins run unsandboxed.
+   * Defaults to an isolated plugin process; explicit full access opts out.
    */
   sandbox?: import('../config/types.js').SandboxConfig;
   /**
@@ -135,7 +143,23 @@ export async function wirePlugins(opts: WirePluginsOpts): Promise<WireResult> {
       // manifest from a plugin must follow the same shape as settings.hooks.
       const declared = plugin.manifest.contributes?.hooks;
       if (declared && Object.keys(declared).length > 0) {
-        opts.hooks.mergeHooks(declared as Hooks);
+        opts.hooks.mergeHooks(declared as Hooks, async (handler, context) => {
+          if (handler.type === 'command' && handler.command) {
+            const result = await opts.capabilities.bash(
+              hookCommand(handler.command, context),
+              context.signal,
+            );
+            if (result.truncated)
+              throw new Error(
+                'External hook output was truncated; refusing an incomplete decision',
+              );
+            return result;
+          }
+          // The current broker exposes GET only. Do not silently replace a POST hook.
+          throw new Error(
+            'External HTTP hook requires an approved POST capability (not available)',
+          );
+        });
       }
     }
 
@@ -163,6 +187,22 @@ export async function wirePlugins(opts: WirePluginsOpts): Promise<WireResult> {
     await shutdownAllPlugins(subprocesses);
     throw error;
   }
+}
+
+/** Preserve command-hook stdin/env while sending the entire command through Bash approval. */
+function hookCommand(command: string, context: HookContext): string {
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  const payload = JSON.stringify({ event: context.event, payload: context.payload });
+  const environment = {
+    ...context.env,
+    DEEPCODE_HOOK_EVENT: context.event,
+    DEEPCODE_TRIGGERED_AT: context.triggeredAt,
+  };
+  const assignments = Object.entries(environment).map(([name, value]) => {
+    if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) throw new Error('Invalid hook environment name');
+    return quote(`${name}=${value}`);
+  });
+  return `printf '%s' ${quote(payload)} | /usr/bin/env ${assignments.join(' ')} /bin/sh -c ${quote(command)}`;
 }
 
 /**

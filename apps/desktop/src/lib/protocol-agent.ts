@@ -85,6 +85,21 @@ export class DesktopProtocolAgent {
     return this.transport.request<ThreadListResult>('thread/list', {});
   }
 
+  async renameThread(threadId: string, title: string): Promise<boolean> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.sessionJournal) return false;
+    await this.transport.request('thread/rename', { threadId, title });
+    return true;
+  }
+  async sessionSnapshots(
+    threadId: string,
+    path: string,
+  ): Promise<import('@deepcode/protocol').SessionSnapshotEntry[] | null> {
+    const initialized = await this.transport.connect();
+    if (!initialized.capabilities.sessionJournal) return null;
+    return this.transport.request('session/snapshots', { threadId, path });
+  }
+
   async archiveThread(threadId: string): Promise<boolean> {
     const initialized = await this.transport.connect();
     if (!initialized.capabilities.threadManagement) return false;
@@ -99,12 +114,17 @@ export class DesktopProtocolAgent {
     return true;
   }
 
-  async resume(threadId: string): Promise<ThreadSnapshot> {
+  async resume(
+    threadId: string,
+    prepare?: (thread: ThreadSnapshot) => Promise<void>,
+  ): Promise<ThreadSnapshot> {
     await this.transport.connect();
     if (this.threadId && this.threadId !== threadId) {
       await this.interruptActiveTurns();
     }
     const thread = await this.transport.request<ThreadSnapshot>('thread/resume', { threadId });
+    // Keep subsequent sends on the old thread if its replacement cannot render.
+    await prepare?.(thread);
     this.adoptThread(thread.id);
     return thread;
   }
@@ -230,6 +250,9 @@ export class DesktopProtocolAgent {
 
   private project(event: ProtocolEvent): void {
     switch (event.type) {
+      case 'turn.started':
+        this.emit({ kind: 'event', turnId: event.turn.id, type: 'turn_started' });
+        break;
       case 'item.delta':
         this.emit({ kind: 'event', turnId: event.turnId, type: 'text_delta', text: event.delta });
         break;
@@ -398,8 +421,11 @@ export function deleteProtocolThread(threadId: string) {
   return defaultAgent.deleteThread(threadId);
 }
 
-export function resumeProtocolThread(threadId: string) {
-  return defaultAgent.resume(threadId);
+export function resumeProtocolThread(
+  threadId: string,
+  prepare?: (thread: ThreadSnapshot) => Promise<void>,
+) {
+  return defaultAgent.resume(threadId, prepare);
 }
 
 export function clearProtocolThread(): void {
@@ -436,4 +462,11 @@ export function approveProtocolRequest(requestId: string, decision: 'allow' | 'd
 
 export function answerProtocolRequest(requestId: string, answer: string) {
   return defaultAgent.answer(requestId, answer);
+}
+
+export function renameProtocolThread(id: string, title: string) {
+  return defaultAgent.renameThread(id, title);
+}
+export function protocolSessionSnapshots(id: string, path: string) {
+  return defaultAgent.sessionSnapshots(id, path);
 }

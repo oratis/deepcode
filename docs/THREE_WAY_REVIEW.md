@@ -1,11 +1,13 @@
 # DeepCode vs Claude Code vs Codex — 三方综合 Review
 
+> **历史评估提示（2026-11-17）**：本文是下列 0.2.0 基线的一次性比较，不代表当前模型、权限或 UI 完成度。下一阶段的当前代码核对与完整架构方案见 [Harness 化改造方案](HARNESS_TRANSFORMATION_PLAN.md)，新方案已获实施授权，H01/H02 验证见 [实施进度](HARNESS_IMPLEMENTATION_PROGRESS.md)。
+
 > 基线：`main@a8d3cb7`（0.2.0，app-server 架构落地后）· 日期 2026-08-02
 > 核查方式：逐项对源码验证（不采信 `BEHAVIOR_PARITY.md`，该表历史上多次落后于代码）
 > 实跑验证：`pnpm install` → `pnpm typecheck` 通过 → `pnpm test` exit 0，无失败用例
 
 本文是一次性的现状评估，用于确定下一阶段优先级。它不替代
-[`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md)（架构路线的事实源），
+[`CODEX_ALIGNMENT_PLAN.md`](CODEX_ALIGNMENT_PLAN.md)（上一轮架构路线），
 也不替代 [`BEHAVIOR_PARITY.md`](BEHAVIOR_PARITY.md)（Claude 兼容矩阵的历史快照）。
 
 ---

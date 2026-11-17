@@ -8,7 +8,7 @@
 //   │ <body — output or diff>                       │  ← tc-body
 //   └──────────────────────────────────────────────┘
 
-import type { ReactNode, JSX } from 'react';
+import { useId, useState, type ReactNode, type JSX } from 'react';
 import { Badge, type BadgeKind } from './Badge.js';
 
 interface ToolCardProps {
@@ -42,10 +42,24 @@ export function ToolCard({
   layout = 'generic',
   onOpen,
 }: ToolCardProps): JSX.Element {
+  const [expanded, setExpanded] = useState<boolean | null>(null);
+  const detailId = useId();
+  // Failed and pending calls remain inspectable without an extra click. Only
+  // successful/unknown historical output is collapsed by default.
+  const open = expanded ?? (status?.kind === 'err' || status?.kind === 'warn');
   return (
     <div className={'tool-card' + (onOpen ? ' openable' : '')}>
       <div className="tc-head">
-        <span className="name">▸ {name}</span>
+        <button
+          type="button"
+          className="name tc-disclose"
+          aria-expanded={open}
+          aria-controls={detailId}
+          aria-label={`${open ? 'Hide' : 'Show'} ${name} details`}
+          onClick={() => setExpanded(!open)}
+        >
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span> {name}
+        </button>
         {target &&
           (onOpen ? (
             <button
@@ -61,7 +75,11 @@ export function ToolCard({
           ))}
         {status && <Badge kind={status.kind}>{status.label}</Badge>}
       </div>
-      {body !== undefined && <div className={`tc-body ${layout}`}>{body}</div>}
+      {open && body !== undefined && (
+        <div id={detailId} className={`tc-body ${layout}`}>
+          {body}
+        </div>
+      )}
     </div>
   );
 }

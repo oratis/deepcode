@@ -20,7 +20,13 @@
 
 import { isAbsolute, resolve, sep } from 'node:path';
 import type { StoredMessage } from '../types.js';
-import { listSessions, readSessionRecords, type SessionMeta } from './storage.js';
+import type { SessionMeta } from './storage.js';
+import { SessionManager } from './manager.js';
+export function sessionReader(root: string): SessionManager {
+  return root.endsWith('-v2')
+    ? new SessionManager({ root: root.slice(0, -3), journalRoot: root })
+    : new SessionManager({ root });
+}
 
 /** Which sessions a search may look at. */
 export type SessionSearchScope =
@@ -152,7 +158,8 @@ export async function searchSessions(opts: SessionSearchOptions): Promise<Sessio
     return { hits: [], sessionsSearched: 0, truncated: false };
   }
 
-  const metas = candidates(await listSessions(opts.root), opts);
+  const manager = sessionReader(opts.root);
+  const metas = candidates(await manager.list(), opts);
   const hits: SessionSearchHit[] = [];
   let sessionsSearched = 0;
   let truncated = false;
@@ -164,7 +171,9 @@ export async function searchSessions(opts: SessionSearchOptions): Promise<Sessio
     }
     let messages: StoredMessage[];
     try {
-      ({ messages } = await readSessionRecords(opts.root, meta.id));
+      const loaded = await manager.load(meta.id);
+      if (!loaded) continue;
+      messages = loaded.messages;
     } catch {
       // A corrupt or half-written session must not fail the whole search; it is
       // one of many, and the others are still worth returning.

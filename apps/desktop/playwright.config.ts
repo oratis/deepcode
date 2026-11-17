@@ -11,6 +11,8 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
+    // Local verification can use installed Chrome; CI uses Playwright Chromium.
+    channel: process.env.PLAYWRIGHT_CHANNEL,
     baseURL: origin,
     viewport: { width: 1280, height: 800 },
     screenshot: 'only-on-failure',

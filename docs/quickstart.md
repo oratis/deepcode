@@ -1,25 +1,30 @@
 # DeepCode Quickstart
 
-DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). It ships as a **CLI**
-(`deepcode`) and a **macOS desktop app**, with VS Code/LSP integrations under
-active development. The clients reuse `@deepcode/core`, but some runtime,
-permission, and recovery behavior is still being unified; see the
-[alignment plan](CODEX_ALIGNMENT_PLAN.md) for current gaps.
+DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). The repository includes a **CLI**, a **macOS desktop app**, and VS Code/LSP integrations. Version 0.5.0 publishes a VSIX and source; npm, signed DMG and updater artifacts are unavailable in this release. See the [Harness implementation progress](HARNESS_IMPLEMENTATION_PROGRESS.md) for implemented and remaining work.
 
-> Requirements: **Node ≥ 22** for the CLI. A **DeepSeek API key** (get one at
+> Requirements: **Node 22 and pnpm 9** to build the CLI from source. A **DeepSeek API key** (get one at
 > <https://platform.deepseek.com/>). macOS 12+ for the desktop app.
 
 ---
 
 ## CLI (macOS + Linux)
 
-```bash
-# 1. Install
-npm i -g @oratis/deepcode
+Build the tagged source and define a command for the current shell:
 
-# 2. Start the REPL — the first run walks you through setting your DeepSeek key
+```bash
+# Node 22 + pnpm 9
+git clone --branch v0.5.0 https://github.com/oratis/deepcode.git
+cd deepcode
+pnpm install --frozen-lockfile
+pnpm build
+deepcode_checkout="$PWD"
+deepcode() { node "$deepcode_checkout/apps/cli/dist/cli.js" "$@"; }
+deepcode --help
+# First run walks you through setting your DeepSeek key
 deepcode
 ```
+
+The `deepcode` function remains available in this shell after changing project directories. In another shell, define it again or invoke the built CLI by its absolute path.
 
 On first launch DeepCode asks for your DeepSeek API key and stores it in the
 macOS Keychain (or `~/.deepcode/credentials.json`, `chmod 600`, on Linux). You
@@ -96,19 +101,11 @@ can never widen it.
 
 ---
 
-## macOS desktop app
+## VS Code and macOS desktop
 
-1. Download the latest `DeepCode-<version>-arm64.dmg` from
-   [Releases](https://github.com/oratis/deepcode/releases).
-2. Open the DMG and drag **DeepCode** into Applications.
-3. Launch it. On first run it asks for your DeepSeek key, then prompts you to
-   **pick a project folder** — everything DeepCode reads, writes, or runs stays
-   inside that folder.
-4. Type a request in the composer and press ⏎. Approve tool calls inline as they
-   appear; switch model / effort / mode from the toolbar. Press **⌘\\** to expand
-   the right-hand inspector (plan · context usage · recent files · session info).
+Download `deepcode-0.5.0.vsix` from the [v0.5.0 release](https://github.com/oratis/deepcode/releases/tag/v0.5.0), run **Extensions: Install from VSIX…**, then open the DeepCode panel.
 
-The desktop app auto-updates from GitHub Releases ("Relaunch to update").
+No signed DMG or updater feed is published for v0.5.0. Desktop development builds require the local Tauri/Rust toolchain; see [Releasing DeepCode](RELEASING.md) for build and signing requirements. A future release must explicitly include those artifacts before DMG installation or in-app updates can be used.
 
 ---
 

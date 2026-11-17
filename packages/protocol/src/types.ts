@@ -31,6 +31,7 @@ export interface TurnSnapshot {
 }
 
 export interface ThreadSnapshot {
+  title?: string;
   id: string;
   cwd: string;
   createdAt: string;
@@ -171,6 +172,8 @@ export interface InitializeResult {
      * and, for delete, two ways to remove a file the app-server owns.
      */
     threadManagement: boolean;
+    /** Journal-backed rename and private snapshot projections. Older servers omit it. */
+    sessionJournal?: boolean;
     /**
      * `runtime/capabilities` is served. Distinct from the flags above: those
      * say which protocol features exist, this one says what the runtime will
@@ -306,6 +309,8 @@ export type ProtocolMethod =
   | 'workspace/diff'
   | 'review/apply'
   | 'review/revert'
+  | 'thread/rename'
+  | 'session/snapshots'
   | 'thread/start'
   | 'thread/read'
   | 'thread/resume'
@@ -333,4 +338,12 @@ export interface ProtocolResponse {
 export interface ProtocolNotification {
   method: 'event';
   params: ProtocolEvent;
+}
+
+export interface SessionSnapshotEntry {
+  seq: number;
+  capturedAtMs: number;
+  reason: string;
+  hash: string;
+  content: string;
 }

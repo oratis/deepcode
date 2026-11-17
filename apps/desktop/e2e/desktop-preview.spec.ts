@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
 
-const composerPlaceholder = '问点什么…   @ 引用文件   ·   / 命令   ·   # 写入 DEEPCODE.md';
+const composerPlaceholder = 'Ask about your code, or / for commands…';
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/preview-app.html');
   await expect(page.locator('.app-shell')).toBeVisible();
 });
 
-test('keeps the Codex-style three-column shell inside the viewport', async ({ page }, testInfo) => {
+test('keeps the DeepCode three-column shell inside the viewport', async ({ page }, testInfo) => {
   const sidebar = await page.locator('.sidebar').boundingBox();
   const main = await page.locator('.chat-main').boundingBox();
   const rail = await page.locator('.inspector-rail').boundingBox();
@@ -45,7 +45,7 @@ test('resumes a thread and completes an approval-gated protocol turn', async ({ 
   await composer.fill('Add a boss phase');
   await composer.press('Enter');
 
-  const approve = page.getByRole('button', { name: /^Approve \(↵\)$/ });
+  const approve = page.getByRole('button', { name: 'Allow once', exact: true });
   await expect(approve).toBeVisible();
   await expect(main.getByText(/I’ll update the game safely\./)).toBeVisible();
 
@@ -60,14 +60,15 @@ test('resumes a thread and completes an approval-gated protocol turn', async ({ 
   await approve.click();
 
   await expect(main.getByText(/The boss encounter is ready\./)).toBeVisible();
+  await main.getByRole('button', { name: 'Show Edit details' }).click();
   await expect(main.getByText('Updated the boss encounter.', { exact: true }).last()).toBeVisible();
-  await expect(main.getByText('2,304 / 128,000', { exact: true })).toBeVisible();
+  await expect(main.getByText('Context ≈ 2,304 / 128,000', { exact: true })).toBeVisible();
   await expect(approve).toBeHidden();
   await expect(composer).toBeEnabled();
   await expect(main.getByText('Add a boss phase', { exact: true })).toBeVisible();
   const toolCards = main.locator('.tool-card');
   await expect(toolCards).toHaveCount(2);
-  await expect(toolCards.first()).toContainText('running');
+  await expect(toolCards.first()).toContainText('result unavailable');
   await expect(toolCards.last()).toContainText('done');
 });
 
@@ -121,7 +122,7 @@ test('runs slash commands in the composer instead of sending them to the model',
   await composer.fill('/mode plan');
   await composer.press('Enter');
   await expect(main.getByText('Mode → plan', { exact: true })).toBeVisible();
-  await expect(page.getByText('plan mode', { exact: true })).toBeVisible();
+  await expect(page.locator('.chat-header').getByText('Plan mode', { exact: true })).toBeVisible();
   await expect(composer).toBeEnabled();
 
   // Unknown commands are named, not forwarded to the model.
@@ -142,7 +143,7 @@ test('reviews findings and the working tree from the Changes panel', async ({ pa
   const composer = page.getByPlaceholder(composerPlaceholder, { exact: true });
   await composer.fill('Add a boss phase');
   await composer.press('Enter');
-  const approve = page.getByRole('button', { name: /^Approve \(↵\)$/ });
+  const approve = page.getByRole('button', { name: 'Allow once', exact: true });
   await expect(approve).toBeVisible();
   await approve.click();
   await expect(approve).toBeHidden();

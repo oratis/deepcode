@@ -499,6 +499,15 @@ describe('RuntimeHostExecutor', () => {
         },
       });
       const sessions = new SessionManager({ root: join(root, 'sessions') });
+      await sessions.materialize(
+        {
+          id: 'thread-snapshots',
+          cwd: workspace,
+          createdAt: thread.createdAt,
+          updatedAt: thread.updatedAt,
+        },
+        [],
+      );
       const host = new RuntimeHost({ provider, tools, cwd: workspace, mode: 'default' });
       const executor = new RuntimeHostExecutor({
         createHost: () => host,
@@ -520,7 +529,12 @@ describe('RuntimeHostExecutor', () => {
         requestApproval: async () => 'allow',
       });
 
-      await expect(sessions.load('thread-snapshots')).resolves.toBeNull();
+      expect((await sessions.load('thread-snapshots'))?.messages).toEqual([]);
+      expect(
+        (await sessions.journal('thread-snapshots').read())?.some(
+          (event) => event.type === 'message.observed',
+        ),
+      ).toBe(true);
       const snapshots = await sessions.snapshots('thread-snapshots');
       expect(snapshots).toHaveLength(2);
       expect(snapshots.every((snapshot) => snapshot.turnId === 'turn-snapshots')).toBe(true);

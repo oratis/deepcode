@@ -4,10 +4,9 @@
 // without a DOM. These functions take the current message list + an incoming
 // event and return a new list — no React, no side effects.
 //
-// Invariant they enforce: at most ONE assistant turn is ever `streaming`. A
-// system breadcrumb (e.g. the "added to permissions.allow" note) pushed between
-// streaming deltas must NOT orphan the open assistant turn or spawn a second
-// streaming bubble — that was the "two blinking cursors" bug.
+// At most ONE assistant chunk is ever `streaming`. Text that follows a tool
+// belongs after its card, so a single agent turn can span several chunks. A
+// system breadcrumb alone must not orphan the open chunk or add a cursor.
 
 // The card header's label comes from core, so the CLI and the extension read
 // the same answer rather than each keeping their own key list.
@@ -21,7 +20,7 @@ export interface ToolInvocation {
   name: string;
   target?: string;
   input: Record<string, unknown>;
-  status: 'running' | 'ok' | 'err';
+  status: 'running' | 'ok' | 'err' | 'unknown' | 'interrupted';
   resultText?: string;
   /**
    * Openable places the call found, from the result's structured data. Only
@@ -40,7 +39,7 @@ export interface AssistantTurn {
    * get dropped instead.
    */
   reasoning?: string;
-  /** Tool calls interleaved during this turn — rendered as cards after the text. */
+  /** Tool calls after this chunk's text. Later text starts another chunk. */
   tools: ToolInvocation[];
   streaming: boolean;
 }
@@ -69,19 +68,23 @@ export function lastAssistantIndex(msgs: Msg[]): number {
 }
 
 /**
- * Append a text delta to the open (streaming) assistant turn. Crucially this
- * targets the last *assistant* message even when a system note sits after it —
- * so a mid-stream breadcrumb can't split one response into two cursors.
+ * Continue the open chunk unless it already contains tools. A model's answer
+ * after a tool must follow the tool card, not move ahead of it. System notes
+ * alone do not split a chunk, and splitting never settles a tool invocation.
  */
 export function appendTextDelta(msgs: Msg[], delta: string): Msg[] {
+  if (!delta) return msgs;
   const idx = lastAssistantIndex(msgs);
   const target = idx === -1 ? null : (msgs[idx] as AssistantMsg);
-  if (target && target.turn.streaming) {
-    const copy = [...msgs];
+  if (target && target.turn.streaming && target.turn.tools.length === 0) {
+    const copy = closeStreamingChunks(msgs, idx);
     copy[idx] = { role: 'assistant', turn: { ...target.turn, text: target.turn.text + delta } };
     return copy;
   }
-  return [...msgs, { role: 'assistant', turn: { text: delta, tools: [], streaming: true } }];
+  return [
+    ...closeStreamingChunks(msgs),
+    { role: 'assistant', turn: { text: delta, tools: [], streaming: true } },
+  ];
 }
 
 /**
@@ -90,10 +93,11 @@ export function appendTextDelta(msgs: Msg[], delta: string): Msg[] {
  * start the turn on its own.
  */
 export function appendReasoningDelta(msgs: Msg[], delta: string): Msg[] {
+  if (!delta) return msgs;
   const idx = lastAssistantIndex(msgs);
   const target = idx === -1 ? null : (msgs[idx] as AssistantMsg);
-  if (target && target.turn.streaming) {
-    const copy = [...msgs];
+  if (target && target.turn.streaming && target.turn.tools.length === 0) {
+    const copy = closeStreamingChunks(msgs, idx);
     copy[idx] = {
       role: 'assistant',
       turn: { ...target.turn, reasoning: (target.turn.reasoning ?? '') + delta },
@@ -101,7 +105,7 @@ export function appendReasoningDelta(msgs: Msg[], delta: string): Msg[] {
     return copy;
   }
   return [
-    ...msgs,
+    ...closeStreamingChunks(msgs),
     { role: 'assistant', turn: { text: '', reasoning: delta, tools: [], streaming: true } },
   ];
 }
@@ -111,14 +115,26 @@ export function appendToolUse(msgs: Msg[], tool: ToolInvocation): Msg[] {
   const idx = lastAssistantIndex(msgs);
   const target = idx === -1 ? null : (msgs[idx] as AssistantMsg);
   if (target && target.turn.streaming) {
-    const copy = [...msgs];
+    const copy = closeStreamingChunks(msgs, idx);
     copy[idx] = {
       role: 'assistant',
       turn: { ...target.turn, tools: [...target.turn.tools, tool] },
     };
     return copy;
   }
-  return [...msgs, { role: 'assistant', turn: { text: '', tools: [tool], streaming: true } }];
+  return [
+    ...closeStreamingChunks(msgs),
+    { role: 'assistant', turn: { text: '', tools: [tool], streaming: true } },
+  ];
+}
+
+/** Cursor ownership is separate from tool execution; only terminal events settle tools. */
+function closeStreamingChunks(msgs: Msg[], exceptIndex = -1): Msg[] {
+  return msgs.map((message, index): Msg =>
+    index !== exceptIndex && message.role === 'assistant' && message.turn.streaming
+      ? { ...message, turn: { ...message.turn, streaming: false } }
+      : message,
+  );
 }
 
 /**
@@ -181,11 +197,23 @@ function lastToolIndex(
   return -1;
 }
 
-/** Clear the streaming flag on ALL assistant turns (not just the last one). */
-export function finalizeStreaming(msgs: Msg[]): Msg[] {
+/** Settle every open tool, including those in earlier chunks without a cursor. */
+export function finalizeStreaming(msgs: Msg[], interrupted = false): Msg[] {
   return msgs.map((m): Msg =>
-    m.role === 'assistant' && m.turn.streaming
-      ? { role: 'assistant', turn: { ...m.turn, streaming: false } }
+    m.role === 'assistant' &&
+    (m.turn.streaming || m.turn.tools.some((tool) => tool.status === 'running'))
+      ? {
+          role: 'assistant',
+          turn: {
+            ...m.turn,
+            streaming: false,
+            tools: m.turn.tools.map((tool) =>
+              tool.status === 'running'
+                ? { ...tool, status: interrupted ? 'interrupted' : 'unknown' }
+                : tool,
+            ),
+          },
+        }
       : m,
   );
 }
@@ -198,13 +226,30 @@ export interface StoredLine {
 
 /**
  * Reconstruct the chat view (Msg[]) from a session's stored messages, so picking
- * a past session re-renders its conversation. Mirrors the live stream reducers
- * in batch: assistant text + tool_use become a turn; the following user message's
- * tool_result blocks attach to those cards by tool_use_id. Thinking blocks are
- * dropped (they were streaming-only). All turns are non-streaming (finalized).
+ * a past session re-renders its conversation. Assistant chunks preserve the
+ * text/tool block order; the following user message's tool_result blocks attach
+ * to cards by tool_use_id across those chunks. Thinking blocks are dropped
+ * (they were streaming-only). Historical chunks are never streaming.
  */
 export function storedToMsgs(stored: StoredLine[]): Msg[] {
-  return stored.reduce(appendStoredLine, [] as Msg[]);
+  return settleHistoricalTools(stored.reduce(appendStoredLine, [] as Msg[]));
+}
+
+/** Missing historical results are unknown, never proof that a tool is running. */
+function settleHistoricalTools(msgs: Msg[]): Msg[] {
+  return msgs.map((m) =>
+    m.role === 'assistant'
+      ? {
+          ...m,
+          turn: {
+            ...m.turn,
+            tools: m.turn.tools.map((t) =>
+              t.status === 'running' ? { ...t, status: 'unknown' as const } : t,
+            ),
+          },
+        }
+      : m,
+  );
 }
 
 /**
@@ -219,14 +264,18 @@ export function appendStoredLine(input: Msg[], m: StoredLine): Msg[] {
   let msgs = [...input];
   {
     if (m.role === 'assistant') {
-      const texts: string[] = [];
-      const tools: ToolInvocation[] = [];
+      let chunk: AssistantTurn = { text: '', tools: [], streaming: false };
       for (const b of m.content) {
         if (b.type === 'text' && typeof b.text === 'string') {
-          texts.push(b.text);
+          if (!b.text) continue;
+          if (chunk.tools.length > 0) {
+            msgs.push({ role: 'assistant', turn: chunk });
+            chunk = { text: '', tools: [], streaming: false };
+          }
+          chunk.text += (chunk.text ? '\n' : '') + b.text;
         } else if (b.type === 'tool_use') {
           const input = (b.input as Record<string, unknown>) ?? {};
-          tools.push({
+          chunk.tools.push({
             toolId: String(b.id ?? ''),
             name: String(b.name ?? '?'),
             input,
@@ -235,7 +284,7 @@ export function appendStoredLine(input: Msg[], m: StoredLine): Msg[] {
           });
         }
       }
-      msgs.push({ role: 'assistant', turn: { text: texts.join('\n'), tools, streaming: false } });
+      msgs.push({ role: 'assistant', turn: chunk });
     } else {
       const texts: string[] = [];
       for (const b of m.content) {
@@ -336,7 +385,7 @@ export function threadToMsgs(thread: ThreadLike): Msg[] {
       }
     }
   }
-  return msgs;
+  return settleHistoricalTools(msgs);
 }
 
 /** Review findings and actions carried by a resumed thread, for the Changes panel. */

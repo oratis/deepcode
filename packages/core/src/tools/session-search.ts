@@ -5,8 +5,8 @@
 // workspace is a privacy decision, and it belongs to the user through settings
 // — a scope parameter would let the model consent on the user's behalf.
 
-import { defaultSessionsDir, readSessionRecords } from '../sessions/storage.js';
-import { inWorkspace, searchSessions } from '../sessions/search.js';
+import { defaultSessionsDir } from '../sessions/storage.js';
+import { inWorkspace, searchSessions, sessionReader } from '../sessions/search.js';
 import type { StoredMessage, ToolContext, ToolHandler, ToolResult } from '../types.js';
 
 const MAX_LIMIT = 50;
@@ -107,14 +107,14 @@ export const SessionReadTool: ToolHandler = {
     const sessionsRoot = root(ctx);
     let read;
     try {
-      read = await readSessionRecords(sessionsRoot, sessionId);
+      read = await sessionReader(sessionsRoot).load(sessionId);
     } catch (err) {
       return {
         content: `Error reading session ${sessionId}: ${(err as Error).message}`,
         isError: true,
       };
     }
-    if (read.format === 'empty') {
+    if (!read) {
       return { content: `Error: no session ${sessionId} under ${sessionsRoot}.`, isError: true };
     }
 

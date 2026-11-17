@@ -5,6 +5,10 @@
 - Decision owners: DeepCode runtime maintainers
 - Roadmap: `docs/CODEX_ALIGNMENT_PLAN.md`, PR 4
 
+> 2026-11-17 status note: the sidecar boundary is implemented; the Context below describes the
+> original decision baseline. The renderer runtime has been removed. Future Harness work retains
+> this boundary; see [ADR 0003](0003-plugin-composed-harness.md).
+
 ## Context
 
 The Tauri renderer currently imports selected pieces of `@deepcode/core`, creates the
@@ -137,6 +141,11 @@ and cold handshake time. The first production sidecar is blocked if any of these
 - notarization or stapling fails;
 - the final DMG exceeds 100 MB without a separate maintainers' decision.
 
-Rollback is a configuration-level switch to the existing renderer runtime during the experimental
+Historical spike rollback was a configuration-level switch to the then-existing renderer runtime during the experimental
 phase. The fallback must be removed once sidecar parity, credential isolation, and signed release
 gates pass; it is not a permanent dual architecture.
+
+That historical fallback is no longer available. Current rollback must select a previously tested
+host/sidecar release or runtime profile while preserving session data; it must never restore
+provider credentials or tool execution to the renderer. The proposed Harness backend and storage
+rollback procedure is defined in [ADR 0003](0003-plugin-composed-harness.md).

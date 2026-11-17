@@ -3,6 +3,7 @@
   "include": [],
   "references": [
     { "path": "./packages/core" },
+    { "path": "./packages/kernel" },
     { "path": "./packages/protocol" },
     { "path": "./packages/shared-ui" },
     { "path": "./apps/cli" },

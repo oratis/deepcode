@@ -12,7 +12,7 @@ import { resolveSession } from './repl.js';
 const roots: string[] = [];
 async function freshManager(): Promise<SessionManager> {
   const root = await mkdtemp(join(tmpdir(), 'dc-resume-'));
-  roots.push(root);
+  roots.push(root, `${root}-v2`);
   return new SessionManager({ root });
 }
 afterEach(async () => {
@@ -107,7 +107,7 @@ describe('resolveSession', () => {
       const sm = await freshManager();
       const src = await sm.create('/proj', { model: 'kimi-k2.5' });
       await sm.append(src.id, text('SDK UI projection'));
-      const directory = join(sm.root, src.id);
+      const directory = join(sm.resourceRoot, src.id);
       await mkdir(directory, { recursive: true });
       if (kind === 'orphaned-sdk') await mkdir(join(directory, 'claude-sdk'));
       else

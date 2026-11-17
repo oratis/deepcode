@@ -18,30 +18,38 @@ DeepCode 让 DeepSeek 可以在本地代码库中执行读取、编辑、命令�
 - **已可用**：Node.js CLI、Tauri macOS 客户端、核心工具、MCP、hooks、skills、plugins、sandbox、sessions、background tasks、voice input，以及 0.3.0 的工作区治理层（file contract、change ledger、runtime capabilities、`/combo`、trigger profile）。
 - **在收敛**：VS Code/LSP、统一权限、真实取消、thread/turn/item 协议与跨客户端恢复。
 - **兼容优先**：继续读取既有 `settings.json`、`DEEPCODE.md`、`AGENTS.md` 和 Claude 风格扩展资产，但不以未经验证的“1:1 parity”作为安全或完成度承诺。
-- **设计路线**：完整审查、正反方审议和分阶段 PR 见 [Codex alignment plan](docs/CODEX_ALIGNMENT_PLAN.md)。
+- **Harness 改造**：[完整 Harness 化改造方案](docs/HARNESS_TRANSFORMATION_PLAN.md) 已获实施授权，覆盖插件组合、全端迁移、安全与回滚；上一轮设计见 [Codex alignment plan](docs/CODEX_ALIGNMENT_PLAN.md)。
+
+H01–H04 统一执行、Cordis、bootstrap/profile 与 session journal 的实现和验证见 [实施进度](docs/HARNESS_IMPLEMENTATION_PROGRESS.md)。
 
 ## 快速上手
 
+v0.5.0 提供 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.0) 的 VSIX 与源码。下载 `deepcode-0.5.0.vsix`，在 VS Code 中运行 **Extensions: Install from VSIX…**，再打开 DeepCode 面板。
+
+CLI 从源码运行：
+
 ```bash
-# 1. 装 CLI
-npm i -g @oratis/deepcode
-
-# 2. 设 DeepSeek key（首次启动会引导）
+# Node 22 + pnpm 9
+git clone --branch v0.5.0 https://github.com/oratis/deepcode.git
+cd deepcode
+pnpm install --frozen-lockfile
+pnpm build
+deepcode_checkout="$PWD"
+deepcode() { node "$deepcode_checkout/apps/cli/dist/cli.js" "$@"; }
+deepcode --help
+# 首次启动会引导设置 DeepSeek key
 deepcode
-
-# 3. 干活
-deepcode -p "fix the bug in src/auth.ts"   # headless one-shot
-deepcode --mode plan                       # plan mode REPL
-deepcode --model deepseek-reasoner --effort high
+deepcode -p "fix the bug in src/auth.ts"
+deepcode --mode plan
 ```
 
-Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboarding。
+`deepcode` 函数在当前 shell 中有效，也可以直接用 Node 执行构建后的 CLI 绝对路径。本次没有 npm 包、签名 DMG 或自动更新包；不要用 npm 安装命令获取 v0.5.0。桌面开发启动与未来发布配置见 [发布说明](docs/RELEASING.md)。升级旧会话前请读 [兼容与回滚说明](docs/HARNESS_RUNTIME_GUIDE.md)。
 
 ## 当前工程基线
 
 主分支执行 typecheck、lint、format、Vitest、TypeScript build，并在 CI 中覆盖 macOS/Linux；Tauri Rust backend 也纳入单独检查。不要从 README 中读取静态测试总数，当前结果以 [CI](https://github.com/oratis/deepcode/actions/workflows/ci.yml) 为准。
 
-已知架构差距和处理顺序记录在 [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)。[MORNING_REPORT.md](MORNING_REPORT.md) 是早期历史快照，不再表示当前进度。
+最新源码对照与下一阶段处理顺序记录在 [完整 Harness 化改造方案](docs/HARNESS_TRANSFORMATION_PLAN.md)。[Codex alignment plan](docs/CODEX_ALIGNMENT_PLAN.md) 保留上一轮架构历史；[MORNING_REPORT.md](MORNING_REPORT.md) 是早期历史快照，不再表示当前进度。
 
 ## 文档地图
 
@@ -61,9 +69,11 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 
 ### 设计文档
 
+下一阶段方案建议按顺序阅读：[完整方案](docs/HARNESS_TRANSFORMATION_PLAN.md) → [架构决策 ADR 0003](docs/adr/0003-plugin-composed-harness.md) → [运行时契约](docs/design/harness-runtime-v2.md) → [上游源码研究](docs/research/deepseek-harness-architecture-2026-11.md)。H01–H04 已实现并验证，H05–H14 仍按目标契约推进；完整改造尚未完成。
+
 | 文件                                                                         | 内容                                                 |
 | ---------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)                 | 当前整体改造计划、审计证据、正反方审议与 PR 路线     |
+| [docs/CODEX_ALIGNMENT_PLAN.md](docs/CODEX_ALIGNMENT_PLAN.md)                 | 上一轮整体改造计划、审计证据、正反方审议与 PR 路线   |
 | [docs/THREE_WAY_REVIEW.md](docs/THREE_WAY_REVIEW.md)                         | 与 Claude Code / Codex 的三方能力+界面对比与优先级   |
 | [docs/FLOATBOAT_ADOPTION_PLAN.md](docs/FLOATBOAT_ADOPTION_PLAN.md)           | 工作区治理层的采纳/拒绝决策记录与实施偏差            |
 | [docs/V0.3.0_REPORT.md](docs/V0.3.0_REPORT.md)                               | 0.3.0 交付报告：做了什么、拒绝了什么、发布踩了什么坑 |
@@ -81,10 +91,13 @@ Mac 客户端（v1 即将发布）：拖入 Applications → 首启完成 onboar
 
 ```
 packages/
+  kernel/        # trusted Cordis bootstrap/lifecycle adapter
+  protocol/      # app-server contracts and client transport
   core/          # @deepcode/core — agent loop, providers, tools, MCP, sandbox, hooks (UI-agnostic)
   shared-ui/     # @deepcode/shared-ui — types shared between CLI + Mac client + VS Code
 apps/
-  cli/           # @oratis/deepcode — Node.js CLI (npm publishable)
+  server/        # shared runtime owner and editor/desktop sidecar
+  cli/           # @oratis/deepcode — Node.js CLI (run from source)
   desktop/       # @deepcode/desktop — Tauri 2 + React Mac client
   vscode/        # deepcode — VS Code extension (app-server protocol client)
   lsp/           # @deepcode/lsp — LSP bridge for Neovim/Emacs/Sublime (v1.1)

@@ -1,5 +1,7 @@
 # Design: Plugin 安全模型
 
+> **H01 实现更新（2026-11-17）**：CLI/server 插件桥已经收敛到强制执行服务；插件子进程默认隔离、环境白名单、mode-only 解析与进程组/RPC 撤销已实现并完成 macOS 对抗验证，见 [实施进度](../HARNESS_IMPLEMENTATION_PROGRESS.md) 和 [security-model](../security-model.md)。本文以下为早期目标设计，不代表所有供应链/安装/UI 功能已实现；新的双层插件与 root broker 契约见 [Harness runtime v2](harness-runtime-v2.md)，H03 组合准入仍待实施。
+
 > **状态**：M0 必出 · v1 lock · 写代码前必须 review 通过  
 > **依赖章节**：DEVELOPMENT_PLAN.md §3.14 (plugins) / §3.9a (sandbox) / §3.15.10 (trust dialog) / `docs/design/sandbox-plan-worktree.md`
 

@@ -49,6 +49,17 @@ const CAPTURE_HEAD_CHARS = 1_000_000;
 const CAPTURE_TAIL_CHARS = 3_000_000;
 type TerminationReason = 'timeout' | 'aborted';
 
+const PROCESS_OUTPUT = Symbol('BashProcessOutput');
+interface BashProcessOutput {
+  stdout: string;
+  stderr: string;
+  truncated: boolean;
+}
+/** Host-only channels for protocol consumers; never serialized into tool events or journals. */
+export function bashProcessOutput(result: ToolResult): BashProcessOutput | undefined {
+  return (result as ToolResult & { [PROCESS_OUTPUT]?: BashProcessOutput })[PROCESS_OUTPUT];
+}
+
 // Monotonic suffix so two background spawns in the same millisecond from the
 // same pid don't collide on a log filename.
 let bgSeq = 0;
@@ -75,8 +86,9 @@ function summarize(
   if (terminationReason === 'timeout') parts.push(`[killed by timeout after ${timeoutMs}ms]`);
   if (terminationReason === 'aborted') parts.push('[aborted by user]');
   parts.push(`exit: ${code ?? 'unknown'}`);
-  return {
+  const result: ToolResult & { [PROCESS_OUTPUT]: BashProcessOutput } = {
     content: parts.join('\n'),
+    [PROCESS_OUTPUT]: { stdout, stderr, truncated: out.omitted > 0 || err.omitted > 0 },
     data: {
       exitCode: code,
       killed: terminationReason !== undefined,
@@ -86,6 +98,7 @@ function summarize(
     },
     isError: terminationReason !== undefined || (code !== null && code !== 0),
   };
+  return result;
 }
 
 /** Kill the whole foreground process group on POSIX, not just its shell. */

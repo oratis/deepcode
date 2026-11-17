@@ -37,6 +37,13 @@ export interface HookDispatcherOpts {
 
 export class HookDispatcher {
   private hooks: Hooks;
+  private readonly externalHandlers = new WeakMap<
+    HookHandler,
+    (
+      handler: HookHandler,
+      ctx: HookContext,
+    ) => Promise<{ stdout: string; stderr: string; exitCode: number }>
+  >();
   private readonly disabled: boolean;
   private readonly defaultTimeoutMs: number;
   private readonly allowedHttpHookUrls?: string[];
@@ -59,10 +66,13 @@ export class HookDispatcher {
    * Wire the `mcp_tool` hook handler. The agent loop calls this with a closure
    * that resolves the requested MCP tool from its registry — the construction
    * site (CLI host) doesn't yet have the live registry, so it can't pass one in.
-   * No-ops if a dispatcher was already supplied (constructor wins).
+   * No-ops if a dispatcher was already supplied, except when the runtime enforces its executor.
    */
-  setMcpToolDispatcher(fn: NonNullable<HookDispatcherOpts['mcpToolDispatcher']>): void {
-    if (!this.mcpToolDispatcher) this.mcpToolDispatcher = fn;
+  setMcpToolDispatcher(
+    fn: NonNullable<HookDispatcherOpts['mcpToolDispatcher']>,
+    enforceRuntime = false,
+  ): void {
+    if (enforceRuntime || !this.mcpToolDispatcher) this.mcpToolDispatcher = fn;
   }
   hasMcpToolDispatcher(): boolean {
     return !!this.mcpToolDispatcher;
@@ -72,8 +82,11 @@ export class HookDispatcher {
    * Wire the `agent` hook handler (runs a named sub-agent on the event). Set by
    * the agent loop using its sub-agent runner. No-ops if already set.
    */
-  setAgentDispatcher(fn: NonNullable<HookDispatcherOpts['agentDispatcher']>): void {
-    if (!this.agentDispatcher) this.agentDispatcher = fn;
+  setAgentDispatcher(
+    fn: NonNullable<HookDispatcherOpts['agentDispatcher']>,
+    enforceRuntime = false,
+  ): void {
+    if (enforceRuntime || !this.agentDispatcher) this.agentDispatcher = fn;
   }
   hasAgentDispatcher(): boolean {
     return !!this.agentDispatcher;
@@ -95,13 +108,28 @@ export class HookDispatcher {
    * Merge additional hook matchers into the dispatcher (e.g. from plugins).
    * Matchers under the same event name are appended in order.
    */
-  mergeHooks(extra: Hooks): void {
+  mergeHooks(
+    extra: Hooks,
+    executeExternal?: (
+      handler: HookHandler,
+      ctx: HookContext,
+    ) => Promise<{ stdout: string; stderr: string; exitCode: number }>,
+  ): void {
     for (const [event, matchers] of Object.entries(extra) as Array<
       [keyof Hooks, HookMatcher[] | undefined]
     >) {
       if (!matchers || matchers.length === 0) continue;
       const existing = this.hooks[event] ?? [];
-      this.hooks[event] = [...existing, ...matchers];
+      const owned = matchers.map((matcher) => ({
+        ...matcher,
+        hooks: matcher.hooks.map((handler) => {
+          const copy = { ...handler };
+          if (executeExternal && (copy.type === 'command' || copy.type === 'http'))
+            this.externalHandlers.set(copy, executeExternal);
+          return copy;
+        }),
+      }));
+      this.hooks[event] = [...existing, ...owned];
     }
   }
 
@@ -160,6 +188,14 @@ export class HookDispatcher {
     handler: HookHandler,
     ctx: HookContext,
   ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+    const external = this.externalHandlers.get(handler);
+    if (external) {
+      try {
+        return await external(handler, ctx);
+      } catch (error) {
+        return { stdout: '', stderr: (error as Error).message, exitCode: 1 };
+      }
+    }
     const payloadJson = JSON.stringify({ event: ctx.event, payload: ctx.payload });
     switch (handler.type) {
       case 'command':

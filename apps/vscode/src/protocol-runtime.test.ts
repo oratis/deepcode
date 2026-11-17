@@ -15,6 +15,7 @@ import { EditorProtocolRuntime } from './protocol-runtime.js';
 
 class FakeClient {
   handlers = new Set<(event: ProtocolEvent) => void>();
+  disconnectHandlers = new Set<(error: Error) => void>();
   requests: ProtocolRequest[] = [];
   thread: ThreadSnapshot = {
     id: 'thread-1',
@@ -55,6 +56,11 @@ class FakeClient {
   subscribe(handler: (event: ProtocolEvent) => void) {
     this.handlers.add(handler);
     return () => this.handlers.delete(handler);
+  }
+
+  subscribeDisconnect(handler: (error: Error) => void) {
+    this.disconnectHandlers.add(handler);
+    return () => this.disconnectHandlers.delete(handler);
   }
 
   async request<T>(method: ProtocolMethod, params: Record<string, unknown> = {}): Promise<T> {

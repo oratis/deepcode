@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useRef, useState, type JSX } from 'react';
 import { Card, Row, Screen, SectionTitle } from '../components/Screen.js';
 import { loadProjectPath } from '../lib/project.js';
+import { parseSettingsJson } from '../lib/settings-editor.js';
 import { getSettingsPath, loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';
 
 export function SettingsScreen(): JSX.Element {
@@ -17,33 +18,41 @@ export function SettingsScreen(): JSX.Element {
   const [view, setView] = useState<'gui' | 'json'>('gui');
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
+    let disposed = false;
+    setLoadError(null);
     void (async () => {
-      const [s, path, project] = await Promise.all([
-        loadSettingsFile(),
-        getSettingsPath(),
-        loadProjectPath(),
-      ]);
-      setSettings(s);
-      setSettingsPath(path);
-      setProjectPath(project);
-      setRawJson(JSON.stringify(s, null, 2));
+      try {
+        const [s, path, project] = await Promise.all([
+          loadSettingsFile(),
+          getSettingsPath(),
+          loadProjectPath(),
+        ]);
+        if (disposed) return;
+        const json = JSON.stringify(s, null, 2);
+        setSettings(parseSettingsJson(json));
+        setSettingsPath(path);
+        setProjectPath(project);
+        setRawJson(json);
+      } catch (err) {
+        if (!disposed) setLoadError(err instanceof Error ? err.message : String(err));
+      }
     })();
-  }, []);
+    return () => {
+      disposed = true;
+    };
+  }, [loadAttempt]);
 
   function handleJsonChange(text: string): void {
     setRawJson(text);
+    setFeedback(null);
     try {
-      const parsed = JSON.parse(text);
-      if (typeof parsed !== 'object' || parsed === null) {
-        setParseError('Top-level must be an object.');
-        return;
-      }
-      setSettings(parsed as Record<string, unknown>);
+      setSettings(parseSettingsJson(text));
       setParseError(null);
-      setFeedback(null);
     } catch (err) {
       setParseError((err as Error).message);
     }
@@ -89,7 +98,20 @@ export function SettingsScreen(): JSX.Element {
   if (settings === null) {
     return (
       <Screen title="Settings">
-        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
+        {loadError ? (
+          <div style={{ padding: 20 }}>
+            <p role="alert" style={{ color: 'var(--error)' }}>
+              Could not load settings: {loadError}
+            </p>
+            <button type="button" className="btn" onClick={() => setLoadAttempt((n) => n + 1)}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div role="status" style={{ padding: 20, color: 'var(--text-2)' }}>
+            Loading settings…
+          </div>
+        )}
       </Screen>
     );
   }
@@ -97,10 +119,12 @@ export function SettingsScreen(): JSX.Element {
   return (
     <Screen
       title="Settings"
-      subtitle={settingsPath ?? '~/.deepcode/settings.json'}
+      subtitle={`User settings · ${settingsPath ?? '~/.deepcode/settings.json'}`}
       actions={
         <>
           <div
+            role="group"
+            aria-label="Settings view"
             style={{
               display: 'flex',
               gap: 2,
@@ -115,6 +139,7 @@ export function SettingsScreen(): JSX.Element {
                 key={v}
                 type="button"
                 onClick={() => setView(v)}
+                aria-pressed={view === v}
                 style={{
                   padding: '4px 12px',
                   fontSize: 11,
@@ -128,7 +153,7 @@ export function SettingsScreen(): JSX.Element {
                   letterSpacing: 1,
                 }}
               >
-                {v}
+                {v === 'gui' ? 'Overview' : 'JSON'}
               </button>
             ))}
           </div>
@@ -146,8 +171,13 @@ export function SettingsScreen(): JSX.Element {
       }
     >
       <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+          The current conversation keeps the model, effort and mode shown in its composer. Open a
+          new session to load saved defaults.
+        </p>
         {feedback && (
           <div
+            role={feedback.startsWith('✓') ? 'status' : 'alert'}
             style={{
               marginBottom: 14,
               padding: '8px 12px',
@@ -203,6 +233,7 @@ export function SettingsScreen(): JSX.Element {
               actions={
                 <input
                   type="search"
+                  aria-label="Filter settings keys"
                   className="input"
                   placeholder="Filter keys…"
                   value={search}
@@ -308,7 +339,11 @@ export function SettingsScreen(): JSX.Element {
           <Card title="Raw JSON" padding={0}>
             <textarea
               ref={textareaRef}
+              aria-label="Settings JSON"
+              aria-invalid={parseError !== null}
+              aria-describedby={parseError ? 'settings-json-error' : undefined}
               value={rawJson}
+              disabled={saving}
               onChange={(e) => handleJsonChange(e.target.value)}
               spellCheck={false}
               style={{
@@ -322,11 +357,12 @@ export function SettingsScreen(): JSX.Element {
                 fontSize: 12.5,
                 lineHeight: 1.6,
                 resize: 'vertical',
-                outline: 'none',
               }}
             />
             {parseError && (
               <div
+                id="settings-json-error"
+                role="alert"
                 style={{
                   padding: '8px 16px',
                   background: 'rgba(255, 84, 112, 0.12)',

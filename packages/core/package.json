@@ -115,7 +115,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "openai": "^7.5.0"
+    "openai": "^7.5.0",
+    "@deepcode/kernel": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

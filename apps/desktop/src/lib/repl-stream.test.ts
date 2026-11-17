@@ -35,26 +35,106 @@ describe('repl-stream mutators', () => {
     expect(m[1]).toMatchObject({ role: 'assistant', turn: { text: 'Hello', streaming: true } });
   });
 
-  it('does NOT spawn a second cursor when a system note interleaves the stream', () => {
-    // Reproduces the "two blinking cursors" bug: a breadcrumb pushed between
-    // streaming deltas must not orphan the open turn or start a new one.
+  it('places the answer after tools and a system note with only one cursor', () => {
     let m: Msg[] = [{ role: 'user', text: 'write a game' }];
     m = appendTextDelta(m, 'Creating files');
     m = appendToolUse(m, tool('w1', 'Write'));
     // User clicks "always allow" → a system note is pushed mid-turn.
     m.push({ role: 'system', text: '✓ "Write" added to settings.permissions.allow' });
     // The model keeps streaming the next agent-loop turn.
-    m = appendTextDelta(m, ' and more');
+    m = appendTextDelta(m, 'The file is ready.');
     m = appendToolUse(m, tool('w2', 'Write'));
 
-    // Exactly one streaming assistant turn — not two.
     expect(streamingTurns(m)).toBe(1);
-    const assistant = m.find((x) => x.role === 'assistant');
-    expect(assistant?.role === 'assistant' && assistant.turn.text).toBe('Creating files and more');
-    expect(assistant?.role === 'assistant' && assistant.turn.tools.map((t) => t.toolId)).toEqual([
-      'w1',
-      'w2',
+    expect(m).toMatchObject([
+      { role: 'user' },
+      {
+        role: 'assistant',
+        turn: {
+          text: 'Creating files',
+          streaming: false,
+          tools: [{ toolId: 'w1', status: 'running' }],
+        },
+      },
+      { role: 'system', text: '✓ "Write" added to settings.permissions.allow' },
+      {
+        role: 'assistant',
+        turn: { text: 'The file is ready.', streaming: true, tools: [{ toolId: 'w2' }] },
+      },
     ]);
+  });
+
+  it('keeps text continuous across a system note when no tool intervenes', () => {
+    let m = appendTextDelta([], 'Hello');
+    m.push({ role: 'system', text: 'status note' });
+    m = appendTextDelta(m, ' world');
+    expect(m).toHaveLength(2);
+    expect(m[0]).toMatchObject({ role: 'assistant', turn: { text: 'Hello world' } });
+    expect(streamingTurns(m)).toBe(1);
+  });
+
+  it('preserves text-tool-text order across multiple model steps', () => {
+    let m = appendTextDelta([], 'I will read the configuration.');
+    m = appendToolUse(m, tool('read', 'Read'));
+    m = attachToolResult(m, 'read', 'current configuration', 'ok');
+    m = appendTextDelta(m, 'It needs an update.');
+    m = appendToolUse(m, tool('edit', 'Edit'));
+    m = attachToolResult(m, 'edit', 'saved', 'ok');
+    m = appendTextDelta(m, 'The update is');
+    m = appendTextDelta(m, ' complete.');
+    expect(m).toMatchObject([
+      {
+        role: 'assistant',
+        turn: {
+          text: 'I will read the configuration.',
+          streaming: false,
+          tools: [{ toolId: 'read', status: 'ok' }],
+        },
+      },
+      {
+        role: 'assistant',
+        turn: {
+          text: 'It needs an update.',
+          streaming: false,
+          tools: [{ toolId: 'edit', status: 'ok' }],
+        },
+      },
+      { role: 'assistant', turn: { text: 'The update is complete.', streaming: true, tools: [] } },
+    ]);
+    expect(streamingTurns(m)).toBe(1);
+  });
+
+  it('matches delayed results across chunks without settling another running tool', () => {
+    let m = appendToolUse([], tool('first', 'Read'));
+    m = appendTextDelta(m, 'Checking the next file.');
+    m = appendToolUse(m, tool('second', 'Grep'));
+    m = appendTextDelta(m, 'Collecting results.');
+    const before = m;
+    m = attachToolResult(m, 'first', 'first body', 'ok');
+    expect((m[0] as AssistantMsg).turn.tools[0]).toMatchObject({
+      toolId: 'first',
+      status: 'ok',
+      resultText: 'first body',
+    });
+    expect((m[1] as AssistantMsg).turn.tools[0]).toMatchObject({
+      toolId: 'second',
+      status: 'running',
+    });
+    expect((before[0] as AssistantMsg).turn.tools[0]?.status).toBe('running');
+    m = attachToolResult(m, 'second', 'grep failed', 'err');
+    expect((m[1] as AssistantMsg).turn.tools[0]).toMatchObject({
+      toolId: 'second',
+      status: 'err',
+      resultText: 'grep failed',
+    });
+    expect((m[2] as AssistantMsg).turn.text).toBe('Collecting results.');
+    expect(streamingTurns(m)).toBe(1);
+  });
+
+  it('does not split a tool chunk for an empty streaming delta', () => {
+    const m = appendToolUse([], tool('read', 'Read'));
+    expect(appendTextDelta(m, '')).toBe(m);
+    expect(appendReasoningDelta(m, '')).toBe(m);
   });
 
   it('attaches tool results to the matching card by id', () => {
@@ -128,6 +208,32 @@ describe('repl-stream mutators', () => {
     expect(streamingTurns(out)).toBe(0);
   });
 
+  it.each([
+    [false, 'unknown'],
+    [true, 'interrupted'],
+  ] as const)(
+    'settles missing tool results across every chunk (interrupted=%s)',
+    (interrupted, status) => {
+      let m = appendToolUse([], tool('first', 'Write'));
+      m = appendToolUse(m, { ...tool('done', 'Read'), status: 'ok', resultText: 'read body' });
+      m = appendTextDelta(m, 'More work');
+      m = appendToolUse(m, tool('second', 'Edit'));
+      m = appendToolUse(m, { ...tool('failed', 'Bash'), status: 'err', resultText: 'failed' });
+      m = appendTextDelta(m, 'Finishing');
+      const out = finalizeStreaming(m, interrupted);
+      expect(streamingTurns(out)).toBe(0);
+      expect((out[0] as AssistantMsg).turn.tools).toMatchObject([
+        { toolId: 'first', status },
+        { toolId: 'done', status: 'ok', resultText: 'read body' },
+      ]);
+      expect((out[1] as AssistantMsg).turn.tools).toMatchObject([
+        { toolId: 'second', status },
+        { toolId: 'failed', status: 'err', resultText: 'failed' },
+      ]);
+      expect((m[0] as AssistantMsg).turn.tools[0]?.status).toBe('running');
+    },
+  );
+
   it('lastAssistantIndex skips trailing system / user messages', () => {
     const m: Msg[] = [
       { role: 'assistant', turn: { text: 'x', tools: [], streaming: true } },
@@ -184,6 +290,60 @@ describe('repl-stream mutators', () => {
     const a = msgs[0];
     if (a?.role !== 'assistant') throw new Error('expected assistant');
     expect(a.turn.tools[0]).toMatchObject({ status: 'err', resultText: 'boom' });
+  });
+
+  it('restores interleaved text/tool blocks in order and attaches results across chunks', () => {
+    const msgs = storedToMsgs([
+      {
+        role: 'assistant',
+        content: [
+          { type: 'text', text: 'First read.' },
+          { type: 'tool_use', id: 'read', name: 'Read', input: {} },
+          { type: 'text', text: 'Then edit.' },
+          { type: 'tool_use', id: 'edit', name: 'Edit', input: {} },
+          { type: 'text', text: 'Finished.' },
+        ],
+      },
+      {
+        role: 'user',
+        content: [
+          { type: 'tool_result', tool_use_id: 'edit', content: 'saved' },
+          { type: 'tool_result', tool_use_id: 'read', content: 'body' },
+        ],
+      },
+    ]);
+    expect(msgs).toMatchObject([
+      {
+        role: 'assistant',
+        turn: {
+          text: 'First read.',
+          streaming: false,
+          tools: [{ toolId: 'read', status: 'ok', resultText: 'body' }],
+        },
+      },
+      {
+        role: 'assistant',
+        turn: {
+          text: 'Then edit.',
+          streaming: false,
+          tools: [{ toolId: 'edit', status: 'ok', resultText: 'saved' }],
+        },
+      },
+      { role: 'assistant', turn: { text: 'Finished.', streaming: false, tools: [] } },
+    ]);
+  });
+
+  it('restores a missing historical tool result as unknown, never running or successful', () => {
+    const msgs = storedToMsgs([
+      { role: 'assistant', content: [{ type: 'tool_use', id: 'lost', name: 'Write', input: {} }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'Partial answer' }] },
+    ]);
+    expect((msgs[0] as AssistantMsg).turn.tools[0]).toMatchObject({
+      toolId: 'lost',
+      status: 'unknown',
+    });
+    expect((msgs[0] as AssistantMsg).turn.tools[0]?.resultText).toBeUndefined();
+    expect(streamingTurns(msgs)).toBe(0);
   });
 
   it('pickTarget surfaces the most relevant field', () => {
@@ -281,6 +441,30 @@ describe('threadToMsgs', () => {
   it('returns nothing for a thread with no turns', () => {
     expect(threadToMsgs({ turns: [] })).toEqual([]);
   });
+
+  it('marks missing results in a protocol snapshot as unknown while retaining its error', () => {
+    const msgs = threadToMsgs(
+      turn([
+        {
+          type: 'assistant_message',
+          payload: {
+            message: {
+              role: 'assistant',
+              content: [{ type: 'tool_use', id: 'lost', name: 'Write', input: {} }],
+            },
+          },
+        },
+        { type: 'error', payload: { message: 'Connection lost before result' } },
+      ]),
+    );
+    expect((msgs[0] as AssistantMsg).turn.tools[0]?.status).toBe('unknown');
+    expect(msgs[1]).toMatchObject({
+      role: 'system',
+      level: 'error',
+      text: 'Connection lost before result',
+    });
+    expect(streamingTurns(msgs)).toBe(0);
+  });
 });
 
 describe('threadReviewItems', () => {
@@ -332,5 +516,32 @@ describe('appendReasoningDelta', () => {
   it('does not leak reasoning into the answer text', () => {
     const msgs = appendTextDelta(appendReasoningDelta([], 'secret plan'), 'visible');
     expect((msgs[0] as AssistantMsg).turn.text).toBe('visible');
+  });
+
+  it('puts the next step reasoning after the previous tool rather than before its card', () => {
+    let msgs = appendReasoningDelta([], 'first thought');
+    msgs = appendToolUse(msgs, tool('read', 'Read'));
+    msgs = appendReasoningDelta(msgs, 'reasoning after read');
+    msgs = appendTextDelta(msgs, 'answer after read');
+    expect(msgs).toMatchObject([
+      {
+        role: 'assistant',
+        turn: {
+          reasoning: 'first thought',
+          streaming: false,
+          tools: [{ toolId: 'read', status: 'running' }],
+        },
+      },
+      {
+        role: 'assistant',
+        turn: {
+          reasoning: 'reasoning after read',
+          text: 'answer after read',
+          tools: [],
+          streaming: true,
+        },
+      },
+    ]);
+    expect(streamingTurns(msgs)).toBe(1);
   });
 });

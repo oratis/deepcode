@@ -7,6 +7,10 @@ import { build } from 'esbuild';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outputRoot = resolve(packageRoot, 'dist');
+const notices = await readFile(
+  resolve(packageRoot, '..', '..', 'packages', 'kernel', 'THIRD_PARTY_NOTICES.md'),
+  'utf8',
+);
 const settingsSchema = await readFile(
   resolve(packageRoot, '..', '..', 'packages', 'core', 'schemas', 'settings.schema.json'),
   'utf8',
@@ -39,6 +43,7 @@ await Promise.all([
     platform: 'node',
     format: 'cjs',
     target: 'node22',
+    banner: { js: `/* ${notices.replaceAll('*/', '* /')} */` },
     minify: true,
     external: ['@anthropic-ai/claude-agent-sdk'],
     sourcemap: false,

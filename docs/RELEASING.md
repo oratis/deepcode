@@ -81,9 +81,10 @@ individual name is free. A scope is not claimable by publishing into it.
 
 ```bash
 # 1. Make sure main is green and CHANGELOG.md has an entry for the new version.
-# 2. Bump versions everywhere in lockstep — all SIX places:
+# 2. Bump versions everywhere in lockstep — all SEVEN places:
 #    - packages/core/src/index.ts        (VERSION — what `deepcode --version` prints)
 #    - apps/cli/package.json             (what npm publishes)
+#    - apps/vscode/package.json          (installable VSIX)
 #    - apps/desktop/package.json
 #    - apps/desktop/src-tauri/tauri.conf.json
 #    - apps/desktop/src-tauri/Cargo.toml
@@ -230,8 +231,10 @@ only within 72h of publish. If a CLI version needs urgent rollback past
 that window, publish a patched higher version instead and let users
 upgrade.
 
-For app-server data rollback, keep `~/.deepcode/sessions` intact. Rich `threads-v1` snapshots are an
-additive projection and legacy sessions are never rewritten by import. Rehearse rollback only on a
+For app-server data rollback, keep `~/.deepcode/sessions` and legacy `threads-v1` snapshots intact.
+Version 0.5.0 writes new facts to `sessions-v2`; 0.4.x cannot read that journal. Legacy native imports
+leave their source payloads unchanged, and legacy SDK/snapshot-only records remain read-only. See the
+[session compatibility and rollback guide](HARNESS_RUNTIME_GUIDE.md). Rehearse rollback only on a
 copy or an isolated `DEEPCODE_HOME`; do not delete user session data to downgrade an application.
 
 ## Post-build DMG smoke test

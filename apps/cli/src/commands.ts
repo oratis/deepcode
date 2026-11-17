@@ -695,7 +695,7 @@ export const RewindCommand: SlashCommand = {
     'List file snapshots and roll back (5 ops): /rewind [<seq> code|conversation|both|summarize-from|summarize-up-to]',
   async run(args, ctx) {
     const { listSnapshots, restoreSnapshot, compact } = await import('@deepcode/core');
-    const sessionsRoot = ctx.sessions.root;
+    const sessionsRoot = ctx.sessions.resourceRoot;
     const snaps = await listSnapshots({ sessionsRoot, sessionId: ctx.sessionId });
 
     if (snaps.length === 0) {

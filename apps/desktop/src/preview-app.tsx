@@ -16,6 +16,7 @@ import { App } from './App.js';
 import { installTauriShim } from './lib/window-shim.js';
 import { setActiveSessionId } from './lib/mac-session.js';
 import './index.css';
+import './workspace.css';
 
 const now = Math.floor(Date.now() / 1000);
 const MOCK_SESSIONS = [
@@ -154,6 +155,16 @@ let activeThreadId = MOCK_SESSIONS[0]!.id;
 let activeTurn: TurnSnapshot | null = null;
 const archivedThreads = new Set<string>();
 const protocolRequests: ProtocolRequest[] = [];
+let failMethod: string | null = null;
+let failCommand: string | null = null;
+let deferInterrupt = false;
+const deferredMethods = new Set<string>();
+const releaseRequests = new Map<string, () => void>();
+async function finishInterrupt(): Promise<void> {
+  if (!activeTurn) return;
+  activeTurn = { ...activeTurn, status: 'interrupted', completedAt: new Date().toISOString() };
+  await sendEvent({ type: 'turn.interrupted', threadId: activeTurn.threadId, turn: activeTurn });
+}
 
 // One fixture thread carries completed items so resume can be exercised against
 // the protocol snapshot; the others stay empty so the legacy message-projection
@@ -259,6 +270,18 @@ async function sendEvent(event: ProtocolEvent): Promise<void> {
 
 async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
   protocolRequests.push(request);
+  if (deferredMethods.delete(request.method)) {
+    await new Promise<void>((resolve) => releaseRequests.set(request.method, resolve));
+    releaseRequests.delete(request.method);
+  }
+  if (request.method === failMethod) {
+    failMethod = null;
+    await sendProtocol({
+      id: request.id,
+      error: { code: 'fixture_error', message: 'Fixture request failed' },
+    });
+    return;
+  }
   const respond = (result: unknown) => sendProtocol({ id: request.id, result });
   switch (request.method) {
     case 'initialize':
@@ -413,6 +436,7 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
       break;
     }
     case 'turn/start': {
+      activeThreadId = String(request.params.threadId);
       const turnId = `preview-turn-${nextTurn++}`;
       activeTurn = {
         id: turnId,
@@ -424,6 +448,56 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
       // Emit before the response to exercise the renderer's fast-turn buffer.
       await sendEvent({ type: 'turn.started', threadId: activeThreadId, turn: activeTurn });
       await respond(activeTurn);
+      const prompt = (request.params.input as { text?: string } | undefined)?.text;
+      if (prompt === 'fixture:question') {
+        await sendEvent({
+          type: 'user-input.requested',
+          threadId: activeThreadId,
+          turnId,
+          requestId: 'fixture-question',
+          question: 'Which checks should run?',
+          options: [
+            { label: 'Unit tests', description: 'Fast feedback' },
+            { label: 'Browser tests', description: 'Visible behavior' },
+          ],
+          multiSelect: true,
+        });
+        break;
+      }
+      if (prompt === 'fixture:long-output') {
+        await sendEvent({
+          type: 'tool.started',
+          threadId: activeThreadId,
+          turnId,
+          itemId: 'fixture-bash',
+          name: 'Bash',
+          input: { command: 'pnpm test' },
+        });
+        await sendEvent({
+          type: 'tool.completed',
+          threadId: activeThreadId,
+          turnId,
+          itemId: 'fixture-bash',
+          result: {
+            content: `Test log start\n${'Passed check\n'.repeat(300)}FAIL: fixture tail diagnostic`,
+            isError: true,
+          },
+        });
+        await sendEvent({
+          type: 'item.delta',
+          threadId: activeThreadId,
+          turnId,
+          itemId: 'assistant',
+          delta:
+            '## Check result\n\nThe test **failed**. Inspect `src/boss.ts`.\n\n```ts\nconst phase = 1;\n```',
+        });
+        await sendEvent({
+          type: 'turn.completed',
+          threadId: activeThreadId,
+          turn: { ...activeTurn, status: 'completed' },
+        });
+        break;
+      }
       await sendEvent({
         type: 'reasoning.delta',
         threadId: activeThreadId,
@@ -507,20 +581,16 @@ async function handleProtocolRequest(request: ProtocolRequest): Promise<void> {
     }
     case 'user-input/respond':
       await respond({ accepted: true });
+      if (activeTurn)
+        await sendEvent({
+          type: 'turn.completed',
+          threadId: activeTurn.threadId,
+          turn: { ...activeTurn, status: 'completed' },
+        });
       break;
     case 'turn/interrupt': {
       await respond({ interrupted: activeTurn !== null });
-      if (!activeTurn) break;
-      activeTurn = {
-        ...activeTurn,
-        status: 'interrupted',
-        completedAt: '2026-08-01T00:00:02.000Z',
-      };
-      await sendEvent({
-        type: 'turn.interrupted',
-        threadId: activeTurn.threadId,
-        turn: activeTurn,
-      });
+      if (!deferInterrupt) await finishInterrupt();
       break;
     }
   }
@@ -534,6 +604,10 @@ mockIPC(
       args !== null && typeof args === 'object' && !Array.isArray(args)
         ? (args as Record<string, unknown>)
         : {};
+    if (cmd === failCommand) {
+      failCommand = null;
+      throw new Error('Fixture command failed');
+    }
     switch (cmd) {
       case 'app_server_start':
       case 'app_server_status':
@@ -602,6 +676,30 @@ mockIPC(
 Object.defineProperty(window, '__DEEPCODE_FIXTURE__', {
   configurable: true,
   value: {
+    failNextRequest(method: string) {
+      failMethod = method;
+    },
+    failNextCommand(command: string) {
+      failCommand = command;
+    },
+    deferNextRequest(method: string) {
+      deferredMethods.add(method);
+    },
+    releaseRequest(method: string) {
+      releaseRequests.get(method)?.();
+    },
+    deferInterrupt(value: boolean) {
+      deferInterrupt = value;
+    },
+    finishInterrupt,
+    async event(event: Record<string, unknown>) {
+      if (!activeTurn) throw new Error('No active fixture turn');
+      await sendEvent({
+        threadId: activeTurn.threadId,
+        turnId: activeTurn.id,
+        ...event,
+      } as ProtocolEvent);
+    },
     get protocolRequests() {
       return [...protocolRequests];
     },

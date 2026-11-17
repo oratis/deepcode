@@ -1,5 +1,7 @@
 # DeepSeek Harness (`dsh`) 调研报告
 
+> **历史调研**：本文固定于 2026-08 的源码，不代表当前上游或 DeepCode。2026-11 的全架构源码复核见 [新研究](deepseek-harness-architecture-2026-11.md)，新的范围与实施路线见 [完整改造方案](../HARNESS_TRANSFORMATION_PLAN.md)。保留本文用于追溯第一轮采纳依据。
+
 > 调研对象：[`deepseek-ai/deepseek-harness`](https://github.com/deepseek-ai/deepseek-harness)
 > 基线：`47f94385`（2026-08-13）· 版本 `0.1.0-rc.5` · MIT
 > 方式：**一手克隆通读**源码树与 `docs/`，不采信第三方转述

@@ -1,0 +1,129 @@
+{
+  "node": "v22.23.4",
+  "platform": "darwin-arm64",
+  "status": "ok",
+  "cordis": "4.1.0",
+  "desktop": {
+    "initializeMs": 48.65537499999982,
+    "rssBytes": 74186752
+  },
+  "samples": {
+    "baseline": [
+      {
+        "initializeMs": 1087.408,
+        "rssBytes": 73334784
+      },
+      {
+        "initializeMs": 45.518291999999974,
+        "rssBytes": 73269248
+      },
+      {
+        "initializeMs": 43.65162499999997,
+        "rssBytes": 73334784
+      },
+      {
+        "initializeMs": 45.083624999999984,
+        "rssBytes": 73220096
+      },
+      {
+        "initializeMs": 43.89325000000008,
+        "rssBytes": 73351168
+      },
+      {
+        "initializeMs": 44.508666000000176,
+        "rssBytes": 73367552
+      },
+      {
+        "initializeMs": 43.21699999999964,
+        "rssBytes": 73367552
+      },
+      {
+        "initializeMs": 44.74879099999998,
+        "rssBytes": 73285632
+      },
+      {
+        "initializeMs": 45.86820799999987,
+        "rssBytes": 73416704
+      },
+      {
+        "initializeMs": 45.25912500000004,
+        "rssBytes": 73351168
+      },
+      {
+        "initializeMs": 46.929833000000144,
+        "rssBytes": 73449472
+      }
+    ],
+    "candidate": [
+      {
+        "initializeMs": 47.663540999999896,
+        "rssBytes": 74203136
+      },
+      {
+        "initializeMs": 48.793750000000045,
+        "rssBytes": 74203136
+      },
+      {
+        "initializeMs": 47.16208299999994,
+        "rssBytes": 74137600
+      },
+      {
+        "initializeMs": 46.4541670000001,
+        "rssBytes": 74203136
+      },
+      {
+        "initializeMs": 46.697291999999834,
+        "rssBytes": 74186752
+      },
+      {
+        "initializeMs": 48.609750000000076,
+        "rssBytes": 74432512
+      },
+      {
+        "initializeMs": 47.664666000000125,
+        "rssBytes": 74301440
+      },
+      {
+        "initializeMs": 47.90708300000006,
+        "rssBytes": 74170368
+      },
+      {
+        "initializeMs": 47.84954099999959,
+        "rssBytes": 74170368
+      },
+      {
+        "initializeMs": 47.83337500000016,
+        "rssBytes": 74383360
+      },
+      {
+        "initializeMs": 45.943207999999686,
+        "rssBytes": 74186752
+      }
+    ]
+  },
+  "medians": {
+    "baseline": {
+      "initializeMs": 45.083624999999984,
+      "rssBytes": 73351168
+    },
+    "candidate": {
+      "initializeMs": 47.664666000000125,
+      "rssBytes": 74203136
+    }
+  },
+  "browserBytes": 30809,
+  "bytes": {
+    "extension": 31814,
+    "baselineServer": 706096,
+    "candidateServer": 740525,
+    "desktopServer": 740525,
+    "baselineVsix": 218798,
+    "candidateVsix": 231127
+  },
+  "overhead": {
+    "server": 0.04875965874328703,
+    "vsix": 0.056348778325213233,
+    "initialize": 0.057250076940355665,
+    "rss": 0.011614920705829812
+  }
+}

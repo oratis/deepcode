@@ -1,9 +1,6 @@
-// Plugins screen — design-aligned. Per spec screen #12.
-// List installed plugins, their trust state + contributed hooks,
-// enable/disable, install new ones. Install IPC still stubbed (P3
-// will wire installFromSpec).
+// Installed plugin manifests and saved load preferences. Activation remains host-owned.
 
-import { useEffect, useState, type JSX } from 'react';
+import { useEffect, useRef, useState, type JSX } from 'react';
 import { Badge, type BadgeKind } from '../components/Badge.js';
 import { Card, Screen } from '../components/Screen.js';
 import { loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';
@@ -11,11 +8,11 @@ import { loadSettingsFile, saveSettingsFile } from '../lib/tauri-api.js';
 interface PluginRow {
   name: string;
   version: string;
-  enabled: boolean;
   contributedHookEvents: string[];
   sourceHash: string;
   trustedBy: 'user' | 'marketplace' | 'official';
   warning?: string;
+  configuredEnabled: boolean;
 }
 
 const TRUST_BADGE: Record<PluginRow['trustedBy'], { kind: BadgeKind; label: string }> = {
@@ -26,222 +23,202 @@ const TRUST_BADGE: Record<PluginRow['trustedBy'], { kind: BadgeKind; label: stri
 
 export function PluginsScreen(): JSX.Element {
   const [plugins, setPlugins] = useState<PluginRow[] | null>(null);
-  const [installSpec, setInstallSpec] = useState('');
-  const [installing, setInstalling] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
+  const [savingName, setSavingName] = useState<string | null>(null);
+  const savingRef = useRef(false);
+  const [feedback, setFeedback] = useState<{ text: string; error: boolean } | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
-  // Initial load — merge live list with settings.disabledPlugins[].
   useEffect(() => {
+    let disposed = false;
+    setLoadError(null);
+    setPlugins(null);
     void (async () => {
       try {
-        const [rows, settings] = await Promise.all([
-          window.deepcode?.plugins?.list?.() ?? Promise.resolve([]),
-          loadSettingsFile().catch(() => ({}) as Record<string, unknown>),
-        ]);
+        const list = window.deepcode?.plugins?.list;
+        if (!list) throw new Error('Plugin listing is unavailable in this client.');
+        const [rows, settings] = await Promise.all([list(), loadSettingsFile()]);
+        if (disposed) return;
         const disabled = new Set(
           Array.isArray(settings.disabledPlugins) ? (settings.disabledPlugins as string[]) : [],
         );
-        const merged = (rows as PluginRow[]).map((p) => ({
-          ...p,
-          enabled: !disabled.has(p.name),
-        }));
-        setPlugins(merged);
-      } catch {
-        setPlugins([]);
+        setPlugins(
+          rows.map((p) => ({
+            ...p,
+            configuredEnabled: !disabled.has(p.name),
+          })),
+        );
+      } catch (err) {
+        if (!disposed) setLoadError(err instanceof Error ? err.message : String(err));
       }
     })();
-  }, []);
+    return () => {
+      disposed = true;
+    };
+  }, [loadAttempt]);
 
   async function handleToggle(name: string, nextEnabled: boolean): Promise<void> {
-    // Optimistic UI
-    setPlugins((ps) =>
-      ps ? ps.map((p) => (p.name === name ? { ...p, enabled: nextEnabled } : p)) : ps,
-    );
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSavingName(name);
+    setFeedback(null);
     try {
-      const current = (await loadSettingsFile()) as Record<string, unknown>;
+      const current = await loadSettingsFile();
       const disabled = new Set(
         Array.isArray(current.disabledPlugins) ? (current.disabledPlugins as string[]) : [],
       );
       if (nextEnabled) disabled.delete(name);
       else disabled.add(name);
-      await saveSettingsFile({
-        ...current,
-        disabledPlugins: [...disabled],
-      });
-      setFeedback(
-        `✓ ${nextEnabled ? 'Enabled' : 'Disabled'} "${name}". Takes effect on next agent turn.`,
-      );
-    } catch (err) {
-      // Revert
+      await saveSettingsFile({ ...current, disabledPlugins: [...disabled] });
       setPlugins((ps) =>
-        ps ? ps.map((p) => (p.name === name ? { ...p, enabled: !nextEnabled } : p)) : ps,
+        ps ? ps.map((p) => (p.name === name ? { ...p, configuredEnabled: nextEnabled } : p)) : ps,
       );
-      setFeedback(`✕ Toggle failed: ${(err as Error).message}`);
-    }
-  }
-
-  async function handleInstall(): Promise<void> {
-    if (!installSpec.trim()) return;
-    setInstalling(true);
-    setFeedback(null);
-    try {
-      // Plugin install via Tauri is still not wired — surface that clearly.
-      await new Promise((r) => setTimeout(r, 400));
-      setFeedback(
-        'Plugin install from the desktop UI is coming in v0.2. For now, install via the CLI: `deepcode plugin install ' +
-          installSpec.trim() +
-          '`',
-      );
+      setFeedback({
+        text: `Saved: "${name}" is configured ${nextEnabled ? 'on' : 'off'} for future turns. Trust and runtime checks still apply.`,
+        error: false,
+      });
+    } catch (err) {
+      setFeedback({
+        text: `Could not save preference: ${err instanceof Error ? err.message : String(err)}`,
+        error: true,
+      });
     } finally {
-      setInstalling(false);
+      savingRef.current = false;
+      setSavingName(null);
     }
   }
-
-  if (plugins === null) {
-    return (
-      <Screen title="Plugins">
-        <div style={{ padding: 20, color: 'var(--text-2)' }}>Loading…</div>
-      </Screen>
-    );
-  }
-
-  const enabled = plugins.filter((p) => p.enabled).length;
 
   return (
-    <Screen title="Plugins" subtitle={`${plugins.length} installed · ${enabled} enabled`}>
+    <Screen
+      title="Plugins"
+      subtitle={
+        plugins ? `${plugins.length} installed · User load preferences` : 'User load preferences'
+      }
+      actions={
+        <button
+          type="button"
+          className="btn"
+          disabled={savingName !== null || (plugins === null && !loadError)}
+          onClick={() => setLoadAttempt((n) => n + 1)}
+        >
+          Refresh
+        </button>
+      }
+    >
       <div style={{ maxWidth: 820, margin: '0 auto' }}>
-        <Card title="Install new plugin">
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              value={installSpec}
-              onChange={(e) => setInstallSpec(e.target.value)}
-              placeholder="gh:user/repo · <pkg>@npm · /local/path"
-              className="input"
-              style={{ flex: 1 }}
-            />
-            <button
-              type="button"
-              onClick={handleInstall}
-              disabled={installing || !installSpec.trim()}
-              className="btn btn-primary"
-            >
-              {installing && <span className="spinner" />}
-              {installing ? 'Installing…' : 'Install'}
-            </button>
-          </div>
-          {feedback && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: '8px 12px',
-                background: 'rgba(255, 176, 32, 0.12)',
-                border: '1px solid rgba(255, 176, 32, 0.3)',
-                color: 'var(--warn)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {feedback}
-            </div>
-          )}
+        <Card title="Install from the terminal">
+          <p style={{ margin: '0 0 10px', color: 'var(--text-2)', fontSize: 13, lineHeight: 1.6 }}>
+            Desktop installation is not available yet. Use the CLI to install a plugin, then refresh
+            this list.
+          </p>
+          <code>deepcode plugins install &lt;spec&gt;</code>
+          <p style={{ margin: '10px 0 0', color: 'var(--text-3)', fontSize: 12 }}>
+            Accepts gh:owner/repo, a package with @npm, or a local path.
+          </p>
         </Card>
 
-        <Card title={`Installed (${plugins.length})`} flush padding={0}>
-          {plugins.length === 0 ? (
-            <div
+        <Card title="Installed plugins" flush padding={0}>
+          <p
+            style={{
+              margin: 0,
+              padding: '14px 16px',
+              color: 'var(--text-2)',
+              fontSize: 12,
+              lineHeight: 1.6,
+            }}
+          >
+            Load preferences apply to future turns. This list shows installed manifests and saved
+            preferences; it does not confirm that a plugin is active. Untrusted plugins still need
+            approval through the CLI.
+          </p>
+          {feedback && (
+            <p
+              role={feedback.error ? 'alert' : 'status'}
               style={{
-                padding: 32,
-                textAlign: 'center',
-                color: 'var(--text-3)',
-                fontSize: 13,
+                padding: '0 16px',
+                color: feedback.error ? 'var(--error)' : 'var(--accent)',
+                fontSize: 12,
               }}
             >
-              No plugins installed yet.
-              <div style={{ marginTop: 6, fontSize: 11 }}>
-                Try <code>gh:owner/repo</code> in the box above (or via CLI).
-              </div>
+              {feedback.text}
+            </p>
+          )}
+          {loadError ? (
+            <div style={{ padding: '0 16px 16px' }}>
+              <p role="alert" style={{ color: 'var(--error)' }}>
+                Could not load plugins: {loadError}
+              </p>
+              <button type="button" className="btn" onClick={() => setLoadAttempt((n) => n + 1)}>
+                Retry
+              </button>
             </div>
+          ) : plugins === null ? (
+            <p role="status" style={{ padding: '0 16px 16px', color: 'var(--text-2)' }}>
+              Loading plugins…
+            </p>
+          ) : plugins.length === 0 ? (
+            <p
+              style={{ padding: '16px', textAlign: 'center', color: 'var(--text-3)', fontSize: 13 }}
+            >
+              No plugins installed yet.
+            </p>
           ) : (
             <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              {plugins.map((p, i) => {
-                const trust = TRUST_BADGE[p.trustedBy];
+              {plugins.map((p) => {
+                const trust = TRUST_BADGE[p.trustedBy] ?? TRUST_BADGE.user;
                 return (
                   <li
                     key={p.name}
-                    style={{
-                      padding: '14px 16px',
-                      borderBottom:
-                        i === plugins.length - 1 ? 'none' : '1px solid var(--line-soft)',
-                    }}
+                    style={{ padding: '14px 16px', borderTop: '1px solid var(--line-soft)' }}
                   >
                     <div
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: 10,
+                        flexWrap: 'wrap',
                         marginBottom: 6,
                       }}
                     >
-                      <span
-                        style={{
-                          fontWeight: 600,
-                          color: 'var(--text-0)',
-                          fontSize: 13,
-                        }}
-                      >
-                        {p.name}
-                      </span>
-                      <span
-                        style={{
-                          color: 'var(--text-3)',
-                          fontSize: 11,
-                          fontFamily: 'JetBrains Mono, monospace',
-                        }}
-                      >
-                        v{p.version}
-                      </span>
+                      <strong style={{ color: 'var(--text-0)', fontSize: 13 }}>{p.name}</strong>
+                      <span style={{ color: 'var(--text-3)', fontSize: 11 }}>v{p.version}</span>
                       <Badge kind={trust.kind}>{trust.label}</Badge>
-                      <span style={{ marginLeft: 'auto' }}>
-                        <Toggle
-                          checked={p.enabled}
-                          onChange={() => void handleToggle(p.name, !p.enabled)}
+                      <label
+                        style={{
+                          marginLeft: 'auto',
+                          display: 'flex',
+                          gap: 8,
+                          alignItems: 'center',
+                          fontSize: 12,
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          role="switch"
+                          aria-label={`Load ${p.name} on future turns`}
+                          checked={p.configuredEnabled}
+                          disabled={savingName !== null}
+                          onChange={() => void handleToggle(p.name, !p.configuredEnabled)}
                         />
-                      </span>
+                        {savingName === p.name
+                          ? 'Saving…'
+                          : `Configured ${p.configuredEnabled ? 'on' : 'off'}`}
+                      </label>
                     </div>
                     {p.contributedHookEvents.length > 0 && (
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: 'var(--text-2)',
-                          marginBottom: 2,
-                        }}
-                      >
-                        Hooks:{' '}
-                        <span style={{ color: '#b4c2ff' }}>
-                          {p.contributedHookEvents.join(', ')}
-                        </span>
+                      <div style={{ fontSize: 12, color: 'var(--text-2)', marginBottom: 4 }}>
+                        Hooks: {p.contributedHookEvents.join(', ')}
                       </div>
                     )}
-                    <div
-                      style={{
-                        fontSize: 10.5,
-                        color: 'var(--text-3)',
-                        fontFamily: 'JetBrains Mono, monospace',
-                      }}
-                    >
-                      hash {p.sourceHash.slice(0, 12)}
+                    <div style={{ fontSize: 11, color: 'var(--text-3)', fontFamily: 'monospace' }}>
+                      {p.sourceHash
+                        ? `Recorded hash ${p.sourceHash.slice(0, 12)}`
+                        : 'No recorded trust hash'}
                     </div>
                     {p.warning && (
-                      <div
-                        style={{
-                          marginTop: 6,
-                          fontSize: 11,
-                          color: 'var(--error)',
-                        }}
-                      >
-                        ⚠ {p.warning}
-                      </div>
+                      <p style={{ margin: '6px 0 0', fontSize: 12, color: 'var(--warn)' }}>
+                        {p.warning}
+                      </p>
                     )}
                   </li>
                 );
@@ -251,44 +228,5 @@ export function PluginsScreen(): JSX.Element {
         </Card>
       </div>
     </Screen>
-  );
-}
-
-interface ToggleProps {
-  checked: boolean;
-  onChange: () => void;
-}
-
-function Toggle({ checked, onChange }: ToggleProps): JSX.Element {
-  return (
-    <button
-      type="button"
-      onClick={onChange}
-      role="switch"
-      aria-checked={checked}
-      style={{
-        width: 32,
-        height: 18,
-        borderRadius: 999,
-        background: checked ? 'var(--brand)' : 'var(--bg-3)',
-        border: 'none',
-        position: 'relative',
-        cursor: 'pointer',
-        transition: 'background 0.15s',
-      }}
-    >
-      <span
-        style={{
-          position: 'absolute',
-          top: 2,
-          left: checked ? 16 : 2,
-          width: 14,
-          height: 14,
-          borderRadius: '50%',
-          background: '#fff',
-          transition: 'left 0.15s',
-        }}
-      />
-    </button>
   );
 }

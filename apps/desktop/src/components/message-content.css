@@ -1,0 +1,103 @@
+.message-content {
+  min-width: 0;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.message-content > p,
+.message-content > ul,
+.message-content > ol,
+.message-content > .message-code-block {
+  margin: 0 0 14px;
+}
+
+.message-content p {
+  white-space: pre-wrap;
+}
+
+.message-content :is(h1, h2, h3, h4, h5, h6) {
+  margin: 20px 0 9px;
+  color: var(--text-0);
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+.message-content h1 {
+  font-size: 1.4em;
+}
+
+.message-content h2 {
+  font-size: 1.25em;
+}
+
+.message-content :is(h3, h4, h5, h6) {
+  font-size: 1.08em;
+}
+
+.message-content :is(ul, ol) {
+  padding-left: 1.6em;
+}
+
+.message-content li {
+  padding-left: 3px;
+  margin: 4px 0;
+}
+
+.message-content strong {
+  color: var(--text-0);
+  font-weight: 650;
+}
+
+.message-content code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9em;
+  padding: 1px 5px;
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: 4px;
+}
+
+.message-content .message-code-block {
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--bg-0);
+}
+
+.message-content .message-code-language {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-2);
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.message-content pre {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 560px;
+  overflow: auto;
+  line-height: 1.65;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+
+.message-content pre code {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  white-space: inherit;
+}
+
+.message-content > :first-child {
+  margin-top: 0;
+}
+
+.message-content > :last-child {
+  margin-bottom: 0;
+}

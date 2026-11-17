@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-11-17
+
+### Harness foundations (H01–H04)
+
+- Native, SDK, MCP, plugin and hook tool calls now share one permission and
+  execution service, including immutable approval inputs, cancellation, deadlines,
+  snapshots and result settlement. Third-party plugin processes are isolated by
+  default and lose broker access when their owning turn stops.
+- A pinned Cordis kernel supports the unified bootstrap and the `interactive`,
+  `headless`, `app-server`, `desktop` and `editor` profiles. Profile patches can
+  narrow tool access, and idle reloads keep the last valid generation on failure.
+- New sessions use an append-only journal with cross-process writer ownership,
+  durable tool intent/results and interrupted-turn recovery. Supported native
+  legacy sessions import without rewriting the source. Legacy SDK private state
+  and snapshot-only threads remain readable but cannot be automatically resumed;
+  start a new session for those formats.
+- See the [runtime and migration guide](docs/HARNESS_RUNTIME_GUIDE.md) for profile
+  configuration, compatibility changes and rollback. H05–H14 remain planned;
+  this release establishes the foundations rather than completing the full
+  [Harness transformation](docs/HARNESS_TRANSFORMATION_PLAN.md).
+
+### Desktop and VS Code
+
+- Reorganized session navigation, clearer message and tool details, responsive
+  layouts, and explicit approval, stopping and failure states.
+- Session changes discard stale asynchronous results; terminal events cannot
+  overwrite a newer turn. Journal-backed rename and snapshot operations use the
+  app-server owner while older hosts retain their capability-based fallback.
+- The VS Code chat panel uses consistent send/stop behavior, escaped content and
+  expandable tool output. See [UI implementation and screenshots](docs/UI_ALIGNMENT_PROGRESS.md).
+
+### Upgrade notes
+
+- Plugin startup/between-turn filesystem and process RPCs are refused. External
+  command hooks use the tool broker; external HTTP POST hooks are rejected until
+  the broker supports that operation. Missing OS isolation fails closed.
+- Keep the original session directory when downgrading. Version 0.4.x cannot
+  read the new `sessions-v2` journal; rehearse rollback on a copy or an isolated
+  data home. Never remove user session data to downgrade.
+- Installable VSIX and source are published through GitHub Releases. npm,
+  signed macOS installers and the updater feed require the credentials listed in
+  [Releasing DeepCode](docs/RELEASING.md); unavailable channels are identified in
+  each release's notes.
+
 ## [0.4.0] — 2026-10-26
 
 ### Multi-model runtime

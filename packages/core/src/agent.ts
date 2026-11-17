@@ -6,22 +6,19 @@ import type { PermissionRules } from './config/types.js';
 import type { FileContract } from './config/file-contract.js';
 import type { UnattendedApprovalPolicy } from './cron/index.js';
 import type { LedgerSink } from './ledger/index.js';
-import { buildToolCallRecord, ledgerKindForTool, readPathFor } from './ledger/record-tool-call.js';
 import {
-  deadlineMessage,
   RepeatToolGuard,
-  resolveToolDeadlineMs,
   type RepeatGuardOptions,
   type ToolDeadlineConfig,
 } from './guard/index.js';
-import { dispatchToolCall, type DispatchVerdict } from './harness/tool-dispatcher.js';
+import type { DispatchVerdict } from './harness/tool-dispatcher.js';
+import { ToolExecutionService, type PreparedToolCall } from './runtime/tool-execution.js';
 import { TaskManager, type TaskRunner } from './tasks/manager.js';
 import type { HookDispatcher } from './hooks/index.js';
 import type { Mode } from './types.js';
 import type { Provider } from './providers/types.js';
 import { resolveRuntimePolicy } from './runtime/policy.js';
-import { fileWriteDenial } from './sandbox/file-policy.js';
-import { applySpillPolicy, type SpillStore } from './spill/index.js';
+import type { SpillStore } from './spill/index.js';
 import { ShellRegistry } from './shell/registry.js';
 // NOTE: reminders + sessions are lazy-loaded inside the loop so a browser
 // build (Tauri renderer) that doesn't use them avoids pulling node:fs at
@@ -58,6 +55,8 @@ export type ApprovalCallback = (
 ) => Promise<ApprovalDecision> | ApprovalDecision;
 
 export interface RunAgentOptions {
+  /** Host-owned execution service; embedders normally let the runtime create it. */
+  toolExecution?: ToolExecutionService;
   provider: Provider;
   tools: ToolRegistry;
   systemPrompt: string;
@@ -203,35 +202,6 @@ export interface RunAgentResult {
 
 const DEFAULT_MAX_TURNS = 16;
 
-async function waitForApproval(
-  approval: ApprovalCallback,
-  toolName: string,
-  toolInput: Record<string, unknown>,
-  verdict: DispatchVerdict,
-  signal?: AbortSignal,
-): Promise<ApprovalDecision> {
-  if (!signal) return approval(toolName, toolInput, verdict);
-  if (signal.aborted) return false;
-
-  return new Promise<ApprovalDecision>((resolve, reject) => {
-    let settled = false;
-    const finish = (decision: ApprovalDecision): void => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      resolve(decision);
-    };
-    const onAbort = (): void => finish(false);
-    signal.addEventListener('abort', onAbort, { once: true });
-    Promise.resolve(approval(toolName, toolInput, verdict)).then(finish, (error: unknown) => {
-      if (settled) return;
-      settled = true;
-      signal.removeEventListener('abort', onAbort);
-      reject(error);
-    });
-  });
-}
-
 /**
  * Tools with no side effects whose results don't depend on each other — safe to
  * execute concurrently within a single turn. Everything else (Edit/Write/Bash/
@@ -263,12 +233,24 @@ const READ_ONLY_TOOLS = new Set([
  * @returns The final history, usage, and stop reason.
  */
 export async function runAgent(opts: RunAgentOptions): Promise<RunAgentResult> {
-  if (opts.shells) return runAgentInner(opts);
-  const shells = new ShellRegistry();
+  return opts.session
+    ? opts.session.manager.withWriter(opts.session.id, () => runAgentOwned(opts))
+    : runAgentOwned(opts);
+}
+
+async function runAgentOwned(opts: RunAgentOptions): Promise<RunAgentResult> {
+  const shells = opts.shells ?? new ShellRegistry();
+  const execution = opts.toolExecution ?? new ToolExecutionService(opts);
   try {
-    return await runAgentInner({ ...opts, shells });
+    return await execution.withScope(() =>
+      runAgentInner({ ...opts, signal: execution.signal, shells, toolExecution: execution }),
+    );
   } finally {
-    await shells.closeAll();
+    try {
+      if (!opts.toolExecution) await execution.close();
+    } finally {
+      if (!opts.shells) await shells.closeAll();
+    }
   }
 }
 
@@ -277,11 +259,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   const runtimePolicy = resolveRuntimePolicy(opts);
   const allowedToolNames = opts.allowedTools ? new Set(opts.allowedTools) : undefined;
   let history: StoredMessage[] = [...(opts.history ?? [])];
-  let snapshotSeq =
-    (await opts.session?.manager.snapshots(opts.session.id))?.reduce(
-      (max, snapshot) => Math.max(max, snapshot.seq),
-      0,
-    ) ?? 0;
+  const execution = opts.toolExecution!;
 
   // Append the user message first (if provided). When systemReminders is
   // enabled (default), prepend a <system-reminder> block ahead of the user
@@ -301,7 +279,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
           {
             cwd: opts.cwd,
             sessionDir: opts.session
-              ? `${opts.session.manager.root}/${opts.session.id}`
+              ? `${opts.session.manager.resourceRoot}/${opts.session.id}`
               : undefined,
           },
           opts.systemReminders ?? {},
@@ -317,6 +295,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
     if (opts.hooks && (opts.subAgentDepth ?? 0) === 0) {
       try {
         const r = await opts.hooks.dispatch({
+          signal: opts.signal,
           event: 'UserPromptSubmit',
           cwd: opts.cwd,
           triggeredAt: new Date().toISOString(),
@@ -334,8 +313,14 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       timestamp: new Date().toISOString(),
     };
     history.push(userMsg);
-    if (opts.session && opts.persistSessionMessages !== false) {
-      await opts.session.manager.append(opts.session.id, userMsg);
+    if (opts.session) {
+      await opts.session.manager.record(opts.session.id, [
+        {
+          type: opts.persistSessionMessages === false ? 'message.observed' : 'message.appended',
+          turnId: opts.session.turnId,
+          payload: { message: userMsg },
+        },
+      ]);
     }
   }
 
@@ -343,47 +328,22 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   // loop owner reads them after the run to switch mode (default ⇄ plan).
   const modeSignal: { exitPlanMode?: boolean; enterPlanMode?: boolean } = {};
 
-  // Inputs this run has read, in call order, deduped. Provenance for every
-  // change it goes on to make: the question "which input do I fix" is only
-  // answerable if somebody wrote down what was open at the time.
-  const readsThisTurn = new Set<string>();
   const toolCtx: ToolContext = {
     cwd: opts.cwd,
     signal: opts.signal,
     sandboxConfig: opts.sandboxConfig,
     sandboxDefaultMode: opts.sandboxDefaultMode,
     contract: opts.contract,
-    sessionDir: opts.session ? `${opts.session.manager.root}/${opts.session.id}` : undefined,
-    sessionsRoot: opts.session?.manager.root,
+    sessionDir: opts.session
+      ? `${opts.session.manager.resourceRoot}/${opts.session.id}`
+      : undefined,
+    sessionsRoot: opts.session?.manager.resourceRoot,
     sessionId: opts.session?.id,
     sessionSearchScope: opts.sessionSearchScope,
     turnId: opts.session?.turnId,
     askUser: opts.askUser,
     modeSignal,
   };
-
-  // Spill storage is resolved once, lazily: the local backend imports node:fs,
-  // which a renderer build has no answer for. A host without one still gets the
-  // bounded preview — it just cannot offer retrieval.
-  const resolveSpillStore = async (): Promise<SpillStore | undefined> => {
-    if (opts.spillStore) return opts.spillStore;
-    const dir = toolCtx.sessionDir;
-    if (dir === undefined) return undefined;
-    try {
-      const mod = /* @vite-ignore */ './spill/local.js';
-      const { createLocalSpillStore } = (await import(mod)) as typeof import('./spill/local.js');
-      return createLocalSpillStore(dir);
-    } catch {
-      // No filesystem in this build — preview-only is the documented fallback.
-      return undefined;
-    }
-  };
-  // Memoized on the promise, not its result: tools run concurrently, and a
-  // second caller arriving mid-import must wait for the same answer rather than
-  // observe "not resolved yet" as "no store".
-  let spillStorePending: Promise<SpillStore | undefined> | undefined;
-  const spillStore = (): Promise<SpillStore | undefined> =>
-    (spillStorePending ??= resolveSpillStore());
 
   // Wire the Task tool's sub-agent runner — but only below the recursion cap,
   // so a sub-agent can't spawn further sub-agents (it also never gets the Task
@@ -473,6 +433,14 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         contract: opts.contract,
         hooks: opts.hooks,
         sandboxConfig: opts.sandboxConfig,
+        sandboxDefaultMode: opts.sandboxDefaultMode,
+        approval: opts.approval,
+        unattended: opts.unattended,
+        onApprovalRequired: opts.onApprovalRequired,
+        ledger: opts.ledger,
+        toolDeadlines: opts.toolDeadlines,
+        spillStore: opts.spillStore,
+        spillThresholdChars: opts.spillThresholdChars,
         autoMode: opts.autoMode,
         systemReminders: false, // sub-agent gets a clean context
         subAgentDepth: depth + 1,
@@ -502,58 +470,6 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
     };
   }
 
-  // Wire the mcp_tool + agent hook dispatchers. These can only be supplied here
-  // (not at the host's HookDispatcher construction): mcp_tool needs the live
-  // tool registry where MCP tools are registered as `mcp__<server>__<tool>`, and
-  // `agent` needs the sub-agent runner built just above. setX() no-ops if the
-  // host already provided one, so this never clobbers explicit wiring.
-  if (opts.hooks) {
-    opts.hooks.setMcpToolDispatcher(async (handler) => {
-      const qualified = `mcp__${handler.server}__${handler.tool}`;
-      const tool = opts.tools.get(qualified);
-      if (!tool) {
-        return { stdout: '', stderr: `mcp_tool hook: ${qualified} is not registered`, exitCode: 1 };
-      }
-      try {
-        const r = await tool.execute((handler.arguments ?? {}) as Record<string, unknown>, toolCtx);
-        return {
-          stdout: r.content,
-          stderr: r.isError ? r.content : '',
-          exitCode: r.isError ? 1 : 0,
-        };
-      } catch (err) {
-        return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
-      }
-    });
-
-    // The agent hook runs a named sub-agent. Only wire it when a sub-agent
-    // runner exists (i.e. below the recursion cap). A re-entrancy guard stops a
-    // hook that fires *during* the sub-agent run from spawning more agents — the
-    // dispatcher is shared with the sub-agent loop, so the same flag is seen.
-    if (toolCtx.runSubAgent) {
-      const runSub = toolCtx.runSubAgent;
-      let agentHookRunning = false;
-      opts.hooks.setAgentDispatcher(async (handler, payload) => {
-        if (agentHookRunning) {
-          return { stdout: '', stderr: 'agent hook skipped (re-entrancy guard)', exitCode: 0 };
-        }
-        const payloadStr = typeof payload === 'string' ? payload : JSON.stringify(payload);
-        const prompt = handler.prompt
-          ? `${handler.prompt}\n\nHook event payload:\n${payloadStr}`
-          : payloadStr;
-        agentHookRunning = true;
-        try {
-          const res = await runSub({ prompt, agentType: handler.agent });
-          return { stdout: res.text, stderr: '', exitCode: 0 };
-        } catch (err) {
-          return { stdout: '', stderr: (err as Error).message, exitCode: 1 };
-        } finally {
-          agentHookRunning = false;
-        }
-      });
-    }
-  }
-
   // Background tasks (TaskCreate family) — only at the top level, backed by the
   // sub-agent runner. Each task gets its own AbortController so TaskStop cancels
   // just that task. A sub-agent (depth ≥ 1) gets no manager → can't spawn tasks.
@@ -581,6 +497,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
   }
 
   toolCtx.shells = opts.shells;
+  execution.setRuntimeContext(toolCtx);
 
   const totalUsage = { inputTokens: 0, outputTokens: 0, reasoningTokens: 0, cacheReadTokens: 0 };
   let turnsUsed = 0;
@@ -668,8 +585,14 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
       timestamp: new Date().toISOString(),
     };
     history.push(assistantMsg);
-    if (opts.session && opts.persistSessionMessages !== false) {
-      await opts.session.manager.append(opts.session.id, assistantMsg);
+    if (opts.session) {
+      await opts.session.manager.record(opts.session.id, [
+        {
+          type: opts.persistSessionMessages === false ? 'message.observed' : 'message.appended',
+          turnId: opts.session.turnId,
+          payload: { message: assistantMsg },
+        },
+      ]);
     }
 
     opts.onEvent?.({ type: 'model_step_complete', step: turnsUsed, message: assistantMsg });
@@ -703,8 +626,7 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
     const toolBlocks = result.content.filter((b): b is ToolUseBlock => b.type === 'tool_use');
     const resultsById = new Map<string, ToolResultBlock>();
     const guardReminders: string[] = [];
-    type Ready = { toolUse: ToolUseBlock; handler: NonNullable<ReturnType<typeof opts.tools.get>> };
-    const ready: Ready[] = [];
+    const ready: PreparedToolCall[] = [];
 
     /**
      * Append this batch's tool results to history, in the model's original call
@@ -731,8 +653,14 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         timestamp: new Date().toISOString(),
       };
       history.push(resultMsg);
-      if (opts.session && opts.persistSessionMessages !== false) {
-        await opts.session.manager.append(opts.session.id, resultMsg);
+      if (opts.session) {
+        await opts.session.manager.record(opts.session.id, [
+          {
+            type: opts.persistSessionMessages === false ? 'message.observed' : 'message.appended',
+            turnId: opts.session.turnId,
+            payload: { message: resultMsg },
+          },
+        ]);
       }
     };
 
@@ -758,314 +686,47 @@ async function runAgentInner(opts: RunAgentOptions): Promise<RunAgentResult> {
         timestamp: new Date().toISOString(),
       };
       history.push(msg);
-      if (opts.session && opts.persistSessionMessages !== false) {
-        await opts.session.manager.append(opts.session.id, msg);
+      if (opts.session) {
+        await opts.session.manager.record(opts.session.id, [
+          {
+            type: opts.persistSessionMessages === false ? 'message.observed' : 'message.appended',
+            turnId: opts.session.turnId,
+            payload: { message: msg },
+          },
+        ]);
       }
     };
 
-    /** Record a gate refusal as both a tool result (the model sees it) and an event (the host does). */
-    const recordBlocked = (
-      toolUse: ToolUseBlock,
-      reason: string,
-      verdict: DispatchVerdict,
-    ): void => {
-      resultsById.set(toolUse.id, {
+    const record = (call: PreparedToolCall, result: import('./types.js').ToolResult): void => {
+      resultsById.set(call.id, {
         type: 'tool_result',
-        tool_use_id: toolUse.id,
-        content: `Tool call blocked: ${reason}`,
-        is_error: true,
-      });
-      opts.onEvent?.({
-        type: 'tool_result',
-        id: toolUse.id,
-        result: {
-          content: reason,
-          isError: true,
-          data: { dispatchSource: verdict.source, decision: verdict.decision },
-        },
+        tool_use_id: call.id,
+        content: result.content,
+        is_error: result.isError,
       });
     };
-
-    // Phase 1 — sequential gate + approval.
-    for (const toolUse of toolBlocks) {
-      // Counted before the gate, so a model hammering a denied call is caught
-      // by the same chain as one hammering an allowed one.
-      const repeat = repeatGuard?.observe(toolUse.name, toolUse.input);
-      if (repeat) guardReminders.push(repeat.text);
-
-      const handler =
-        !allowedToolNames || allowedToolNames.has(toolUse.name)
-          ? opts.tools.get(toolUse.name)
-          : undefined;
-      if (!handler) {
-        resultsById.set(toolUse.id, {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: allowedToolNames
-            ? `Error: tool not allowed in this turn: ${toolUse.name}`
-            : `Error: tool not found: ${toolUse.name}`,
-          is_error: true,
-        });
-        continue;
-      }
-
-      // Every call goes through the central mode + permissions + hook gate.
-      const verdict = await dispatchToolCall({
-        tool: toolUse.name,
-        input: toolUse.input,
-        mode: runtimePolicy.mode,
-        rules: runtimePolicy.permissions,
-        contract: opts.contract,
-        hooks: opts.hooks,
-        cwd: opts.cwd,
-        autoMode: opts.autoMode,
-        sandboxConfig: opts.sandboxConfig,
-        sandboxDefaultMode: opts.sandboxDefaultMode,
-        autoModeProvider: opts.provider,
-        autoModeModel: opts.model,
-        signal: opts.signal,
-      });
-      if (opts.signal?.aborted) return finish('aborted');
-      let allowed = verdict.decision === 'allow';
-      let blockReason = verdict.reason;
-      if (verdict.decision === 'ask' && opts.unattended) {
-        // No human can answer, so don't pretend to ask. Say so explicitly —
-        // "requires approval" in an unattended log reads like a transient
-        // condition when it is in fact terminal for this call.
-        blockReason = `approval required for ${toolUse.name}, but this run is unattended (no approver attached)`;
-        if (opts.onApprovalRequired === 'abort') {
-          recordBlocked(toolUse, blockReason, verdict);
+    try {
+      for (const toolUse of toolBlocks) {
+        const repeat = repeatGuard?.observe(toolUse.name, toolUse.input);
+        if (repeat) guardReminders.push(repeat.text);
+        const call = await execution.prepare(toolUse.name, toolUse.input, toolUse.id, false);
+        if (call.result) record(call, call.result);
+        else ready.push(call);
+        if (execution.blocked) {
           await flushToolResults();
           return finish('blocked');
         }
-      } else if (verdict.decision === 'ask' && opts.approval) {
-        const decision = await waitForApproval(
-          opts.approval,
-          toolUse.name,
-          toolUse.input,
-          verdict,
-          opts.signal,
-        );
-        if (opts.signal?.aborted) {
-          return finish('aborted');
-        }
-        // 'always' = host has (or will) persist a matcher; treat as allow-this-call.
-        allowed = decision === true || decision === 'always';
       }
-      if (!allowed) {
-        recordBlocked(toolUse, blockReason, verdict);
-        continue;
-      }
-
-      ready.push({ toolUse, handler });
+      const execute = async (call: PreparedToolCall) => record(call, await execution.execute(call));
+      await Promise.all(ready.filter((call) => READ_ONLY_TOOLS.has(call.name)).map(execute));
+      for (const call of ready.filter((call) => !READ_ONLY_TOOLS.has(call.name)))
+        await execute(call);
+    } catch (error) {
+      if (opts.signal?.aborted && !(error as Error).message?.includes('cleanup_incomplete'))
+        return finish('aborted');
+      opts.onEvent?.({ type: 'error', error: (error as Error).message });
+      return finish('error');
     }
-
-    /**
-     * Run a tool, abandoning the wait if it blows past its backstop deadline.
-     *
-     * Abandoning the wait is not the same as stopping the work: the signal asks
-     * the tool to stop, but a tool that ignores it keeps running. That is why
-     * the message for a side-effecting tool says the effect is unknown rather
-     * than claiming nothing happened.
-     */
-    const withDeadline = async (
-      toolUse: ToolUseBlock,
-      handler: NonNullable<ReturnType<typeof opts.tools.get>>,
-    ): Promise<Awaited<ReturnType<typeof handler.execute>>> => {
-      const ms = resolveToolDeadlineMs(toolUse.name, toolUse.input, opts.toolDeadlines);
-      if (ms === undefined) return handler.execute(toolUse.input, toolCtx);
-
-      const deadline = new AbortController();
-      const signal = opts.signal
-        ? AbortSignal.any([opts.signal, deadline.signal])
-        : deadline.signal;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const expired = new Promise<'deadline'>((resolve) => {
-        timer = setTimeout(() => {
-          // Settle the race BEFORE aborting. A tool that honors its signal
-          // resolves synchronously from the abort listener, and if that landed
-          // first the race would return the tool's own "I was cancelled"
-          // result — losing the deadline message, including its warning that a
-          // side effect may be half-applied.
-          resolve('deadline');
-          deadline.abort();
-        }, ms);
-      });
-      try {
-        const outcome = await Promise.race([
-          handler.execute(toolUse.input, { ...toolCtx, signal }),
-          expired,
-        ]);
-        return outcome === 'deadline'
-          ? { content: deadlineMessage(toolUse.name, ms), isError: true }
-          : outcome;
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-
-    // Runs one approved tool end-to-end: pre-snapshot, execute, PostToolUse
-    // hook, post-snapshot, event + result. Side-effect-free tools call this
-    // concurrently; mutating tools call it one at a time (see partition below).
-    const execOne = async ({ toolUse, handler }: Ready): Promise<void> => {
-      if (opts.signal?.aborted) return;
-      const denial = await fileWriteDenial(
-        toolUse.name,
-        toolUse.input,
-        opts.cwd,
-        opts.sandboxConfig,
-        opts.sandboxDefaultMode,
-      );
-      if (opts.signal?.aborted) return;
-      if (denial) {
-        const result = { content: `Tool call blocked: ${denial}`, isError: true };
-        opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result });
-        resultsById.set(toolUse.id, {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          ...result,
-          is_error: true,
-        });
-        return;
-      }
-      const isFileMutation = toolUse.name === 'Edit' || toolUse.name === 'Write';
-      // Remembered so a ledger record can point at the checkpoint taken for
-      // this specific call rather than at "whatever was last captured".
-      let preSeq: number | undefined;
-
-      if (opts.enableSnapshots !== false && opts.session && isFileMutation) {
-        const filePath = (toolUse.input as { file_path?: string }).file_path;
-        if (filePath) {
-          preSeq = ++snapshotSeq;
-          await opts.session.manager.snapshot({
-            sessionId: opts.session.id,
-            cwd: opts.cwd,
-            filePath,
-            reason: `pre-${toolUse.name}`,
-            seq: preSeq,
-            turnId: opts.session.turnId,
-          });
-        }
-      }
-
-      // Bash can mutate arbitrary files we can't name ahead of time, so capture
-      // a git working-tree checkpoint instead (no-op outside a git repo). This
-      // lets `/rewind <seq> code` revert what the command changed.
-      if (opts.enableSnapshots !== false && opts.session && toolUse.name === 'Bash') {
-        preSeq = ++snapshotSeq;
-        await opts.session.manager.gitCheckpoint({
-          sessionId: opts.session.id,
-          cwd: opts.cwd,
-          reason: 'pre-Bash',
-          seq: preSeq,
-          turnId: opts.session.turnId,
-        });
-      }
-
-      let tr;
-      try {
-        opts.signal?.throwIfAborted();
-        const denial = await fileWriteDenial(
-          toolUse.name,
-          toolUse.input,
-          opts.cwd,
-          opts.sandboxConfig,
-          opts.sandboxDefaultMode,
-        );
-        if (denial) throw new Error(denial);
-        opts.signal?.throwIfAborted();
-        tr = await withDeadline(toolUse, handler);
-      } catch (err) {
-        tr = { content: `Error: ${(err as Error).message}`, isError: true };
-      }
-      if (opts.signal?.aborted) return;
-
-      // Every result passes the spill policy on its way to the model, so no
-      // single tool can flood the context regardless of what it returns.
-      tr = await applySpillPolicy(tr, {
-        source: { toolName: toolUse.name, callId: toolUse.id, label: 'result' },
-        store: await spillStore(),
-        thresholdChars: opts.spillThresholdChars,
-      });
-
-      // PostToolUse hook (M3) — observation only; can inject additionalContext
-      if (opts.hooks) {
-        await opts.hooks.dispatch({
-          signal: opts.signal,
-          event: 'PostToolUse',
-          cwd: opts.cwd,
-          triggeredAt: new Date().toISOString(),
-          payload: {
-            tool: toolUse.name,
-            input: toolUse.input,
-            result_content: tr.content.slice(0, 1000),
-            is_error: tr.isError ?? false,
-          },
-        });
-      }
-
-      if (opts.signal?.aborted) return;
-      if (opts.enableSnapshots !== false && opts.session && isFileMutation && !tr.isError) {
-        const filePath = (toolUse.input as { file_path?: string }).file_path;
-        if (filePath) {
-          await opts.session.manager.snapshot({
-            sessionId: opts.session.id,
-            cwd: opts.cwd,
-            filePath,
-            reason: `post-${toolUse.name}`,
-            seq: ++snapshotSeq,
-            turnId: opts.session.turnId,
-          });
-        }
-      }
-
-      // Reads observed so far in this run become the provenance of whatever
-      // this turn writes next. Recorded here, at the one place every completed
-      // tool call passes through, for the same reason the ledger append is
-      // here: a per-tool hook is a hook a new tool forgets.
-      if (!tr.isError) {
-        const readPath = readPathFor(toolUse.name, toolUse.input);
-        if (readPath) readsThisTurn.add(readPath);
-      }
-
-      // One write point for the whole loop. Per-tool writes are exactly the
-      // shape AGENTS.md rules out — a new mutating tool would silently go
-      // unrecorded if each site had to remember.
-      if (opts.ledger && !tr.isError) {
-        const kind = ledgerKindForTool(toolUse.name);
-        const record =
-          kind &&
-          buildToolCallRecord({
-            tool: toolUse.name,
-            input: toolUse.input,
-            cwd: opts.cwd,
-            intent: opts.userMessage,
-            threadId: opts.session?.id,
-            turnId: opts.session?.turnId,
-            snapshotSeq: preSeq,
-            readPaths: [...readsThisTurn],
-          });
-        // Never let bookkeeping fail a completed edit; FileLedger already
-        // swallows its own I/O errors, this covers a host-supplied sink.
-        if (kind && record) await opts.ledger.append(kind, record).catch(() => undefined);
-      }
-
-      opts.onEvent?.({ type: 'tool_result', id: toolUse.id, result: tr });
-      resultsById.set(toolUse.id, {
-        type: 'tool_result',
-        tool_use_id: toolUse.id,
-        content: tr.content,
-        is_error: tr.isError,
-      });
-    };
-
-    // Phase 2 — execute. Read-only tools have no side effects and don't touch
-    // snapshotSeq, so they're safe to run concurrently; everything else stays
-    // sequential to keep snapshot ordering deterministic.
-    const parallel = ready.filter((r) => READ_ONLY_TOOLS.has(r.toolUse.name));
-    const serial = ready.filter((r) => !READ_ONLY_TOOLS.has(r.toolUse.name));
-    await Promise.all(parallel.map(execOne));
-    for (const r of serial) await execOne(r);
 
     await flushToolResults();
     await flushGuardReminders();

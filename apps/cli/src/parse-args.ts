@@ -3,8 +3,8 @@
 // Returns a strongly-typed shape. Unknown flags are collected into `unknown` for
 // graceful "did you mean..." errors.
 
-import type { Effort, Mode, SandboxMode } from '@deepcode/core';
-import { SANDBOX_MODES } from '@deepcode/core';
+import type { Effort, Mode, SandboxMode, RuntimeProfileId } from '@deepcode/core';
+import { SANDBOX_MODES, RUNTIME_PROFILES } from '@deepcode/core';
 
 export interface ParsedArgs {
   // Action triggers (mutually exclusive — first match wins)
@@ -22,6 +22,7 @@ export interface ParsedArgs {
 
   // Session shaping
   mode?: Mode;
+  profile?: RuntimeProfileId;
   model?: string;
   effort?: Effort;
   maxTurns?: number;
@@ -187,6 +188,13 @@ export function parseArgs(argv: string[]): ParsedArgs {
         else out.unknownFlags.push(`--permission-mode ${v ?? ''}`);
         break;
       }
+      case a === '--profile': {
+        const value = next();
+        if (value && (RUNTIME_PROFILES as readonly string[]).includes(value))
+          out.profile = value as RuntimeProfileId;
+        else out.unknownFlags.push(`--profile ${value ?? ''}`);
+        break;
+      }
       case a === '--model':
         out.model = next();
         break;
@@ -350,6 +358,7 @@ SANDBOX (what commands may touch — independent of --mode, which is how they're
                                         Default: workspace-write
 
 MODEL & EFFORT
+  --profile <name>                     Composition profile; inspect with profile inspect
   --model <id>                          deepseek-chat | deepseek-reasoner
   --effort <tier>                       low | medium | high | xhigh | max
   --max-turns <n>                       Cap agent loop turns

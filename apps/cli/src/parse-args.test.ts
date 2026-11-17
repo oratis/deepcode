@@ -261,3 +261,12 @@ describe('--sandbox', () => {
     expect(helpText('1.0.0')).toContain('--sandbox');
   });
 });
+
+it('parses the composition profile independently of model and rejects unavailable profiles', () => {
+  expect(parseArgs(['--profile', 'headless', '--model', 'deepseek-chat'])).toMatchObject({
+    profile: 'headless',
+    model: 'deepseek-chat',
+    unknownFlags: [],
+  });
+  expect(parseArgs(['--profile', 'web']).unknownFlags).toEqual(['--profile web']);
+});

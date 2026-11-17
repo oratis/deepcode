@@ -300,7 +300,16 @@ jobs:
           sed -i.bak -E "s/^export const VERSION = '.*';/export const VERSION = '${{ needs.validate.outputs.version }}';/" packages/core/src/index.ts
           rm -f packages/core/src/index.ts.bak
           cd apps/desktop
-          npm version "${{ needs.validate.outputs.version }}" --no-git-tag-version
+          # Idempotent in a version-synchronized pnpm workspace: npm version
+          # rejects an unchanged version and may reject workspace dependencies.
+          node -e '
+            const fs = require("fs");
+            const p = "package.json";
+            const pkg = JSON.parse(fs.readFileSync(p, "utf8"));
+            pkg.version = process.argv[1];
+            fs.writeFileSync(p, JSON.stringify(pkg, null, 2) + "\n");
+          ' "${{ needs.validate.outputs.version }}"
+          node -e 'process.exit(require("./package.json").version === process.argv[1] ? 0 : 1)' "${{ needs.validate.outputs.version }}"
           # Sync the tauri.conf.json version too
           node -e "
             const fs=require('fs');

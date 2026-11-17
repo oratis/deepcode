@@ -82,3 +82,5 @@ export {
   type RevokedList,
   type MarketplaceConfig,
 } from './marketplace.js';
+
+export { createPluginCapabilityBridge } from './capability-bridge.js';

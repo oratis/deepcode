@@ -18,6 +18,13 @@ function clone<T>(value: T): T {
 }
 
 export interface ThreadStore {
+  rename?(threadId: string, title: string): Promise<void>;
+  fileSnapshots?(
+    threadId: string,
+    path: string,
+  ): Promise<import('./types.js').SessionSnapshotEntry[]>;
+  /** Optional host-owned lease covering turn admission through terminal commit. */
+  withWriter?<T>(threadId: string, operation: () => Promise<T>): Promise<T>;
   load(threadId: string): Promise<ThreadSnapshot | null>;
   save(thread: ThreadSnapshot): Promise<void>;
   /** Stores with engine-private history must validate before copying a projection. */
@@ -140,6 +147,9 @@ export class ProtocolRuntime {
         workspaceDiff: this.options.workspaceDiff ?? false,
         reviewActions: this.options.reviewActions ?? false,
         reasoningDeltas: this.options.reasoningDeltas ?? false,
+        ...(this.options.store.rename && this.options.store.fileSnapshots
+          ? { sessionJournal: true }
+          : {}),
         threadManagement:
           typeof this.options.store.list === 'function' &&
           typeof this.options.store.archive === 'function',
@@ -180,7 +190,7 @@ export class ProtocolRuntime {
           cwd: thread.cwd,
           createdAt: thread.createdAt,
           updatedAt: thread.updatedAt,
-          title: threadTitle(thread),
+          title: thread.title ?? threadTitle(thread),
           turnCount: thread.turns.length,
         }))
         // Newest first: a picker's first row should be what you were just doing.

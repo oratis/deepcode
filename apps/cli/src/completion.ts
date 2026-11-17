@@ -24,6 +24,7 @@ const FLAGS = [
   '--mode',
   '--permission-mode',
   '--model',
+  '--profile',
   '--effort',
   '--max-turns',
   '--bare',
@@ -51,6 +52,7 @@ const FLAGS = [
 /** Positional subcommands (see cli.ts dispatch). */
 const SUBCOMMANDS = [
   'doctor',
+  'profile',
   'upgrade',
   'mcp',
   'app-server',

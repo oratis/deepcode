@@ -8,9 +8,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parseFileContract } from '../config/file-contract.js';
 import { buildMcpGate, buildMcpServer, MCP_SERVE_EXCLUDE, mcpServableTools } from './serve.js';
 
-/** The gate the existing round-trip tests run under: everything permitted. */
-const allowAll = async () => ({ allowed: true, reason: 'test' });
-
 describe('mcpServableTools', () => {
   it('excludes interactive / host-coupled tools', () => {
     const names = mcpServableTools().map((t) => t.name);
@@ -38,7 +35,7 @@ describe('buildMcpServer over an in-memory transport', () => {
       cwd: dir,
       name: 'deepcode-test',
       version: '9.9.9',
-      gate: allowAll,
+      gate: buildMcpGate({ cwd: dir, mode: 'bypassPermissions' }),
     });
     client = new Client({ name: 'test-client', version: '0.0.0' }, { capabilities: {} });
     await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -135,6 +132,22 @@ describe('the gate', () => {
     expect(res.content[0]!.text).toMatch(/denied by permission rules/);
     await expect(fs.access(file)).rejects.toThrow();
     await c.close();
+  });
+
+  it('cannot use a custom allowing gate to bypass the default execution policy', async () => {
+    const c = await connect(
+      buildMcpServer({ cwd: dir, gate: async () => ({ allowed: true, reason: 'unconditional' }) }),
+    );
+    try {
+      const result = await c.callTool({
+        name: 'Write',
+        arguments: { file_path: 'denied', content: 'bad' },
+      });
+      expect(result.isError).toBe(true);
+      await expect(fs.access(join(dir, 'denied'))).rejects.toThrow();
+    } finally {
+      await c.close();
+    }
   });
 
   it('sees the arguments the peer actually sent', async () => {

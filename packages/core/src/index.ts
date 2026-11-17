@@ -6,7 +6,7 @@
 // Kept in lockstep with apps/cli/package.json by scripts/version-consistency.test.ts,
 // and rewritten from the tag by .github/workflows/release.yml at publish time —
 // before this it stayed at 0.1.0 while the CLI shipped as 0.1.6.
-export const VERSION = '0.4.0';
+export const VERSION = '0.5.0';
 export const PROJECT_NAME = 'DeepCode';
 
 // Types
@@ -664,3 +664,20 @@ export {
   type DistilledSkill,
   type DistillOpts,
 } from './skills/index.js';
+
+export {
+  ToolExecutionService,
+  ToolExecutionBinding,
+  type ToolExecutionOptions,
+} from './runtime/tool-execution.js';
+
+export { createPluginCapabilityBridge } from './plugins/capability-bridge.js';
+
+export {
+  AppBootstrap,
+  loadProfileLayers,
+  resolveProfile,
+  RUNTIME_PROFILES,
+  type RuntimeProfileId,
+  type ProfileLayer,
+} from './runtime/index.js';
