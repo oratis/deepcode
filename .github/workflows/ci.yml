@@ -97,6 +97,9 @@ jobs:
       - name: Build + app-server release gate
         run: pnpm release:check
 
+      - name: Standalone CLI tarball install and runtime gate
+        run: pnpm --dir apps/cli package:check
+
       - name: Kernel Node 22 / browser / sidecar / VSIX smoke
         run: pnpm spike:harness-kernel apps/vscode/dist/harness-kernel-report.json
 

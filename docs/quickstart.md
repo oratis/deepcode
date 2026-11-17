@@ -1,6 +1,6 @@
 # DeepCode Quickstart
 
-DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). The repository includes a **CLI**, a **macOS desktop app**, and VS Code/LSP integrations. Version 0.5.1 publishes a VSIX and source; npm, signed DMG and updater artifacts are unavailable in this release. See the [Harness implementation progress](HARNESS_IMPLEMENTATION_PROGRESS.md) for implemented and remaining work.
+DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM support and the optional Claude Agent SDK engine are described in the [multi-model guide](multi-model.md). The repository includes a **CLI**, a **macOS desktop app**, and VS Code/LSP integrations. Version 0.5.2 provides a notarized Apple Silicon DMG, VSIX and standalone CLI tarball on [GitHub Releases](https://github.com/oratis/deepcode/releases/tag/v0.5.2). Registry publication and automatic updates require separate credentials; the release page records their status. See the [Harness implementation progress](HARNESS_IMPLEMENTATION_PROGRESS.md) for implemented and remaining work.
 
 > Requirements: **Node 22 and pnpm 9** to build the CLI from source. A **DeepSeek API key** (get one at
 > <https://platform.deepseek.com/>). macOS 12+ for the desktop app.
@@ -9,11 +9,19 @@ DeepCode is a coding agent with **DeepSeek** as the default provider. Kimi/GLM s
 
 ## CLI (macOS + Linux)
 
-Build the tagged source and define a command for the current shell:
+Install Node 22, download `oratis-deepcode-0.5.2.tgz` from the release, then run:
+
+```bash
+npm install -g --omit=optional ./oratis-deepcode-0.5.2.tgz
+deepcode --help
+```
+
+This installs the native runtime without fetching the optional experimental Claude SDK.
+Alternatively, build the tagged source and define a command for the current shell:
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.1 https://github.com/oratis/deepcode.git
+git clone --branch v0.5.2 https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build
@@ -103,9 +111,9 @@ can never widen it.
 
 ## VS Code and macOS desktop
 
-Download `deepcode-0.5.1.vsix` from the [v0.5.1 release](https://github.com/oratis/deepcode/releases/tag/v0.5.1), run **Extensions: Install from VSIX…**, then open the DeepCode panel.
+Download `deepcode-0.5.2.vsix` from the [v0.5.2 release](https://github.com/oratis/deepcode/releases/tag/v0.5.2), run **Extensions: Install from VSIX…**, then open the DeepCode panel.
 
-No signed DMG or updater feed is published for v0.5.1. Desktop development builds require the local Tauri/Rust toolchain; see [Releasing DeepCode](RELEASING.md) for build and signing requirements. A future release must explicitly include those artifacts before DMG installation or in-app updates can be used.
+For Apple Silicon Macs, download `DeepCode-0.5.2-arm64.dmg` from the same release and drag the notarized app into Applications. The app includes its Node runtime, so a separate Node installation is not required. Automatic updates require a matching updater signing key and published feed; use the DMG for manual upgrades until the release page confirms that feed. Desktop development builds require the Tauri/Rust toolchain; see [Releasing DeepCode](RELEASING.md).
 
 ---
 

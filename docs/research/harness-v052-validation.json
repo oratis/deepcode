@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-17",
+  "version": "0.5.2",
+  "independentReview": "P1/P2 findings fixed; stale-app rejection regression added",
+  "tests": {
+    "passed": 2022,
+    "skipped": 23,
+    "rustPassed": 30,
+    "sdkLoopbackPassed": 2
+  },
+  "checks": {
+    "typecheck": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "docs": "passed",
+    "vsixReleaseGate": "passed",
+    "standaloneCliInstall": "passed"
+  },
+  "mac": {
+    "architecture": "arm64",
+    "teamIdentifier": "9LH9NBX7P4",
+    "appNotarization": {
+      "id": "98d57770-21d2-46c4-94ee-d045be8f922f",
+      "status": "Accepted"
+    },
+    "dmgNotarization": {
+      "id": "68b0845c-bb66-4c99-809e-654f31941c61",
+      "status": "Accepted"
+    },
+    "signature": "verified",
+    "staple": "validated",
+    "gatekeeper": "accepted / Notarized Developer ID",
+    "dmgBytes": 38224763,
+    "dmgSha256": "04b8bed103e7b0b66eafb52222bfdb0984876ba2d8b5e6be634fee0566ac3f1f",
+    "runtimeSmoke": {
+      "status": "passed",
+      "checks": [
+        "native loopback streamed provider response",
+        "Write blocked until explicit approval",
+        "workspace file write and tool result",
+        "assistant final response",
+        "cancellation drains pending approval",
+        "late approval rejected; no cancelled write",
+        "provider cancellation closes loopback stream",
+        "journal tool/final message and interruption states survive process restart",
+        "empty PATH and isolated HOME",
+        "fake key; loopback only; no vendor API"
+      ],
+      "providerCalls": 4
+    }
+  },
+  "cli": {
+    "version": "0.5.2",
+    "integrity": "sha512-XZnL/duZEj4Hpm2NogzmEk8hjt//ttejlLEwYHV0+cEKND+c6+G0hwwRRXc12GRT3GEBul27323Elr/GCpvhVw==",
+    "size": 329558,
+    "unpackedSize": 1074807,
+    "validation": {
+      "status": "passed",
+      "node": "v22.23.4",
+      "platform": "darwin-arm64",
+      "checks": [
+        "isolated offline tarball install",
+        "version/help",
+        "all builtin skills",
+        "schema asset/profile",
+        "stdio session lifecycle",
+        "restart durability",
+        "optional SDK absent/present"
+      ]
+    }
+  },
+  "publication": {
+    "githubArtifacts": ["signed and notarized DMG", "VSIX", "standalone CLI tarball", "source"],
+    "npmRegistry": "awaiting valid authentication; existing local token returns 401",
+    "updater": "matching private key unavailable; no feed or public-key rotation",
+    "finalEvidence": "See release PR and GitHub release for final CI and post-download verification."
+  },
+  "limitations": [
+    "No real vendor API calls; model/tool smoke uses a loopback fixture.",
+    "Desktop Claude SDK is not bundled or claimed verified.",
+    "Existing Rust whole-tree format differences remain outside this package-only change."
+  ]
+}

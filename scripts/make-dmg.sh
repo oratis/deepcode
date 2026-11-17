@@ -22,27 +22,25 @@ if [ ! -d "$APP_PATH" ]; then
   exit 1
 fi
 
-# ---- Detach any stale mounts with the same volume name ----
-while mount | grep -qE "/Volumes/$VOLNAME([[:space:]]|$)"; do
-  STALE_DEV=$(mount | grep -E "/Volumes/$VOLNAME([[:space:]]|$)" | awk '{print $1}' | head -1)
-  echo "==> Detaching stale mount $STALE_DEV ..."
-  hdiutil detach "$STALE_DEV" -force >/dev/null 2>&1 || true
-  sleep 1
-done
-# Also detach numbered variants ("DeepCode 1", "DeepCode 2"...)
-for v in /Volumes/$VOLNAME*; do
-  [ -d "$v" ] || continue
-  hdiutil detach "$v" -force >/dev/null 2>&1 || true
-done
-
-# ---- Stage the source files ----
-STAGING="$(mktemp -d)/staging"
-mkdir -p "$STAGING"
-cp -R "$APP_PATH" "$STAGING/$(basename "$APP_PATH")"
+# Only mount and detach the image created by this invocation. An existing
+# DeepCode volume may belong to a user installing another release.
+TEMP_DIR="$(mktemp -d)"
+STAGING="$TEMP_DIR/staging"
+RW_DMG="$TEMP_DIR/rw.dmg"
+MOUNT_POINT="$TEMP_DIR/mount"
+MOUNTED=0
+cleanup() {
+  if [ "$MOUNTED" = 1 ]; then
+    hdiutil detach "$MOUNT_POINT" >/dev/null 2>&1 || return
+  fi
+  rm -rf "$TEMP_DIR"
+}
+trap cleanup EXIT
+mkdir -p "$STAGING" "$MOUNT_POINT"
+ditto "$APP_PATH" "$STAGING/$(basename "$APP_PATH")"
 ln -s /Applications "$STAGING/Applications"
 
 # ---- 1) Create a read-write DMG (oversized so Finder has room to write .DS_Store) ----
-RW_DMG="$(mktemp -d)/rw.dmg"
 APP_SIZE_KB=$(du -sk "$APP_PATH" | awk '{print $1}')
 DMG_SIZE_KB=$((APP_SIZE_KB + 20000))  # +20MB headroom for .DS_Store, fseventsd, customization
 echo "==> Creating read-write DMG (~${DMG_SIZE_KB} KB) ..."
@@ -57,25 +55,15 @@ hdiutil create \
 
 # ---- 2) Mount it ----
 echo "==> Mounting for customization ..."
-MOUNT_OUTPUT="$(hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG")"
-MOUNT_DEV="$(echo "$MOUNT_OUTPUT" | grep -E '^/dev/' | tail -1 | awk '{print $1}')"
-MOUNT_POINT="/Volumes/$VOLNAME"
-
-# Sanity: confirm the expected mount point exists
-if [ ! -d "$MOUNT_POINT" ]; then
-  echo "ERROR: mount point $MOUNT_POINT not found"
-  echo "$MOUNT_OUTPUT"
-  hdiutil detach "$MOUNT_DEV" -force >/dev/null 2>&1 || true
-  exit 1
-fi
-echo "    mounted at: $MOUNT_POINT  (dev=$MOUNT_DEV)"
+hdiutil attach -readwrite -noverify -noautoopen -mountpoint "$MOUNT_POINT" "$RW_DMG" >/dev/null
+MOUNTED=1
 
 # ---- 3) AppleScript: set view + icon size + positions ----
 echo "==> Applying Finder customization (AppleScript) ..."
 APP_NAME="$(basename "$APP_PATH")"
 /usr/bin/osascript <<EOF
 tell application "Finder"
-  tell disk "$VOLNAME"
+  tell folder (POSIX file "$MOUNT_POINT" as alias)
     open
     delay 1
     set current view of container window to icon view
@@ -122,19 +110,17 @@ chmod -Rf go-w "$MOUNT_POINT" 2>/dev/null || true
 
 # ---- 5) Detach ----
 echo "==> Detaching ..."
-hdiutil detach "$MOUNT_DEV" -force >/dev/null
+hdiutil detach "$MOUNT_POINT" >/dev/null
+MOUNTED=0
 sleep 1
 
 # ---- 6) Convert to compressed read-only UDZO ----
 echo "==> Converting to compressed read-only UDZO ..."
-rm -f "$DMG_PATH"
 mkdir -p "$(dirname "$DMG_PATH")"
 hdiutil convert "$RW_DMG" \
   -format UDZO \
   -imagekey zlib-level=9 \
-  -o "$DMG_PATH" >/dev/null
+  -ov -o "$DMG_PATH" >/dev/null
 
-# Cleanup
-rm -rf "$STAGING" "$RW_DMG"
 
 echo "✓ Created $DMG_PATH ($(du -h "$DMG_PATH" | cut -f1))"

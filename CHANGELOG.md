@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] — 2026-11-17
+
+### Fixed
+
+- macOS releases sign the bundled Node runtime with its own JIT entitlement and verify the real session protocol with an empty PATH before notarization.
+- Final app and DMG signatures, notarization tickets and Gatekeeper assessments must pass before publication. Disk-image creation only cleans up its own temporary mount.
+- Updater archives are generated from the final signed and stapled app instead of the earlier build output.
+- The CLI ships as a standalone npm tarball with bundled runtime dependencies, builtin skills and schema; installation no longer requires private workspace packages. The Claude SDK remains an optional dependency.
+
 ## [0.5.1] — 2026-11-17
 
 ### Fixed
