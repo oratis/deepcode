@@ -58,7 +58,8 @@ App-specific passwords → Generate. Save the 16-char password as
 ### 4. NPM token
 
 [npmjs.com](https://www.npmjs.com) → account → Access Tokens → Generate
-new token → **Automation** (CI-friendly) → save as `NPM_TOKEN`.
+new **granular access token** with publish permission for `@oratis/deepcode` → save as `NPM_TOKEN`.
+Use a limited scope and expiration; see [npm token documentation](https://docs.npmjs.com/creating-and-viewing-access-tokens/).
 
 The CLI publishes as **`@oratis/deepcode`** — the personal scope of the account
 that owns the repository, so no organisation has to exist first. The token must
@@ -105,7 +106,7 @@ The `release.yml` workflow fires on any `v*` tag push. Its validation and public
    desktop protocol journey. The release gate starts the real bundled app-server twice and verifies
    protocol capabilities, thread persistence, thin-client boundaries, bundle budgets, and timing.
 2. **publish-cli** — bumps `apps/cli/package.json` to the tag version,
-   `pnpm publish` to npm registry. Beta / nightly tags get
+   builds and verifies the standalone tarball, then uses `npm publish <tarball>` to publish it. Beta / nightly tags get
    `--tag <channel>` so `latest` stays on stable.
 3. **build-vscode** — synchronizes the extension version, rebuilds the app-server bundle, and
    packages `deepcode-<version>.vsix`. Marketplace publication remains a separate, credentialed
@@ -126,6 +127,53 @@ The `release.yml` workflow fires on any `v*` tag push. Its validation and public
    With no matching entry it falls back to the commit range and says so, in the
    body and on stderr. That fallback is a signal that step 1 of the release
    checklist was skipped, not a supported mode.
+
+## Standalone CLI package
+
+Run `pnpm build && pnpm --dir apps/cli package:check`. The gate creates
+`apps/cli/dist/npm/oratis-deepcode-<version>.tgz`, installs it outside the workspace
+without registry access, and checks builtin skills, schema/profile loading, session
+operations, restart durability and optional SDK discovery. CI attaches this tarball
+to the GitHub Release even when npm credentials are unavailable.
+
+Publish the verified tarball with `npm publish <tarball> --access public` (add the
+appropriate `--tag` for a prerelease). Do not run `pnpm publish` directly inside
+`apps/cli`: its source manifest deliberately contains private workspace dependencies.
+Users can install the downloaded tarball with `npm install -g --omit=optional ./oratis-deepcode-<version>.tgz`.
+Omitting optional dependencies selects the native runtime; installing the optional
+Claude SDK does not make its provider features identical to native DeepSeek.
+
+## Local Keychain signing
+
+An existing Developer ID Application identity and notarization Keychain profile
+can sign this app without exporting either credential into the checkout or GitHub.
+Build from the intended release commit using Node 22, then run:
+
+```bash
+DEEPCODE_SIGNING_ID='<certificate SHA-1>' \
+DEEPCODE_NOTARY_PROFILE='<existing Keychain profile>' \
+bash scripts/sign-and-notarize.sh
+```
+
+The script signs Node with `RuntimeEntitlements.plist` (V8 JIT), runs the real
+bundled server in an isolated HOME with an empty PATH, signs/notarizes/staples the
+app, then creates and separately notarizes the DMG. Signature, ticket and final
+Gatekeeper checks fail the release on error. `DEEPCODE_SKIP_BUILD=1` is for an
+already built, version-checked candidate. The signing certificate and notary
+profile are independent of npm authentication and the Tauri updater key.
+
+Before attaching a local DMG to its existing release, mount it at a unique temporary
+path, verify the contained app's signature/ticket/Gatekeeper and run
+`node scripts/verify-mac-runtime.mjs /path/to/mounted/DeepCode.app`. Download the
+published asset and repeat the checks. Record SHA-256 and Apple submission IDs,
+and update release notes to reflect the artifacts that were actually published.
+The DMG includes the native runtime; the experimental Claude SDK is not bundled.
+
+For automatic updates, `sign-and-notarize.sh` rebuilds and signs the update archive
+**after** the app is stapled. Verify the signature against the committed public key
+and inspect the extracted app before uploading a feed. Never publish Tauri's earlier
+build-time archive after re-signing the app. An unavailable updater private key does
+not block manual DMG distribution and must not trigger an undocumented key rotation.
 
 ## Release channels
 
@@ -163,13 +211,13 @@ key as unrecoverable-if-lost, not as something to regenerate casually.
 
 ### What the pipeline does with it
 
-| Step                                                | Where                         |
-| --------------------------------------------------- | ----------------------------- |
-| Detect `TAURI_SIGNING_PRIVATE_KEY` → `has_updater`  | `validate`                    |
-| Flip `bundle.createUpdaterArtifacts` to true        | `build-mac`, before the build |
-| Export the signing key to `tauri build`             | `build-mac`                   |
-| Locate `*.app.tar.gz` + `.sig`, write `latest.json` | `build-mac`, after signing    |
-| Attach all three to the release                     | `github-release`              |
+| Step                                                                                 | Where                           |
+| ------------------------------------------------------------------------------------ | ------------------------------- |
+| Detect `TAURI_SIGNING_PRIVATE_KEY` → `has_updater`                                   | `validate`                      |
+| Flip `bundle.createUpdaterArtifacts` to true                                         | `build-mac`, before the build   |
+| Export the signing key to `tauri build`                                              | `build-mac`                     |
+| Rebuild `*.app.tar.gz` from the signed, stapled app; sign it and write `latest.json` | `build-mac`, after notarization |
+| Attach all three to the release                                                      | `github-release`                |
 
 `createUpdaterArtifacts` stays **false in the committed config** on purpose:
 `tauri build` fails outright when it is true and no key is in the environment,

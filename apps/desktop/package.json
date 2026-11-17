@@ -1,6 +1,6 @@
 {
   "name": "@deepcode/desktop",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "private": true,
   "description": "DeepCode Mac desktop client — Tauri + React",
   "license": "MIT",

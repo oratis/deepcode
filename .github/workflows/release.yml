@@ -62,6 +62,13 @@ jobs:
         run: pnpm --filter @deepcode/app-server exec vitest run src/engines/claude-sdk.smoke.test.ts
       - run: pnpm docs:check
       - run: pnpm release:check
+      - run: pnpm --dir apps/cli package:check
+      - name: Upload standalone CLI package
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-release
+          path: apps/cli/dist/npm/*.tgz
+          if-no-files-found: error
 
       # Which publication legs can even run. A job that cannot possibly succeed
       # should be skipped, not failed — a red release for a missing credential
@@ -171,13 +178,18 @@ jobs:
 
       - run: pnpm build
 
-      - name: Publish
+      - name: Package and verify standalone CLI
+        run: pnpm --dir apps/cli package:check
+
+      - name: Publish verified tarball
         run: |
-          cd apps/cli
+          # The workspace package references private @deepcode dependencies.
+          # Only the bundled, independently installed tarball is publishable.
+          TARBALL="apps/cli/dist/npm/oratis-deepcode-${{ needs.validate.outputs.version }}.tgz"
           if [ "${{ needs.validate.outputs.channel }}" = "stable" ]; then
-            pnpm publish --no-git-checks --access public
+            npm publish "$TARBALL" --ignore-scripts --access public
           else
-            pnpm publish --no-git-checks --access public --tag ${{ needs.validate.outputs.channel }}
+            npm publish "$TARBALL" --ignore-scripts --access public --tag "${{ needs.validate.outputs.channel }}"
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -484,6 +496,12 @@ jobs:
           name: vscode-release
           path: release-artifacts/
 
+      - name: Download standalone CLI package
+        uses: actions/download-artifact@v8
+        with:
+          name: cli-release
+          path: release-artifacts/
+
       - name: Generate release notes
         id: notes
         run: |
@@ -503,7 +521,7 @@ jobs:
             printf '\n---\n\n> **No macOS build in this release.** Apple signing credentials were not configured when it was cut; see `docs/RELEASING.md`.\n' >> release-notes.md
           fi
           if [ "${{ needs.publish-cli.result }}" != "success" ]; then
-            printf '\n> **Not published to npm.** `NPM_TOKEN` was not configured when this release was cut; install from source or the VSIX.\n' >> release-notes.md
+            printf '\n> **Not published to npm.** `NPM_TOKEN` was not configured when this release was cut; install the attached CLI tarball, source or VSIX.\n' >> release-notes.md
           fi
           # Without this the in-app updater silently keeps polling a 404, so say
           # it on the page rather than leaving users to wonder why the banner
@@ -523,6 +541,7 @@ jobs:
           files: |
             release-artifacts/*.dmg
             release-artifacts/*.vsix
+            release-artifacts/*.tgz
             release-artifacts/*.app.tar.gz
             release-artifacts/*.app.tar.gz.sig
             release-artifacts/latest.json

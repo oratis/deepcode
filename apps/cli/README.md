@@ -5,11 +5,20 @@ DeepCode CLI —— DeepSeek 驱动的命令行编程 agent，在真实代码库
 
 ## 安装
 
-v0.5.1 未发布 npm 包，请使用 Node 22 与 pnpm 9 从源码构建。此版本的 VSIX 可从 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.1) 安装。
+需要 Node 22 或更新版本。以 [GitHub Release](https://github.com/oratis/deepcode/releases/latest) 中的实际发布渠道为准；下载其中的 CLI `.tgz` 后可在任意目录安装：
+
+```bash
+npm install -g ./oratis-deepcode-<version>.tgz
+deepcode --help
+```
+
+若该版本已发布 npm registry，也可以使用 `npm install -g @oratis/deepcode`。可选的 Claude SDK 会随 npm 安装；不使用该实验性引擎时可加 `--omit=optional`。SDK 缺失时原生 DeepSeek 引擎继续可用，选择 SDK 引擎则给出明确安装提示。
+
+也可以使用 Node 22 与 pnpm 9 从源码构建：
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.1 https://github.com/oratis/deepcode.git
+git clone https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build
@@ -19,6 +28,15 @@ deepcode --help
 ```
 
 `deepcode` 函数在当前 shell 中有效。首次启动会引导填入 `DEEPSEEK_API_KEY`。
+
+## 发布包验证
+
+维护者执行 `pnpm build && pnpm --dir apps/cli package:check`。输出是
+`apps/cli/dist/npm/oratis-deepcode-<version>.tgz`；它包含 CLI 与原生运行时、内建 skills、settings schema 和第三方许可证。源码工作区继续使用原有 `tsc` 输出。
+
+验证会在仓库外离线安装实际 tarball，清空运行时 PATH，并检查版本、帮助、内建 skills、profile、stdio 会话操作、重启恢复以及可选 SDK 缺失/安装后的解析。该检查无需真实模型密钥，SDK 路径使用本地 fixture。
+
+仅发布通过验证的 `.tgz`，不要直接从 `apps/cli` 执行 `pnpm publish`：工作区 manifest 中的私有 `@deepcode/*` 依赖不能由普通用户从 npm 安装。产物详情和验证结果在 `apps/cli/dist/npm/package-report.json`。
 
 ## 用法
 

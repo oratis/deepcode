@@ -16,6 +16,7 @@
 #   DEEPCODE_SIGNING_ID   (optional)  override auto-detected Developer ID Application identity
 #   DEEPCODE_TARGET       (optional)  default 'aarch64-apple-darwin'; set 'universal-apple-darwin' for fat binary
 #   DEEPCODE_NOTARY_PROFILE (optional) keychain profile name; default 'DEEPCODE_NOTARY'
+#   DEEPCODE_SKIP_BUILD (optional) 1 to sign an already built candidate
 
 set -euo pipefail
 
@@ -32,8 +33,10 @@ TARGET="${DEEPCODE_TARGET:-aarch64-apple-darwin}"
 PROFILE="${DEEPCODE_NOTARY_PROFILE:-DEEPCODE_NOTARY}"
 
 # ----- 1. Build release artifact -----
-echo "==> Building release for $TARGET ..."
-pnpm --filter @deepcode/desktop tauri build --target "$TARGET"
+if [ "${DEEPCODE_SKIP_BUILD:-0}" != 1 ]; then
+  echo "==> Building release for $TARGET ..."
+  pnpm --filter @deepcode/desktop tauri build --target "$TARGET"
+fi
 
 # Locate artifacts
 APP_PATH="apps/desktop/src-tauri/target/$TARGET/release/bundle/macos/DeepCode.app"
@@ -43,10 +46,23 @@ DMG_DIR="apps/desktop/src-tauri/target/$TARGET/release/bundle/dmg"
 # the expected output path here so step 7 can write to it.
 mkdir -p "$DMG_DIR"
 DMG_VER="$(grep '"version"' apps/desktop/src-tauri/tauri.conf.json | head -1 | sed -E 's/.*"version": "([^"]+)".*/\1/')"
-DMG_PATH="$DMG_DIR/DeepCode_${DMG_VER}_aarch64.dmg"
+case "$TARGET" in
+  aarch64-apple-darwin) DMG_ARCH=aarch64 ;;
+  x86_64-apple-darwin) DMG_ARCH=x64 ;;
+  universal-apple-darwin) DMG_ARCH=universal ;;
+  *) echo "Unsupported macOS target: $TARGET"; exit 1 ;;
+esac
+DMG_PATH="$DMG_DIR/DeepCode_${DMG_VER}_${DMG_ARCH}.dmg"
+TEMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 if [ ! -d "$APP_PATH" ]; then
   echo "ERROR: $APP_PATH not found — build failed?"
+  exit 1
+fi
+APP_VER="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP_PATH/Contents/Info.plist")"
+if [ "$APP_VER" != "$DMG_VER" ]; then
+  echo "ERROR: app version $APP_VER does not match release version $DMG_VER; rebuild before signing."
   exit 1
 fi
 
@@ -71,6 +87,7 @@ if [ ! -x "$SIDECAR_PATH" ]; then
   exit 1
 fi
 codesign --force --options runtime \
+  --entitlements apps/desktop/src-tauri/RuntimeEntitlements.plist \
   --sign "$SIGNING_ID" \
   --timestamp \
   "$SIDECAR_PATH"
@@ -83,10 +100,10 @@ codesign --force --options runtime \
 # ----- 4. Verify signature -----
 echo "==> Verifying signature ..."
 codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-spctl --assess --type execute --verbose "$APP_PATH" || true
+node scripts/verify-mac-runtime.mjs "$APP_PATH"
 
 # ----- 5. Notarize the .app via zip -----
-ZIP_PATH="$(mktemp -d)/DeepCode.zip"
+ZIP_PATH="$TEMP_DIR/DeepCode.zip"
 echo "==> Submitting $APP_PATH to notarytool ..."
 /usr/bin/ditto -c -k --keepParent "$APP_PATH" "$ZIP_PATH"
 xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$PROFILE" --wait
@@ -94,6 +111,18 @@ xcrun notarytool submit "$ZIP_PATH" --keychain-profile "$PROFILE" --wait
 # ----- 6. Staple notarization to the .app -----
 echo "==> Stapling notarization ticket to $APP_PATH ..."
 xcrun stapler staple "$APP_PATH"
+xcrun stapler validate "$APP_PATH"
+codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+spctl --assess --type execute --verbose "$APP_PATH"
+
+# Tauri's build-time archive precedes our final Developer ID signature and
+# notarization ticket. Always replace it with the final app before signing it.
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}${TAURI_SIGNING_PRIVATE_KEY_PATH:-}" ]; then
+  UPDATE_PATH="$APP_PATH.tar.gz"
+  tar -czf "$UPDATE_PATH" -C "$(dirname "$APP_PATH")" "$(basename "$APP_PATH")"
+  pnpm --filter @deepcode/desktop exec tauri signer sign "$ROOT/$UPDATE_PATH"
+  test -s "$UPDATE_PATH.sig"
+fi
 
 # ----- 7. Build the .dmg fresh with the signed+stapled .app -----
 # Tauri's bundle targets are configured to skip "dmg" (bundle_dmg.sh has
@@ -115,7 +144,9 @@ if [ -n "$DMG_PATH" ]; then
   xcrun stapler staple "$DMG_PATH"
 
   echo "==> Verifying DMG ..."
-  spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH" || true
+  xcrun stapler validate "$DMG_PATH"
+  codesign --verify --strict --verbose=2 "$DMG_PATH"
+  spctl --assess --type open --context context:primary-signature --verbose "$DMG_PATH"
 else
   echo "WARN: no DMG produced — only the .app was notarized."
 fi

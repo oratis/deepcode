@@ -214,3 +214,21 @@ v0.5.0 的 PR #297、main CI 和发布验证通过并发布后，下载正式 VS
 v0.5.1 将 decoder 方法表改为 `Record<ProtocolMethod, true>` 的穷尽检查并使用 own-property 判断，新增方法若遗漏 wire 支持会在编译期失败；未知方法和原型属性名仍拒绝。回归覆盖真实 stdio 的七个接口、snapshot 内容、fork/archive/delete 后列表以及重命名。发布 gate 直接调用打包后的接口并检查重启后的标题，避免用 handler 单测代替真实传输验收。会话格式与迁移策略保持兼容，请使用 v0.5.1 或更新版本。原 v0.5.0 tag 和测量记录保留，修复通过独立 PR 审查及 CI 后发布。
 
 v0.5.1 独立复核无 P1/P2；Node 22 本机全仓 **2017 passed / 23 skipped**、SDK smoke **2 passed**，lint/format/docs/build/release gate 均通过。扩展后的空 PATH 独立 bundle smoke 覆盖全部七项管理操作及重启恢复；最终 bundle 为 extension **54,943 B**、app-server **771,730 B**、VSIX **247,261 B**。记录见 [v0.5.1 验证结果](research/harness-v051-validation.json)。
+
+## v0.5.2：补齐可安装发布产物（2026-11-17）
+
+继 v0.5.1 协议修复后，对正式 Mac/CLI 包做独立 review 和实际运行验证：
+
+- Mac Node 侧车使用独立的最小 JIT entitlement；主 app 的 entitlement 不作为子进程权限。真实签名包在空 PATH、隔离 HOME 下完成会话全生命周期及重启。
+- Apple 公证、staple、严格签名和最终 Gatekeeper 均为发布必过项。跳过构建时，实际 app 的版本必须与发布配置相同；旧产物不能被误标新版。
+- DMG 仅挂载和清理本次生成的临时卷，不卸载用户已有的 DeepCode 卷。更新 tar 在最终 app 签名并 staple 后重新生成、签名；缺少匹配的 updater 私钥时不发布自动更新 feed，也不更换已发布公钥。
+- CLI `.tgz` 内含运行时、15 个 builtin skills、schema 和第三方许可证，无私有 workspace 安装依赖。SDK 仍是独立可选依赖；DMG 原生运行时不内置实验性 SDK。
+- 常规 CI 和发布 validation 均验证真实 CLI tarball：仓库外离线安装、命令入口、skills、schema/profile、stdio 会话操作、重启和可选 SDK 发现；即使 npm registry 认证不可用，也在 GitHub Release 提供 `.tgz`。
+
+本地 Node 22 / pnpm 9 验证：2,021 项全量测试通过、23 项环境性跳过，随后新增的旧 app 版本拒绝测试通过（总计 2,022）；SDK loopback 2 项、Rust 30 项通过。typecheck、lint、format、docs、VSIX release gate、CLI 独立安装 gate 通过。未修改 Rust 业务源码；此前记录的 Rust 全仓格式历史问题不在此次变更范围。
+
+对已签名 v0.5.2 app 额外运行回环 fake DeepSeek 服务，验证真实 native 流、Write 显式审批、批准前无文件、取消待审批后迟到批准拒绝且无写入、取消 provider 流关闭连接，以及重启后 completed/interrupted/interrupted 三个回合与工具结果恢复。没有调用真实模型，没有使用用户会话或 provider 凭据。这项验收不包含真实云端模型、SDK 桌面引擎或 Bash 子进程取消。
+
+凭据通过既有本机 Keychain 使用，没有导出到仓库、发行包或 GitHub。npm registry 认证和 DeepCode updater 私钥分别验证，不把 Apple 签名凭据视为其替代。本地证据见 [v0.5.2 验证记录](research/harness-v052-validation.json)；最终产物、公证 ID、校验值和线上下载复验记录在发布 PR 与 [v0.5.2 发布页](https://github.com/oratis/deepcode/releases/tag/v0.5.2)。
+
+此版本不修改 journal 格式和迁移策略。回滚可重新安装前版客户端；旧会话继续遵守只读源文件及 dual-read/single-write 规则。
