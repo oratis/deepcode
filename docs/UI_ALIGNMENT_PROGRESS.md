@@ -127,3 +127,7 @@ git diff --check
 复查还覆盖了两个同边界问题：Desktop 的慢 diff 读取不得延长 review 启动锁；VS Code 遇损坏协议帧须先关闭 owned transport，清理失败时禁止创建第二个连接 owner。两者均已修复并增加回归。
 
 两位独立 reviewer 已复验关闭本次提出的全部阻塞，审查范围内无剩余 P1/P2。本 chat 不执行 commit、PR、merge 或 tag，用户已指定原 H03/H04 chat 统一发布。
+
+### v0.5.1 传输层修复
+
+v0.5.0 发布后对正式 VSIX 的扩展验收发现，部分已声明会话方法被 stdio decoder 的旧白名单拒绝。v0.5.1 在 protocol 层补齐全部声明方法，并增加真实 stdio 与 bundle 操作验收；界面使用既有协议接口，无需另增客户端 fallback。请安装 v0.5.1 或更新版本，详见 [发布后修复记录](HARNESS_IMPLEMENTATION_PROGRESS.md#v051-发布后修复)。

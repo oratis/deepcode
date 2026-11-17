@@ -5,11 +5,11 @@ DeepCode CLI —— DeepSeek 驱动的命令行编程 agent，在真实代码库
 
 ## 安装
 
-v0.5.0 未发布 npm 包，请使用 Node 22 与 pnpm 9 从源码构建。此版本的 VSIX 可从 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.0) 安装。
+v0.5.1 未发布 npm 包，请使用 Node 22 与 pnpm 9 从源码构建。此版本的 VSIX 可从 [GitHub Release](https://github.com/oratis/deepcode/releases/tag/v0.5.1) 安装。
 
 ```bash
 # Node 22 + pnpm 9
-git clone --branch v0.5.0 https://github.com/oratis/deepcode.git
+git clone --branch v0.5.1 https://github.com/oratis/deepcode.git
 cd deepcode
 pnpm install --frozen-lockfile
 pnpm build

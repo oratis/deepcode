@@ -2,6 +2,8 @@
 
 H03/H04 将现有 CLI 与 app-server 接入统一 bootstrap 和新的会话提交层。agent loop 仍为现有 native 或显式启用的 Claude SDK；完整 `harness-v2` backend、Web、ACP 和插件领域拆分仍按后续工作包推进。
 
+> 桌面/编辑器用户请使用 v0.5.1 或更新版本。v0.5.0 的 stdio decoder 漏接了部分已声明方法，会拒绝会话列表、fork/archive/delete、rename、文件历史及 runtime capabilities 请求；v0.5.1 修复传输准入，未改变会话存储格式。
+
 ## 组合 profile
 
 ```bash

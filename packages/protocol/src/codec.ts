@@ -5,21 +5,30 @@ import type {
   ProtocolResponse,
 } from './types.js';
 
-const protocolMethods = new Set<ProtocolMethod>([
-  'initialize',
-  'config/diagnostics',
-  'diagnostics/export',
-  'workspace/diff',
-  'review/apply',
-  'review/revert',
-  'thread/start',
-  'thread/read',
-  'thread/resume',
-  'turn/start',
-  'turn/interrupt',
-  'approval/respond',
-  'user-input/respond',
-]);
+// Exhaustive against the public contract: adding a method must update the wire
+// decoder too, before a server can advertise a capability that stdio rejects.
+const protocolMethods = {
+  initialize: true,
+  'runtime/capabilities': true,
+  'config/diagnostics': true,
+  'diagnostics/export': true,
+  'workspace/diff': true,
+  'review/apply': true,
+  'review/revert': true,
+  'thread/rename': true,
+  'session/snapshots': true,
+  'thread/start': true,
+  'thread/read': true,
+  'thread/resume': true,
+  'thread/list': true,
+  'thread/fork': true,
+  'thread/archive': true,
+  'thread/delete': true,
+  'turn/start': true,
+  'turn/interrupt': true,
+  'approval/respond': true,
+  'user-input/respond': true,
+} satisfies Record<ProtocolMethod, true>;
 
 export function encodeProtocolMessage(
   message: ProtocolRequest | ProtocolResponse | ProtocolNotification,
@@ -35,7 +44,7 @@ export function decodeProtocolRequest(raw: string): ProtocolRequest {
   if (
     (typeof value.id !== 'string' && typeof value.id !== 'number') ||
     typeof value.method !== 'string' ||
-    !protocolMethods.has(value.method as ProtocolMethod) ||
+    !Object.hasOwn(protocolMethods, value.method) ||
     !validParams
   ) {
     throw new Error('invalid protocol request');
